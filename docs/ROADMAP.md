@@ -12,6 +12,7 @@ Done (this scaffold):
 - [x] Template schema, loader and validator (rejects unknown or unsafe keys)
 - [x] Port allocator (conflict-free, contiguous blocks, host-port awareness) and slug helper
 - [x] Palworld template
+- [x] Dragonwilds template (not yet run on real hardware, see verification.md)
 - [x] Game servers page: server table, template row (deploy disabled)
 
 Also done (built against fakes, see verification.md for what is unproven):
