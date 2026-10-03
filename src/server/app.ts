@@ -12,6 +12,7 @@ import type { ContainerDriver } from "./docker/driver.js";
 import { ServerService, UserError } from "./servers/service.js";
 import { CloudflareClient } from "./dns/cloudflare.js";
 import type { DnsSettings } from "./dns/settings.js";
+import { NOTIFY_KINDS, WebhookDeliveryError, WebhookError, type Notifier } from "./notifications/notifier.js";
 import { hasAdminPassword, setAdminPassword, verifyAdminPassword } from "./auth/password.js";
 import { LoginGuard, visitorKey, type LoginGuardOptions } from "./auth/rate-limit.js";
 import { runningVersion, UpdateChecker } from "./updates.js";
@@ -28,6 +29,7 @@ export interface AppDeps {
   service: ServerService;
   docker: ContainerDriver;
   dnsSettings: DnsSettings;
+  notifier: Notifier;
   /** Injectable for tests. */
   inspectToken?: typeof CloudflareClient.inspect;
   hostStats?: HostStats;
@@ -40,7 +42,7 @@ export interface AppDeps {
 const passwordBody = z.object({ password: z.string().min(1) });
 const newPasswordBody = z.object({ password: z.string().min(10, "Use at least 10 characters") });
 
-export function buildApp({ config, db, templates, service, docker, dnsSettings, inspectToken = CloudflareClient.inspect, hostStats = new HostStats([config.GAMESERVERS_DIR, config.DATA_DIR]), webRoot, updates = new UpdateChecker(db, { current: runningVersion(config.APP_VERSION), envEnabled: config.UPDATE_CHECK === "on" }), loginGuard }: AppDeps): FastifyInstance {
+export function buildApp({ config, db, templates, service, docker, dnsSettings, notifier, inspectToken = CloudflareClient.inspect, hostStats = new HostStats([config.GAMESERVERS_DIR, config.DATA_DIR]), webRoot, updates = new UpdateChecker(db, { current: runningVersion(config.APP_VERSION), envEnabled: config.UPDATE_CHECK === "on" }), loginGuard }: AppDeps): FastifyInstance {
   // Behind a reverse proxy the connection comes from the proxy; TRUST_PROXY says whose word to take for the visitor's address and HTTPS.
   const app = Fastify({ logger: false, trustProxy: parseTrustProxy(config.TRUST_PROXY) });
   const guard = new LoginGuard(loginGuard);
@@ -327,6 +329,38 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
   app.post("/api/updates/check", async () => {
     const ran = await updates.checkNow();
     return { ran, ...updates.state() };
+  });
+
+  app.get("/api/settings/notifications", async () => notifier.status());
+
+  const notifyEvents = z.object(Object.fromEntries(NOTIFY_KINDS.map((k) => [k, z.boolean().optional()])) as Record<(typeof NOTIFY_KINDS)[number], z.ZodOptional<z.ZodBoolean>>);
+  app.put("/api/settings/notifications", async (req) => {
+    const body = z.object({ url: z.string().optional(), events: notifyEvents.optional() }).safeParse(req.body);
+    if (!body.success) throw new UserError("The notification settings were not understood");
+    try {
+      notifier.save(body.data);
+    } catch (e) {
+      if (e instanceof WebhookError) throw new UserError(e.message);
+      throw e;
+    }
+    return notifier.status();
+  });
+
+  // Sends one message to the pasted address (or the saved one) so the person sees it arrive before relying on it.
+  app.post("/api/settings/notifications/test", async (req) => {
+    const body = z.object({ url: z.string().optional() }).safeParse(req.body ?? {});
+    try {
+      await notifier.sendTest(body.success ? body.data.url : undefined);
+    } catch (e) {
+      if (e instanceof WebhookError) throw new UserError(e.message, e instanceof WebhookDeliveryError ? 502 : 400);
+      throw e;
+    }
+    return { ok: true };
+  });
+
+  app.delete("/api/settings/notifications", async () => {
+    notifier.clear();
+    return { ok: true };
   });
 
   app.get("/api/network/diagnostics", async () => service.diagnostics());

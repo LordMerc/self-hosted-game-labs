@@ -8,6 +8,7 @@ import { echoPublicIp } from "./connectivity/provider.js";
 import { UpnpProvider } from "./connectivity/upnp.js";
 import { openDb } from "./db/index.js";
 import { DnsSettings } from "./dns/settings.js";
+import { Notifier } from "./notifications/notifier.js";
 import { DockerodeDriver } from "./docker/driver.js";
 import { ServerService } from "./servers/service.js";
 import { detectLanIp } from "./lan-ip.js";
@@ -35,12 +36,13 @@ const templates = loadTemplates(config.TEMPLATES_DIR);
 const docker = new DockerodeDriver();
 const connectivity = config.CONNECTIVITY === "upnp" ? new UpnpProvider(undefined, () => echoPublicIp(config.IP_ECHO_URL), config.HOST_LAN_IP || undefined) : new ManualProvider(db, config.IP_ECHO_URL);
 const dnsSettings = new DnsSettings(db, config);
+const notifier = new Notifier(db, config);
 
-const service = new ServerService({ config, db, templates, docker, connectivity, dnsProvider: () => dnsSettings.current(), portProbe: config.PORT_CHECK === "on" ? new CheckHostProbe() : null });
+const service = new ServerService({ config, db, templates, docker, connectivity, dnsProvider: () => dnsSettings.current(), notifier, portProbe: config.PORT_CHECK === "on" ? new CheckHostProbe() : null });
 const hostStats = new HostStats([config.GAMESERVERS_DIR, config.DATA_DIR]);
 hostStats.snapshot(); // first sample, so CPU and network rates exist by the time the page asks
 const updates = new UpdateChecker(db, { current: runningVersion(config.APP_VERSION), envEnabled: config.UPDATE_CHECK === "on" });
-const app = buildApp({ config, db, templates, service, docker, dnsSettings, hostStats, updates, webRoot: "dist/web" });
+const app = buildApp({ config, db, templates, service, docker, dnsSettings, notifier, hostStats, updates, webRoot: "dist/web" });
 
 const RECONCILE_MS = 5 * 60 * 1000;
 let reconciling = false;
@@ -71,7 +73,22 @@ const scheduledBackups = async () => {
   }
 };
 
+// Notice crashes and player joins/leaves within about half a minute, whether or not anyone has the page open.
+let watching = false;
+const watch = async () => {
+  if (watching) return;
+  watching = true;
+  try {
+    await service.watch();
+  } catch (e) {
+    console.error("watch failed:", e);
+  } finally {
+    watching = false;
+  }
+};
+
 setTimeout(reconcile, 3000);
+setInterval(watch, 30_000).unref();
 setTimeout(scheduledBackups, 60_000).unref();
 setInterval(scheduledBackups, 10 * 60 * 1000).unref();
 setInterval(reconcile, RECONCILE_MS).unref();
