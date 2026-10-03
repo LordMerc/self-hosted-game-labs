@@ -6,6 +6,13 @@
 
 > **Early release (v0.2.0).** Palworld and RuneScape: Dragonwilds are running on a real homelab, with friends joining over the internet. The other games are built and tested against fakes and throwaway containers but not played on yet. See [Supported games](#supported-games) and [docs/verification.md](docs/verification.md) for exactly what has and has not been tried.
 
+## What's new in 0.2.1
+
+- **Real store pictures on the template cards.** A template can now point at a game's artwork with an artwork URL, and the card shows it as its banner.
+- **Credit and framing.** `artworkCredit` names where a picture came from, and `artworkPosition` chooses which part of the picture the banner keeps.
+- **Fetched once.** The panel downloads each picture the first time it is needed and serves it from its own cache after that, so the browser never loads it from the store.
+- **Safe fallback.** A template with no artwork, or one whose picture cannot be fetched, keeps the gradient banner it had before.
+
 ## What's new in 0.2.0
 
 - **A new look.** The whole panel is redesigned in a lighter, free-floating style: no heavy boxes, one calm theme across the server list, Backups, Network health and Settings.
