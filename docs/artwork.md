@@ -26,15 +26,15 @@ Browsers never contact the publisher. The panel's content security policy only a
 
 ## What is shipped, and why
 
-No game template links artwork yet. Each publisher was checked for an official press or fan kit and for terms that allow using the art in third-party software. The bar was a stated allowance for non-commercial fan or community use, not just permission for fan-made works. None met it, so every card keeps its gradient. Asking a publisher for permission is the next step if a game's card should have a picture.
+Every bundled game links its own store picture, so the cards look like the games. These are the publishers' store images, linked rather than copied into this repository: the panel fetches each one once for the person running it and keeps it in their data folder. They are **not** under an open license, and no publisher has given written permission for use in third-party software. I looked for press kits with fan or community terms first and found none that cover this (Palworld has no press kit; Jagex's fan policy covers fan-made content, not official art; Minecraft's guidelines are strict; the Valheim and Satisfactory press kits are shared drive folders with no stated terms; Terraria had none). Linking the store picture is the choice the maintainer made; if a publisher objects, delete the two lines from its template and the card goes back to the gradient.
 
-| Game | Outcome | What was found |
+| Game | Picture | Source |
 | --- | --- | --- |
-| Palworld | Gradient kept | No press kit found. Pocketpair's derivative-works guideline covers fan creations, not reuse of official art in other software. |
-| RuneScape: Dragonwilds | Gradient kept | Jagex's Fan Content Policy covers fan-made content and in-game captures, not official key art in third-party tools. |
-| Minecraft Java | Gradient kept | Minecraft's brand and usage guidelines are strict and give no clear allowance for this. |
-| Valheim | Gradient kept | The press kit is a shared drive folder with no stated terms and no direct image links. |
-| Satisfactory | Gradient kept | The press kit is a shared drive folder with no stated terms and no direct image links. |
-| Terraria | Gradient kept | No press kit with usable terms was found. |
+| Palworld | Steam library hero art | Steam app 1623730 |
+| RuneScape: Dragonwilds | Steam library hero art | Steam app 1374490 |
+| Minecraft Java | Store page key art | minecraft.net store page |
+| Valheim | Steam library hero art | Steam app 892970 |
+| Satisfactory | Steam library hero art | Steam app 526870 |
+| Terraria | Steam header image | Steam app 105600 |
 
-Terms change. If you add a picture later, record the source URL and the terms in `artworkCredit` and in this table, with the date you checked.
+Each template's `artworkCredit` says the same thing in one line, and shows as a tooltip on the card. Steam's library hero images are wide, text-free key art that crop well to the banner; Terraria uses the header image because its hero art is plain scenery. A publisher can change or remove an image at any time, and the card then falls back to its gradient (or keeps the copy already downloaded).

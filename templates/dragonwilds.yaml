@@ -4,6 +4,8 @@ id: dragonwilds
 name: "RuneScape: Dragonwilds"
 image: ghcr.io/runescape/rsdw-dedicated:latest
 accent: "#fb923c"
+artwork: https://cdn.cloudflare.steamstatic.com/steam/apps/1374490/library_hero.jpg
+artworkCredit: "Steam store art for RuneScape: Dragonwilds, © Jagex. Shown as the game's store picture, not under an open license"
 join:
   method: server-browser
   instructions: In the game, open the Worlds list and search for your world name. To connect directly instead, use the server address shown here with the game port.

@@ -4,6 +4,8 @@ id: terraria
 name: Terraria
 image: beardedio/terraria:vanilla-latest
 accent: "#a78bfa"
+artwork: https://cdn.cloudflare.steamstatic.com/steam/apps/105600/header.jpg
+artworkCredit: "Steam store art for Terraria, © Re-Logic. Shown as the game's store picture, not under an open license"
 maxPlayers: 8
 notes: A new world is made the first time the server starts, which takes a minute or two. The same world is loaded on every start after that.
 join:
