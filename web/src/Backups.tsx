@@ -61,8 +61,8 @@ export function Backups({ id, name, running, onClose, onChange }: { id: string; 
   };
 
   return (
-    <div className="backdrop" onClick={onClose}>
-      <div className="card dialog backups" onClick={(e) => e.stopPropagation()}>
+    <div className="backdrop">
+      <div className="card dialog backups">
         <div className="row between">
           <h2>{name} backups</h2>
           <button className="ghost" onClick={onClose}>

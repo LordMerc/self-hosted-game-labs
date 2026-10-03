@@ -48,8 +48,8 @@ export function LogViewer({ id, name, onClose }: { id: string; name: string; onC
   }, [lines]);
 
   return (
-    <div className="backdrop" onClick={onClose}>
-      <div className="card dialog logs" onClick={(e) => e.stopPropagation()}>
+    <div className="backdrop">
+      <div className="card dialog logs">
         <div className="row between">
           <h2>{name} logs</h2>
           <button className="ghost" onClick={onClose}>
