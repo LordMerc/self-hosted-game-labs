@@ -38,6 +38,7 @@ These need real infrastructure and are **unproven**; the matching Milestone 1 ac
 - Real Cloudflare zone and real UPnP router.
 - The Palworld image's env var names and ports, taken from the template as written; verify against the image's current docs.
 - A friend connecting from outside the LAN.
+- The Dragonwilds template (`ghcr.io/runescape/rsdw-dedicated`): env names, ports (7777/udp game, 8888/udp beacon) and data path come from the image's README and compose file, and the image is public on GHCR. Not yet verified: that the container user can write to the bind-mounted data folder the panel creates (if the log shows permission errors, `chown -R 1000:1000` the server's folder), that moving the game port off 7777 keeps the beacon working, and a real join from the game client.
 
 ## Compose file (2026-10-03)
 

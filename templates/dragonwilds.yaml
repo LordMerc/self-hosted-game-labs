@@ -1,0 +1,41 @@
+# Verify image, ports and env names against the image's current docs before changing.
+# https://github.com/runescape/rsdw-dedicated  (image: ghcr.io/runescape/rsdw-dedicated)
+id: dragonwilds
+name: "RuneScape: Dragonwilds"
+image: ghcr.io/runescape/rsdw-dedicated:latest
+join:
+  method: server-browser
+  instructions: In the game, open the Worlds list and search for your world name. To connect directly instead, use the server address shown here with the game port.
+ports:
+  - name: game
+    default: 7777
+    protocol: udp
+    env: RSDW_PORT
+  - name: beacon
+    default: 8888
+    protocol: udp
+    env: RSDW_BEACON_PORT
+env:
+  RSDW_OWNER_ID:
+    label: Your Dragonwilds Player ID
+    required: true
+    help: In the game, open Settings and look at the bottom of the menu. This makes you the server owner.
+  RSDW_SERVER_NAME:
+    label: Server name
+    default: Dragonwilds Server
+  RSDW_WORLD_NAME:
+    label: World name
+    default: Dragonwilds World
+    help: The name players search for in the Worlds list.
+  RSDW_PASSWORD:
+    label: Server password
+    secret: true
+    generate: true
+    help: Players need this to join. Leave empty to have one generated; you can reveal it later.
+  RSDW_ADMIN_PASSWORD:
+    label: Admin password
+    secret: true
+    generate: true
+    help: Used for the in-game Server Management tab.
+data:
+  - containerPath: /home/steam/rsdw-dedicated

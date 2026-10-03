@@ -82,8 +82,8 @@ A template declares image, ports, env (including required user inputs), data pat
 
 ```yaml
 id: dragonwilds
-name: RuneScape: Dragonwilds
-image: ferment9348/dragonwilds:latest
+name: "RuneScape: Dragonwilds"
+image: ghcr.io/runescape/rsdw-dedicated:latest
 maxPlayers: 6                 # engine cap
 join:
   method: server-browser      # direct | server-browser
@@ -92,15 +92,15 @@ ports:
   - name: game
     default: 7777
     protocol: udp
-    env: GAME_PORT            # server must be told its port
+    env: RSDW_PORT            # server must be told its port
     mustMatchHost: true       # host port == container port == env value
     query: none               # none | a2s | minecraft  (used by the reachability check)
 env:
-  SERVER_NAME:    { label: Server name, default: "LordMerc Dragonwilds" }
-  OWNER_ID:       { label: Your Dragonwilds Player ID, required: true, help: "In-game Settings → bottom of menu" }
-  ADMIN_PASSWORD: { label: Admin password, secret: true, generate: true }
+  RSDW_SERVER_NAME:    { label: Server name, default: "Dragonwilds Server" }
+  RSDW_OWNER_ID:       { label: Your Dragonwilds Player ID, required: true, help: "In-game Settings → bottom of menu" }
+  RSDW_ADMIN_PASSWORD: { label: Admin password, secret: true, generate: true }
 data:
-  - { containerPath: /serverdata/serverfiles }   # bind-mounted from /srv/gameservers/<slug>/
+  - { containerPath: /home/steam/rsdw-dedicated }   # bind-mounted from /srv/gameservers/<slug>/
 readiness:
   type: port-listening        # default; templates may override with a log regex or healthcheck
 ```
@@ -110,7 +110,7 @@ readiness:
 | Template | Image | Default ports | Join |
 |---|---|---|---|
 | Palworld | `thijsvanloef/palworld-server-docker` | 8211/udp (+27015/udp query) | direct |
-| Dragonwilds | `ferment9348/dragonwilds` | 7777/udp | server-browser |
+| Dragonwilds | `ghcr.io/runescape/rsdw-dedicated` | 7777/udp (+8888/udp beacon) | server-browser |
 | Minecraft Java | `itzg/minecraft-server` | 25565/tcp | direct |
 | Valheim | `lloesche/valheim-server` | 2456–2457/udp | direct |
 | Satisfactory | `wolveix/satisfactory-server` | 7777/udp+tcp, 8888/tcp | direct |
