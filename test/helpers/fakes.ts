@@ -4,7 +4,12 @@ import type { DnsClient } from "../../src/server/dns/cloudflare.js";
 import type { Protocol } from "../../src/server/ports/allocator.js";
 
 export class FakeDocker implements ContainerDriver {
-  containers = new Map<string, { spec: ContainerSpec; state: ContainerState }>();
+  containers = new Map<string, { spec: ContainerSpec; state: ContainerState; imageId?: string }>();
+  /** Image ids on this host, by tag. */
+  images = new Map<string, string>();
+  /** What the registry serves for a tag right now (default `sha256:a1`). */
+  remote = new Map<string, string>();
+  registryDown = false;
   pulled: string[] = [];
   failPull = false;
   /** Make containers exit right after start (simulates a crashing game). */
@@ -13,12 +18,24 @@ export class FakeDocker implements ContainerDriver {
   async pullImage(image: string) {
     if (this.failPull) throw new Error("pull access denied");
     this.pulled.push(image);
+    if (this.registryDown) {
+      if (!this.images.has(image)) throw new Error("registry unreachable");
+      return false;
+    }
+    this.images.set(image, this.remote.get(image) ?? "sha256:a1");
+    return true;
+  }
+  async imageId(image: string) {
+    return this.images.get(image) ?? null;
+  }
+  async containerImageId(id: string) {
+    return this.containers.get(id)?.imageId ?? null;
   }
   async create(spec: ContainerSpec) {
     const existing = [...this.containers.entries()].find(([, c]) => c.spec.name === spec.name);
     if (existing) return existing[0];
     const id = `c${this.containers.size + 1}`;
-    this.containers.set(id, { spec, state: "exited" });
+    this.containers.set(id, { spec, state: "exited", imageId: this.images.get(spec.image) ?? "sha256:a1" });
     return id;
   }
   async start(id: string) {

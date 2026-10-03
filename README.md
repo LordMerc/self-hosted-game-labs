@@ -9,6 +9,7 @@
 ## What you get
 
 - **One-click game templates** for Palworld, RuneScape: Dragonwilds, Minecraft (Java), Valheim, Satisfactory and Terraria, plus a **Custom Docker image** card for anything else.
+- **Daily restarts and updates:** restart a server every day at a time you pick (with an in-game warning for games that can show one), check for a newer version of a game and switch to it after a backup, and move a server to another port, all from its page.
 - **Start, stop, restart, delete and live logs** for every server from one page, with CPU, memory and player counts.
 - **A Private / Public switch per server.** Public opens the game ports on your router (UPnP automatically, or a checklist of rules if your router has no UPnP) and gives the server a DNS name such as `palworld.example.com`.
 - **Backups that outlive the server.** Worlds are backed up automatically and on demand, deleting a server never deletes its backups, and a deleted server can be set up again from its backup.
@@ -132,6 +133,14 @@ On a machine that runs several games, one busy server can slow the others down. 
 
 - The CPU limit is in cores, up to the number your machine has (for example `2` or `1.5`).
 - The memory limit is in GB and is a hard cap with no swap. A game that goes over it is stopped and restarted by Docker, so keep it above what the game needs, and above any memory setting the game has itself (such as Minecraft's `MEMORY`). The panel warns you when a limit is below what a template says its game needs (Satisfactory: about 8 GB).
+
+## Restarts, updates and ports (optional)
+
+Open a server and look for **Restarts and updates** and **Ports**.
+
+- **Daily restart:** tick the box and pick a time. Games with a way to talk to players (Palworld and Minecraft) can warn them in the game 15, 10, 5 or 1 minutes before the restart, and again 1 minute before. A stopped server is left stopped. The time uses the panel's time zone, which is UTC unless you set `TZ` (for example `TZ=America/Chicago`).
+- **Updates:** **Check for update** tells you if a newer version exists. Palworld is pinned to a version that is known to work (`v2.8.0`) instead of `latest`, so a new image can never change your server by surprise: the panel lists newer version tags from Docker Hub, shows **Update available** in the server list, and moves to the new one when you press **Update**. Games without version tags are checked by downloading the image and comparing it with the one the server runs. Every update makes a backup first and keeps your world. **Update automatically every day** does the same on a schedule, for running servers only. If a new version misbehaves, delete the server (keeping its data) and set it up again from the Backups page, which uses the version in the template.
+- **Ports:** change the game port; the game's other ports move by the same amount, the router rules move too, and the server restarts with your world kept. Custom images cannot change ports because the image decides them.
 
 ## Domain names (optional)
 

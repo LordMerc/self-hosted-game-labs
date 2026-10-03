@@ -19,6 +19,7 @@ import { BackupStore, type BackupInfo } from "../backups.js";
 import { queryA2s, type PlayerCount } from "../players/a2s.js";
 import { buildCustomTemplate, checkCustomInput, isCustomId, type CustomInput } from "./custom.js";
 import type { TcpProbe } from "../reachability.js";
+import { CareStore, compareVersions, dayKey, dockerHubTags, dueStatus, isDockerHubImage, newestTag, repoOf, tagOf, type CareSettings, type TagLister, type UpdateCheck } from "../care.js";
 import { queryMinecraft } from "../players/minecraft.js";
 import type { NotifyEvent, NotifySink } from "../notifications/notifier.js";
 import { slugify, uniqueSlug } from "../slug.js";
@@ -84,6 +85,8 @@ export interface ServiceDeps {
   hostCores?: number;
   /** Asks an outside machine whether a TCP port answers. Absent or null: the outside check is off. */
   portProbe?: TcpProbe | null;
+  /** Lists the version tags of a Docker Hub image, to tell when a newer one exists; injectable for tests. */
+  tagLister?: TagLister;
   /** Sets a folder's owner; injectable because tests do not run as root. */
   chown?: (dir: string, uid: number, gid: number) => void;
   /** Player-count query for a template port with a `query` kind; injectable for tests. */
@@ -395,6 +398,7 @@ export class ServerService {
     const row = this.row(id);
     const t = this.template(row.templateId);
     const ports = this.ports(id);
+    const image = this.imageFor(row);
     try {
       // Env: template ports are injected as env so the server listens where we mapped it.
       const env: Record<string, string> = { ...row.env };
@@ -417,13 +421,13 @@ export class ServerService {
         return { host, container: dp.containerPath };
       });
       if (opts.pull !== false) {
-        this.event(id, "info", `Pulling ${t.image}`);
-        await this.d.docker.pullImage(t.image);
+        this.event(id, "info", `Pulling ${image}`);
+        await this.d.docker.pullImage(image);
       }
 
       const containerId = await this.d.docker.create({
         name: names.containerName(row.slug),
-        image: t.image,
+        image,
         env,
         ...(t.command ? { command: expandCommand(t.command, env) } : {}),
         ...(t.tty ? { tty: true } : {}),
@@ -527,6 +531,7 @@ export class ServerService {
     if (opts.deleteData) rmSync(path.join(this.d.config.GAMESERVERS_DIR, row.slug), { recursive: true, force: true });
     this.d.db.delete(schema.servers).where(eq(schema.servers.id, id)).run();
     this.reach.delete(id);
+    this.careStore().drop(id);
     this.dropCustomTemplate(row.templateId, row.slug);
     this.event(null, "info", `Deleted ${row.slug}${opts.deleteData ? " and its world data" : " (data kept)"}`);
     return { warnings: errors };
@@ -637,7 +642,7 @@ export class ServerService {
 
     // 1. Containers: recreate any that vanished; sync status for the rest.
     for (const r of this.d.db.select().from(schema.servers).all()) {
-      if (r.status === "deploying" || r.status === "error") continue;
+      if (r.status === "deploying" || r.status === "updating" || r.status === "error") continue;
       if (r.containerId && (await this.d.docker.state(r.containerId).catch(() => "exited" as const)) === "missing") {
         actions.push(`recreated missing container for ${r.slug}`);
         this.event(r.id, "warn", "Container was missing; recreating");
@@ -777,6 +782,7 @@ export class ServerService {
     const rules = this.d.db.select().from(schema.manualRules).all();
     const t = (id: string) => this.d.templates.find((x) => x.id === id);
     return rows.map((r) => {
+      const check = this.careStore().state(r.id).check;
       const sp = ports.filter((p) => p.serverId === r.id);
       const tpl = t(r.templateId);
       const gamePort = sp[0];
@@ -802,6 +808,7 @@ export class ServerService {
           instructions: r.access === "public" && tpl?.join.method === "server-browser" ? (tpl.join.instructions ?? null) : null,
         },
         reachability: r.access === "public" ? (this.reach.get(r.id) ?? null) : null,
+        update: check?.available ? { to: check.latest ?? "a newer build" } : null,
         pendingRules: this.d.connectivity.kind !== "manual" ? [] : rules.filter((x) => x.serverId === r.id && !x.confirmed).map((x) => ({ id: x.id, port: x.port, protocol: x.protocol })),
       };
     });
@@ -888,6 +895,7 @@ export class ServerService {
       })),
       minMemoryMb: tpl.resources.minMemoryMb ?? null,
       console: tpl.console ? { examples: tpl.console.examples } : null,
+      care: this.careInfo(id),
       events: this.events(id, 30).reverse(),
     };
   }
@@ -960,6 +968,275 @@ export class ServerService {
     } catch (e) {
       throw new UserError(`The command did not run: ${e instanceof Error ? e.message : String(e)}`, 502);
     }
+  }
+
+  // ------------------------------------------------- restarts, updates, ports
+
+  private careStoreInst?: CareStore;
+  private careStore() {
+    return (this.careStoreInst ??= new CareStore(this.d.db));
+  }
+
+  /** The image a server runs: the one it was moved to by an update, otherwise the template's. */
+  private imageFor(row: typeof schema.servers.$inferSelect): string {
+    return this.careStore().state(row.id).image ?? this.template(row.templateId).image;
+  }
+
+  /** Everything the server page needs for the restart, update and port sections. */
+  careInfo(id: string) {
+    const row = this.row(id);
+    const tpl = this.template(row.templateId);
+    const state = this.careStore().state(id);
+    const image = this.imageFor(row);
+    return {
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      settings: this.careStore().settings(id),
+      canWarn: Boolean(tpl.console?.broadcast),
+      lastRestartOn: state.lastRestartOn,
+      image: { name: image, tag: tagOf(image), pinned: Boolean(tpl.versionPattern), moved: state.image !== null },
+      update: state.check,
+      portsEditable: !isCustomId(tpl.id),
+    };
+  }
+
+  setCare(id: string, input: unknown): CareSettings {
+    const row = this.row(id);
+    let next: CareSettings;
+    try {
+      next = this.careStore().setSettings(id, input);
+    } catch (e) {
+      throw new UserError((e as Error).message, 400);
+    }
+    this.event(row.id, "info", `Upkeep schedule changed (restart ${next.restart.enabled ? `daily at ${next.restart.time}` : "off"}, automatic update ${next.update.auto ? `daily at ${next.update.time}` : "off"})`);
+    return next;
+  }
+
+  /** Say something to the players in the game. Returns false when the game has no way to (or it failed). */
+  private async broadcast(row: typeof schema.servers.$inferSelect, message: string): Promise<boolean> {
+    const tpl = this.template(row.templateId);
+    const b = tpl.console?.broadcast;
+    if (!b || !tpl.console || !row.containerId) return false;
+    const text = b.command.replace("${MESSAGE}", b.spaceChar ? message.replace(/ /g, b.spaceChar) : message);
+    try {
+      await this.d.docker.exec(row.containerId, [...tpl.console.exec, text], { timeoutMs: 15_000 });
+      return true;
+    } catch (e) {
+      this.event(row.id, "warn", `Could not warn the players: ${e instanceof Error ? e.message : String(e)}`);
+      return false;
+    }
+  }
+
+  /**
+   * Look for a newer version. A game that lists version tags (a pinned template) is compared by tag, which downloads
+   * nothing. Anything else is pulled, and counts as newer when the tag now points at a different image than the
+   * one the server was created from.
+   */
+  async checkUpdate(id: string, now = new Date()): Promise<UpdateCheck> {
+    const row = this.row(id);
+    const tpl = this.template(row.templateId);
+    if (!row.containerId) throw new UserError("Server has no container yet", 409);
+    const image = this.imageFor(row);
+    const checkedAt = now.toISOString();
+    let check: UpdateCheck;
+    if (tpl.versionPattern && isDockerHubImage(image)) {
+      const current = tagOf(image);
+      let tags: string[];
+      try {
+        tags = await (this.d.tagLister ?? dockerHubTags)(repoOf(image));
+      } catch (e) {
+        throw new UserError(`Could not look up versions on Docker Hub: ${e instanceof Error ? e.message : String(e)}`, 502);
+      }
+      const newest = newestTag(tags, tpl.versionPattern);
+      const available = newest !== null && compareVersions(newest, current) > 0;
+      check = {
+        checkedAt,
+        available,
+        via: "tag",
+        current,
+        latest: available ? newest : null,
+        note: available ? `Version ${newest} is out. This server runs ${current}.` : newest ? `Up to date: ${current} is the newest version.` : "No version tags were found, so nothing could be compared.",
+      };
+    } else {
+      let fromRegistry: boolean;
+      try {
+        fromRegistry = await this.d.docker.pullImage(image);
+      } catch (e) {
+        throw new UserError(`Could not download ${image}: ${e instanceof Error ? e.message : String(e)}`, 502);
+      }
+      if (!fromRegistry) throw new UserError(`Could not reach the image registry, so ${image} could not be checked`, 502);
+      const [latest, mine] = await Promise.all([this.d.docker.imageId(image), this.d.docker.containerImageId(row.containerId)]);
+      const available = Boolean(latest && mine && latest !== mine);
+      check = {
+        checkedAt,
+        available,
+        via: "image",
+        current: tagOf(image),
+        latest: null,
+        note: available ? `A newer build of ${image} is ready. The server is still running the old one.` : `Up to date: this server runs the newest build of ${image}.`,
+      };
+    }
+    this.careStore().patchState(id, { check });
+    this.event(id, "info", `Update check: ${check.note}`);
+    return check;
+  }
+
+  /**
+   * Switch to the newer version found by the last check. A backup is taken first (and nothing changes if it fails),
+   * then the container is recreated from the new image. World data is kept.
+   */
+  async applyUpdate(id: string): Promise<{ restarting: boolean }> {
+    const row = this.row(id);
+    if (row.status === "deploying" || row.status === "updating") throw new UserError("Wait for the server to finish starting before updating it", 409);
+    const check = this.careStore().state(id).check;
+    if (!check?.available) throw new UserError("There is no update to apply. Check for an update first.", 409);
+    const image = check.via === "tag" ? `${repoOf(this.imageFor(row))}:${check.latest}` : this.imageFor(row);
+    if (existsSync(path.join(this.d.config.GAMESERVERS_DIR, row.slug))) {
+      try {
+        await this.backup(id);
+      } catch (e) {
+        throw new UserError(`Could not make a backup first, so nothing was changed: ${(e as Error).message}`, 500);
+      }
+    }
+    this.event(id, "info", `Updating to ${check.via === "tag" ? check.latest : "the newest build"}; recreating the container (world data is kept, a backup was just made)`);
+    this.setStatus(id, "updating");
+    if (row.containerId) {
+      try {
+        await this.d.docker.remove(row.containerId);
+      } catch (e) {
+        this.setStatus(id, row.status, null);
+        throw new UserError(`Could not stop the old container: ${e instanceof Error ? e.message : String(e)}`, 502);
+      }
+    }
+    this.careStore().patchState(id, { image: check.via === "tag" ? image : this.careStore().state(id).image, check: null });
+    const job = this.runDeploy(id, row.access, { pull: true });
+    if (this.d.background === false) await job;
+    else void job;
+    return { restarting: true };
+  }
+
+  /**
+   * Move a server to another game port. The first port of the template is the one asked for; any others move by the same
+   * amount, so a game's ports stay in step (Valheim's query port is the game port plus one).
+   */
+  async changePorts(id: string, gamePort: number): Promise<{ restarting: boolean }> {
+    const row = this.row(id);
+    const tpl = this.template(row.templateId);
+    if (isCustomId(tpl.id)) throw new UserError("A custom image's ports are fixed by the image. Set it up again with the ports you want.", 409);
+    if (row.status === "deploying" || row.status === "updating") throw new UserError("Wait for the server to finish starting before changing its ports", 409);
+    if (!Number.isInteger(gamePort)) throw new UserError("Type a port number");
+    const shift = gamePort - tpl.ports[0].default;
+    const next: Allocation[] = tpl.ports.map((p) => ({ name: p.name, port: p.default + shift, protocol: p.protocol, env: p.env }));
+    for (const a of next) {
+      if (a.port < 1024 || a.port > 65535) throw new UserError(`Port ${a.port} is not valid (use 1024-65535)`);
+    }
+    const old = this.ports(id);
+    if (next.every((a) => old.some((o) => o.name === a.name && o.port === a.port))) return { restarting: false };
+
+    const own = new Set(old.map((o) => portKey(o.port, o.protocol)));
+    const taken = new Set([...this.takenPorts()].filter((k) => !own.has(k)));
+    const busy = new Set([...this.busyPorts()].filter((k) => !own.has(k)));
+    try {
+      checkPorts(next, tpl.ports, taken, busy);
+    } catch (e) {
+      if (e instanceof Error && "conflicts" in e) {
+        const pc = e as unknown as { conflicts: string[]; suggestion: Allocation[] | null };
+        throw new UserError(e.message, 409, { conflicts: pc.conflicts, suggestion: pc.suggestion });
+      }
+      throw e;
+    }
+
+    this.setStatus(id, "updating");
+    if (row.containerId) {
+      try {
+        await this.d.docker.remove(row.containerId);
+      } catch (e) {
+        this.setStatus(id, row.status, null);
+        throw new UserError(`Could not stop the old container: ${e instanceof Error ? e.message : String(e)}`, 502);
+      }
+    }
+    if (row.access === "public") {
+      for (const p of old) {
+        try {
+          await this.d.connectivity.ensureClosed(id, row.slug, p.port, p.protocol);
+        } catch (e) {
+          this.event(id, "warn", `Could not close ${p.port}/${p.protocol} on the router: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+    }
+    this.d.db.transaction((tx) => {
+      tx.delete(schema.serverPorts).where(eq(schema.serverPorts.serverId, id)).run();
+      for (const a of next) tx.insert(schema.serverPorts).values({ serverId: id, name: a.name, port: a.port, protocol: a.protocol }).run();
+    });
+    this.reach.delete(id);
+    this.event(id, "info", `Ports changed to ${next.map((a) => `${a.port}/${a.protocol}`).join(", ")}; recreating the container (world data is kept)`);
+    const job = this.runDeploy(id, row.access, { pull: false });
+    if (this.d.background === false) await job;
+    else void job;
+    return { restarting: true };
+  }
+
+  /** Message ids already sent, so a minute is not warned about twice. */
+  private warned = new Set<string>();
+
+  /**
+   * One pass of the upkeep schedule (the panel calls it every minute): warn players and restart servers whose daily
+   * restart is due, apply updates for servers with automatic updates, and refresh the "newer version" marker for
+   * games that list version tags. Returns what it did, for the log.
+   */
+  async runScheduledCare(now = new Date()): Promise<string[]> {
+    const done: string[] = [];
+    const store = this.careStore();
+    const today = dayKey(now);
+    for (const r of this.d.db.select().from(schema.servers).all()) {
+      if (!r.containerId || ["deploying", "updating", "error"].includes(r.status)) continue;
+      const settings = store.settings(r.id);
+      const state = store.state(r.id);
+      const tpl = this.d.templates.find((x) => x.id === r.templateId);
+
+      let updated = false;
+      if (settings.update.auto && dueStatus(settings.update.time, now, state.lastUpdateOn).now) {
+        store.patchState(r.id, { lastUpdateOn: today });
+        try {
+          const check = await this.checkUpdate(r.id, now);
+          if (check.available && r.status === "online") {
+            await this.applyUpdate(r.id);
+            done.push(`${r.slug}: updated`);
+            updated = true;
+          }
+        } catch (e) {
+          this.event(r.id, "error", `Automatic update failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      } else if (tpl?.versionPattern && !isCustomId(tpl.id)) {
+        // The version marker: one cheap look-up every few hours, no download.
+        const age = state.check ? now.getTime() - new Date(state.check.checkedAt).getTime() : Infinity;
+        if (age > 6 * 3_600_000) await this.checkUpdate(r.id, now).catch(() => undefined);
+      }
+
+      if (!settings.restart.enabled) continue;
+      const due = dueStatus(settings.restart.time, now, state.lastRestartOn);
+      const warn = settings.restart.warnMinutes;
+      if (due.minutesLeft !== null && warn > 0 && r.status === "online" && (due.minutesLeft === warn || due.minutesLeft === 1)) {
+        const key = `${r.id}:${today}:${due.minutesLeft}`;
+        if (!this.warned.has(key)) {
+          this.warned.add(key);
+          if (this.warned.size > 500) this.warned.clear();
+          const m = due.minutesLeft;
+          if (await this.broadcast(r, `Server restarting in ${m} minute${m === 1 ? "" : "s"}.`)) this.event(r.id, "info", `Warned the players: restarting in ${m} minute${m === 1 ? "" : "s"}`);
+        }
+      }
+      if (due.now) {
+        store.patchState(r.id, { lastRestartOn: today });
+        if (updated || r.status !== "online") continue; // a fresh update already restarted it; a stopped server stays stopped
+        try {
+          await this.restart(r.id);
+          this.event(r.id, "info", `Scheduled restart (daily at ${settings.restart.time})`);
+          done.push(`${r.slug}: restarted`);
+        } catch (e) {
+          this.event(r.id, "error", `Scheduled restart failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+    }
+    return done;
   }
 
   // --------------------------------------------------------------- backups

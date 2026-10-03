@@ -2,7 +2,10 @@
 # https://github.com/thijsvanloef/palworld-server-docker
 id: palworld
 name: Palworld
-image: thijsvanloef/palworld-server-docker:latest
+image: thijsvanloef/palworld-server-docker:v2.8.0
+# Pinned to the version that was current when the first world ran (2026-10): a new image can change settings or break saves,
+# so the panel offers a newer version tag as an update instead of taking it silently.
+versionPattern: "^v\\d+\\.\\d+\\.\\d+$"
 maxPlayers: 32
 join:
   method: direct
@@ -33,5 +36,8 @@ env:
 console:
   exec: [rcon-cli]
   examples: [ShowPlayers, Save, Broadcast Server_restarting_soon, Info]
+  broadcast:
+    command: "Broadcast ${MESSAGE}"
+    spaceChar: "_"
 data:
   - containerPath: /palworld

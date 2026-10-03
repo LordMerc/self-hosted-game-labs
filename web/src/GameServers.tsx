@@ -254,7 +254,14 @@ export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: 
                               <GameIcon id={s.templateId} name={s.templateName} />
                               <div>
                                 <button className="server-link" onClick={() => onOpenServer(s.id)} title="Open settings and console">{s.name}</button>
-                                <div className="muted">{s.templateName}</div>
+                                <div className="muted">
+                                  {s.templateName}
+                                  {s.update && (
+                                    <button className="chip update-chip" onClick={() => onOpenServer(s.id)} title="Open the server page to update it">
+                                      Update available: {s.update.to}
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           </td>

@@ -72,9 +72,20 @@ export const templateSchema = z
       .object({
         exec: z.array(z.string().min(1)).min(1),
         examples: z.array(z.string()).default([]),
+        /** How to say something to the players in the game (used to warn before a scheduled restart). `${MESSAGE}` is the text. */
+        broadcast: z
+          .object({
+            command: z.string().includes("${MESSAGE}"),
+            /** Some games only take one word, so spaces in the message are swapped for this character. */
+            spaceChar: z.string().length(1).optional(),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional(),
+    /** Docker Hub images only: a regular expression for the image's version tags (such as `^v\d+\.\d+\.\d+$`). With it, the panel can tell when a newer version tag exists. */
+    versionPattern: z.string().optional(),
     /** Arguments passed to the image's own start-up command. `${NAME}` is replaced by that setting's value (a port's env name works too); an empty value drops the argument. */
     command: z.array(z.string()).optional(),
     /** Give the container a terminal. A few servers (Terraria) crash without one. */
@@ -117,6 +128,16 @@ export const templateSchema = z
       for (const m of arg.matchAll(/\$\{([A-Z_][A-Z0-9_]*)\}/g)) {
         if (!(m[1] in t.env) && !portEnvs.has(m[1])) ctx.addIssue({ code: "custom", path: ["command", i], message: `refers to unknown setting ${m[1]}` });
       }
+    }
+    if (t.versionPattern) {
+      try {
+        new RegExp(t.versionPattern);
+      } catch {
+        ctx.addIssue({ code: "custom", path: ["versionPattern"], message: "is not a valid regular expression" });
+      }
+    }
+    if (t.versionPattern && !new RegExp(t.versionPattern).test(t.image.slice(t.image.lastIndexOf(":") + 1))) {
+      ctx.addIssue({ code: "custom", path: ["versionPattern"], message: "does not match the image's own tag, so the pinned version could not be compared" });
     }
     if (t.join.method === "server-browser" && !t.join.instructions) {
       ctx.addIssue({ code: "custom", path: ["join", "instructions"], message: "required when join.method is server-browser" });
