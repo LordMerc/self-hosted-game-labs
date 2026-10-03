@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { api, type DnsStatus, type TokenCheck } from "./api";
+import { api, type DnsStatus, type NotificationStatus, type NotifyKind, type TokenCheck } from "./api";
 import { Nav, type Page } from "./Nav";
 
 export function Settings({ onLogout, onNavigate }: { onLogout: () => void; onNavigate: (p: Page) => void }) {
@@ -52,6 +52,8 @@ export function Settings({ onLogout, onNavigate }: { onLogout: () => void; onNav
             status && <DnsForm status={status} onSaved={() => (setEditing(false), load())} onCancel={status.configured ? () => setEditing(false) : undefined} />
           )}
         </section>
+
+        <Notifications />
       </main>
     </div>
   );
@@ -165,5 +167,156 @@ function DnsForm({ status, onSaved, onCancel }: { status: DnsStatus; onSaved: ()
         )}
       </div>
     </form>
+  );
+}
+
+const EVENT_LABELS: { kind: NotifyKind; label: string }[] = [
+  { kind: "online", label: "A server comes online" },
+  { kind: "down", label: "A server goes down or crashes" },
+  { kind: "playerJoin", label: "A player joins" },
+  { kind: "playerLeave", label: "A player leaves" },
+  { kind: "backupFailed", label: "A backup fails" },
+];
+
+function Notifications() {
+  const [status, setStatus] = useState<NotificationStatus | null>(null);
+  const [url, setUrl] = useState("");
+  const [events, setEvents] = useState<Record<NotifyKind, boolean> | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = () =>
+    api<NotificationStatus>("/settings/notifications").then((s) => {
+      setStatus(s);
+      setEvents(s.events);
+    });
+  useEffect(() => void load(), []);
+
+  async function run(work: () => Promise<string>) {
+    setMessage(null);
+    setBusy(true);
+    try {
+      setMessage({ ok: true, text: await work() });
+    } catch (e) {
+      setMessage({ ok: false, text: (e as Error).message });
+    }
+    setBusy(false);
+  }
+
+  const test = () =>
+    run(async () => {
+      await api("/settings/notifications/test", { method: "POST", body: { url: url || undefined } });
+      return "Sent. Check your channel for the test message.";
+    });
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    await run(async () => {
+      await api("/settings/notifications", { method: "PUT", body: { url: url || undefined, events } });
+      setUrl("");
+      setEditing(false);
+      await load();
+      return "Saved.";
+    });
+  }
+
+  async function remove() {
+    if (!confirm("Remove the webhook? The panel stops sending notifications.")) return;
+    await api("/settings/notifications", { method: "DELETE" });
+    setUrl("");
+    setEditing(false);
+    setMessage(null);
+    await load();
+  }
+
+  const asking = !status?.configured || editing;
+  return (
+    <section className="settings-card">
+      <h2>Notifications</h2>
+      <p className="muted">
+        Get a message in Discord when something happens to your servers, so you find out before your friends do. Any other service that accepts a webhook (Slack, Mattermost, n8n, Home Assistant) works too.
+      </p>
+
+      {status && !asking && (
+        <div className="dns-status">
+          <p>
+            <span className="dot online" /> Sending to {status.kind === "discord" ? "Discord" : "a webhook"} at <span className="mono">{status.host}</span>
+          </p>
+          {status.lastError && <p className="error">The last message did not go through: {status.lastError}</p>}
+          <div className="row">
+            <button className="ghost small" disabled={busy} onClick={test}>
+              Send test message
+            </button>
+            <button className="ghost small" onClick={() => setEditing(true)}>
+              Change
+            </button>
+            <button className="ghost small danger" onClick={remove}>
+              Remove
+            </button>
+          </div>
+        </div>
+      )}
+
+      {status && asking && (
+        <form onSubmit={save} className="dns-form notify-form">
+          <h3>1. Make a webhook in Discord (about a minute)</h3>
+          <ol className="steps">
+            <li>
+              Open the Discord server and channel you want the messages in, then <strong>Edit Channel → Integrations → Webhooks → New Webhook</strong>.
+            </li>
+            <li>
+              Click <strong>Copy Webhook URL</strong>.
+            </li>
+          </ol>
+          <h3>2. Paste it here</h3>
+          <div className="row">
+            <input type="password" autoComplete="off" placeholder={status.configured ? "Webhook saved (paste a new one to replace it)" : "https://discord.com/api/webhooks/…"} value={url} onChange={(e) => setUrl(e.target.value)} />
+            <button type="button" className="ghost" disabled={(!url && !status.configured) || busy} onClick={test}>
+              Send test message
+            </button>
+          </div>
+          <p className="muted small-text">The address works like a password for that channel, so the panel stores it encrypted and never shows it again.</p>
+          {events && <EventToggles events={events} onChange={setEvents} />}
+          <div className="row">
+            <button className="primary" disabled={(!url && !status.configured) || busy}>
+              {busy ? "Working…" : "Save"}
+            </button>
+            {status.configured && (
+              <button type="button" className="ghost" onClick={() => (setEditing(false), setUrl(""), setEvents(status.events))}>
+                Cancel
+              </button>
+            )}
+          </div>
+        </form>
+      )}
+
+      {status && !asking && events && (
+        <>
+          <h3>Tell me when</h3>
+          <EventToggles
+            events={events}
+            onChange={(next) => {
+              setEvents(next);
+              void api("/settings/notifications", { method: "PUT", body: { events: next } }).catch((e: Error) => setMessage({ ok: false, text: e.message }));
+            }}
+          />
+        </>
+      )}
+      {message && <p className={message.ok ? "ok" : "error"}>{message.text}</p>}
+    </section>
+  );
+}
+
+function EventToggles({ events, onChange }: { events: Record<NotifyKind, boolean>; onChange: (e: Record<NotifyKind, boolean>) => void }) {
+  return (
+    <div className="dns-form">
+      {EVENT_LABELS.map(({ kind, label }) => (
+        <label key={kind} className="check">
+          <input type="checkbox" checked={events[kind]} onChange={(e) => onChange({ ...events, [kind]: e.target.checked })} />
+          {label}
+        </label>
+      ))}
+    </div>
   );
 }

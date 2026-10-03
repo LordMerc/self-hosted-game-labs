@@ -5,6 +5,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
+import http from "node:http";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
 import { chromium, type Browser, type Page } from "playwright";
@@ -12,6 +13,7 @@ import { buildApp } from "../src/server/app.js";
 import { loadConfig } from "../src/server/config.js";
 import { openDb } from "../src/server/db/index.js";
 import { DnsSettings } from "../src/server/dns/settings.js";
+import { Notifier } from "../src/server/notifications/notifier.js";
 import { ServerService } from "../src/server/servers/service.js";
 import { loadTemplates } from "../src/server/templates/loader.js";
 import { FakeConnectivity, FakeDocker } from "../test/helpers/fakes.js";
@@ -31,7 +33,7 @@ beforeAll(async () => {
   const templates = loadTemplates(path.resolve("templates"));
   const docker = new FakeDocker();
   const service = new ServerService({ config, db, templates, docker, connectivity: new FakeConnectivity(), hostPorts: () => new Set(), background: false, stableMs: 0, portProbe: { name: "fake-checker", check: async () => ({ state: "open", detail: "Connected from 3 of 3 locations" }) }, queryPlayers: async () => ({ online: 2, max: 32 }) });
-  const app = buildApp({ config, db, templates, service, docker, dnsSettings: new DnsSettings(db, config), webRoot: path.resolve("dist/web") });
+  const app = buildApp({ config, db, templates, service, docker, dnsSettings: new DnsSettings(db, config), notifier: new Notifier(db, config), webRoot: path.resolve("dist/web") });
   await app.listen({ port: 0, host: "127.0.0.1" });
   url = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
   close = () => app.close();
@@ -144,6 +146,37 @@ describe("the panel in a browser", () => {
     await page.locator("form.dialog").getByRole("button", { name: "Set up again", exact: true }).click();
     await page.getByRole("heading", { name: "Game servers" }).waitFor();
     await row("Palworld Prime").getByText("Running").waitFor();
+  });
+
+  it("saves a webhook in Settings, sends a test message to it and keeps the address hidden", async () => {
+    const received: { event?: string; title?: string }[] = [];
+    const hook = http.createServer((req, res) => {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => (received.push(JSON.parse(body)), res.writeHead(204).end()));
+    });
+    await new Promise<void>((r) => hook.listen(0, "127.0.0.1", r));
+    const hookUrl = `http://127.0.0.1:${(hook.address() as AddressInfo).port}/hooks/games`;
+    try {
+      await page.getByRole("link", { name: "Settings", exact: true }).click();
+      await page.getByRole("heading", { name: "Notifications" }).waitFor();
+      await page.getByPlaceholder(/discord.com\/api\/webhooks/).fill(hookUrl);
+      await page.getByRole("button", { name: "Send test message" }).click();
+      await page.getByText("Sent. Check your channel").waitFor();
+      expect(received.map((r) => r.event)).toEqual(["test"]);
+      await page.locator("form.notify-form").getByRole("button", { name: "Save", exact: true }).click();
+      await page.getByText(/Sending to a webhook at/).waitFor();
+      expect(await page.content()).not.toContain("/hooks/games");
+      await page.getByLabel("A player leaves").check();
+      await page.getByLabel("A server comes online").uncheck();
+      await page.reload();
+      await page.getByText(/Sending to a webhook at/).waitFor();
+      expect(await page.getByLabel("A player leaves").isChecked()).toBe(true);
+      expect(await page.getByLabel("A server comes online").isChecked()).toBe(false);
+      await shot("6-notifications");
+    } finally {
+      hook.close();
+    }
   });
 
   it("has no browser errors", () => {
