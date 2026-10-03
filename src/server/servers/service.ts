@@ -566,6 +566,29 @@ export class ServerService {
     });
   }
 
+  /**
+   * Back up every server whose interval has passed. A stopped server that already has a backup is skipped,
+   * since its data is not changing. Returns what it did, for the log.
+   */
+  async runScheduledBackups(now = Date.now()): Promise<string[]> {
+    const done: string[] = [];
+    for (const r of this.d.db.select().from(schema.servers).all()) {
+      if (!r.containerId || r.status === "deploying" || r.status === "error") continue;
+      if (!existsSync(path.join(this.d.config.GAMESERVERS_DIR, r.slug))) continue;
+      const { everyHours } = this.store().settings(r.slug);
+      if (everyHours === 0 || this.busyBackups.has(r.slug)) continue;
+      const latest = this.store().list(r.slug)[0];
+      if (latest && (r.status === "offline" || now - new Date(latest.createdAt).getTime() < everyHours * 3_600_000)) continue;
+      try {
+        const info = await this.backup(r.id);
+        done.push(`${r.slug}: ${info.name}`);
+      } catch (e) {
+        this.event(r.id, "error", `Scheduled backup failed: ${(e as Error).message}`);
+      }
+    }
+    return done;
+  }
+
   backupSettings(id: string) {
     return this.store().settings(this.row(id).slug);
   }

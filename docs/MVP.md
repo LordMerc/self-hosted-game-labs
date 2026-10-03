@@ -17,5 +17,5 @@ Panel and auth, templates and port allocation, deploy / start / stop / restart /
 - Header stats: CPU, memory, storage and network are done, plus per-server CPU and memory. Live player counts work for games that answer the Steam A2S query (Palworld, unverified on a real server); other games need their own query
 - Server detail page: config / env editor, console / RCON
 - More templates (Minecraft, Valheim, Satisfactory, Terraria, Dragonwilds, Custom): each must be verified against its image before shipping
-- Backups: manual backup, restore (with a safety copy) and delete are done. Scheduled backups, scheduled restarts and update checks are not
+- Backups: manual backup, restore (with a safety copy) and delete are done. Scheduled (automatic) backups are done too. Scheduled restarts and update checks are not
 - Playwright smoke test in CI once the UI settles

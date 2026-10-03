@@ -16,12 +16,14 @@ export interface BackupSettings {
   keep: number;
   /** A backup younger than this many days is never removed for room. 0 means the count alone decides. */
   minDays: number;
+  /** Automatic backup interval in hours. 0 turns automatic backups off. */
+  everyHours: number;
 }
 
 export function parseSettings(v: unknown, fallback: BackupSettings): BackupSettings {
   const o = (v ?? {}) as Partial<Record<keyof BackupSettings, unknown>>;
   const int = (x: unknown, lo: number, hi: number, d: number) => (typeof x === "number" && Number.isInteger(x) && x >= lo && x <= hi ? x : d);
-  return { keep: int(o.keep, 1, 100, fallback.keep), minDays: int(o.minDays, 0, 365, fallback.minDays) };
+  return { keep: int(o.keep, 1, 100, fallback.keep), minDays: int(o.minDays, 0, 365, fallback.minDays), everyHours: int(o.everyHours, 0, 720, fallback.everyHours) };
 }
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -53,7 +55,7 @@ export class BackupStore {
     private readonly root: string,
     keep = 7,
   ) {
-    this.defaults = { keep, minDays: MIN_KEEP_DAYS };
+    this.defaults = { keep, minDays: MIN_KEEP_DAYS, everyHours: 24 };
   }
 
   /** Per-server settings live beside the backups, so they survive deleting and recreating the server. */
@@ -68,8 +70,8 @@ export class BackupStore {
   setSettings(slug: string, input: unknown): BackupSettings {
     const o = (input ?? {}) as Record<string, unknown>;
     const next = parseSettings(input, this.settings(slug));
-    if ((o.keep !== undefined && next.keep !== o.keep) || (o.minDays !== undefined && next.minDays !== o.minDays)) {
-      throw new Error("keep must be a whole number from 1 to 100, and days a whole number from 0 to 365");
+    if ((o.keep !== undefined && next.keep !== o.keep) || (o.minDays !== undefined && next.minDays !== o.minDays) || (o.everyHours !== undefined && next.everyHours !== o.everyHours)) {
+      throw new Error("keep must be a whole number from 1 to 100, days from 0 to 365, and hours from 0 to 720");
     }
     mkdirSync(this.dir(slug), { recursive: true });
     writeFileSync(path.join(this.dir(slug), "settings.json"), JSON.stringify(next));

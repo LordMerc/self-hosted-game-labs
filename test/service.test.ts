@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, existsSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { loadConfig } from "../src/server/config.js";
@@ -297,10 +297,41 @@ describe("deleting a server and its data", () => {
 describe("backup settings", () => {
   it("are per server, validated, and survive deleting the server", async () => {
     const id = await deploy("Alpha");
-    expect(svc.backupSettings(id)).toEqual({ keep: 7, minDays: 7 });
-    expect(svc.setBackupSettings(id, { keep: 5, minDays: 0 })).toEqual({ keep: 5, minDays: 0 });
+    expect(svc.backupSettings(id)).toEqual({ keep: 7, minDays: 7, everyHours: 24 });
+    expect(svc.setBackupSettings(id, { keep: 5, minDays: 0, everyHours: 24 })).toEqual({ keep: 5, minDays: 0, everyHours: 24 });
     expect(() => svc.setBackupSettings(id, { keep: 0 })).toThrow(UserError);
     await svc.remove(id);
-    expect(svc.backupSettings(await deploy("Alpha"))).toEqual({ keep: 5, minDays: 0 });
+    expect(svc.backupSettings(await deploy("Alpha"))).toEqual({ keep: 5, minDays: 0, everyHours: 24 });
+  });
+});
+
+describe("scheduled backups", () => {
+  const hours = (n: number) => Date.now() + n * 3_600_000;
+  const makeData = (slug: string) => mkdirSync(path.join(dir, "games", slug), { recursive: true });
+
+  it("backs up when due, not before, and not when switched off", async () => {
+    const id = await deploy("Alpha");
+    makeData("alpha");
+    expect(await svc.runScheduledBackups(hours(0))).toHaveLength(1); // never backed up yet
+    expect(await svc.runScheduledBackups(hours(1))).toEqual([]); // daily: not due
+    expect(await svc.runScheduledBackups(hours(25))).toHaveLength(1);
+    svc.setBackupSettings(id, { everyHours: 0 });
+    expect(await svc.runScheduledBackups(hours(100))).toEqual([]);
+    svc.setBackupSettings(id, { everyHours: 2 });
+    expect(await svc.runScheduledBackups(hours(100))).toHaveLength(1);
+  });
+
+  it("skips a stopped server that already has a backup, but backs up one that has none", async () => {
+    const id = await deploy("Alpha");
+    makeData("alpha");
+    await svc.stop(id);
+    expect(await svc.runScheduledBackups(hours(0))).toHaveLength(1);
+    expect(await svc.runScheduledBackups(hours(100))).toEqual([]);
+  });
+
+  it("skips servers with no data folder yet", async () => {
+    await deploy("Alpha");
+    rmSync(path.join(dir, "games", "alpha"), { recursive: true, force: true });
+    expect(await svc.runScheduledBackups()).toEqual([]);
   });
 });

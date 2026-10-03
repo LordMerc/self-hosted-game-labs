@@ -114,3 +114,7 @@ A backup is kept at least 7 days, and deleting a server never removes its backup
 ### Per-server backup settings (2026-10-03, maintainer's request)
 
 Each server has "keep up to N backups" and "never delete one younger than D days" in its Backups window (defaults 7 and 7; `BACKUP_KEEP` sets the default N). When a new backup pushes the count over N, the oldest beyond N are deleted, but only those at least D days old; D = 0 means the count alone decides. Settings are stored beside the backups (`.backups/<slug>/settings.json`), so they survive deleting and recreating the server. Lowering N takes effect at the next backup. Tests (113): count-only pruning, per-server storage, validation, persistence across delete and redeploy; UI checked in headless Chromium (3 backups with N=2, D=0 leaves 2).
+
+### Scheduled backups (2026-10-03)
+
+Per-server "back up automatically every N hours" (default 24, 0 = off), checked every 10 minutes and once a minute after startup. A server with no backup yet is backed up on the next check; one that is stopped and already has a backup is skipped. Servers still deploying, in error, or without a data folder are skipped. Same keep rules as manual backups. Tests (116): due, not due, off, stopped, no data folder. Not run for a real day on the maintainer's host; the timer wiring in `src/server/index.ts` is only covered by the service tests, not by a running process.

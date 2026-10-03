@@ -18,23 +18,25 @@ export function Backups({ id, name, running, onClose, onChange }: { id: string; 
   const [saved, setSaved] = useState<BackupSettings | null>(null);
   const [keep, setKeep] = useState("");
   const [days, setDays] = useState("");
+  const [hours, setHours] = useState("");
 
   const load = useCallback(() => api<Backup[]>(`/servers/${id}/backups`).then(setList).catch((e) => setError(e.message)), [id]);
   useEffect(() => void load(), [load]);
   useEffect(() => {
     api<BackupSettings>(`/servers/${id}/backups/settings`)
-      .then((s) => (setSaved(s), setKeep(String(s.keep)), setDays(String(s.minDays))))
+      .then((s) => (setSaved(s), setKeep(String(s.keep)), setDays(String(s.minDays)), setHours(String(s.everyHours))))
       .catch((e) => setError(e.message));
   }, [id]);
 
-  const dirty = saved !== null && (keep !== String(saved.keep) || days !== String(saved.minDays));
+  const dirty = saved !== null && (keep !== String(saved.keep) || days !== String(saved.minDays) || hours !== String(saved.everyHours));
   async function saveSettings() {
     setError("");
     try {
-      const s = await api<BackupSettings>(`/servers/${id}/backups/settings`, { method: "PUT", body: { keep: Number(keep), minDays: Number(days) } });
+      const s = await api<BackupSettings>(`/servers/${id}/backups/settings`, { method: "PUT", body: { keep: Number(keep), minDays: Number(days), everyHours: Number(hours) } });
       setSaved(s);
       setKeep(String(s.keep));
       setDays(String(s.minDays));
+      setHours(String(s.everyHours));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -86,6 +88,14 @@ export function Backups({ id, name, running, onClose, onChange }: { id: string; 
             </Hint>
             <input type="number" min={0} max={365} value={days} onChange={(e) => setDays(e.target.value)} />
             days
+          </label>
+          <label>
+            Back up automatically every
+            <Hint label="About automatic backups">
+              The panel makes a backup by itself this often while the server is running (checked every 10 minutes). A server that is stopped is not backed up again if it already has one. Use 0 to turn automatic backups off.
+            </Hint>
+            <input type="number" min={0} max={720} value={hours} onChange={(e) => setHours(e.target.value)} />
+            hours
           </label>
           <button className="ghost small" disabled={!dirty} onClick={saveSettings}>
             Save
