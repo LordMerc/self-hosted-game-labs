@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type UpdateState } from "./api";
+import { useApi } from "./store";
 
 const DISMISS_KEY = "gl-update-dismissed";
 
@@ -13,9 +14,8 @@ function dismissedVersion(): string | null {
 
 /** A line at the top of the Game servers page when a newer release exists. Closing it hides that version only. */
 export function UpdateBanner() {
-  const [state, setState] = useState<UpdateState | null>(null);
+  const state = useApi<UpdateState>("/updates").data ?? null;
   const [dismissed, setDismissed] = useState(dismissedVersion);
-  useEffect(() => void api<UpdateState>("/updates").then(setState, () => {}), []);
 
   if (!state?.updateAvailable || !state.latest || dismissed === state.latest.version) return null;
   const version = state.latest.version;

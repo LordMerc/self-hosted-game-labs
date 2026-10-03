@@ -2,6 +2,7 @@ import { useState, type CSSProperties } from "react";
 import type { Server, Template } from "./api";
 import { gameStyle } from "./GameIcon";
 import { Icon } from "./Icons";
+import { TemplateSkeletons } from "./Skeleton";
 
 const mem = (mb: number) => (mb >= 1000 ? `${Math.round(mb / 100) / 10} GB` : `${mb} MB`);
 
@@ -73,6 +74,7 @@ export function DeployCards({ templates, servers, hero, onPick, onCustom }: { te
         </a>
       </div>
       <div className="templates">
+        {templates.length === 0 && <TemplateSkeletons count={SHOWN} />}
         {templates.slice(0, SHOWN).map((t) => (
           <TemplateCard key={t.id} t={t} installed={installed.has(t.id)} onPick={onPick} />
         ))}
