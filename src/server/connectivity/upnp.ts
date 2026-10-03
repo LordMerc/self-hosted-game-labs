@@ -91,7 +91,9 @@ export class UpnpProvider implements ConnectivityProvider {
   }
 
   private async listAll() {
-    const out = await this.upnpc(["-l"]);
+    let out = await this.upnpc(["-l"]);
+    // Discovery is a single UDP broadcast and a router sometimes misses it, so look once more before giving up.
+    if (NO_IGD.test(out)) out = await this.upnpc(["-l"]);
     if (NO_IGD.test(out)) throw new ConnectivityError(UPNP_OFF);
     return parseUpnpList(out);
   }

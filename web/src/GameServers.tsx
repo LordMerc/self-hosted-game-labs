@@ -78,7 +78,7 @@ function gameTone(templateId: string) {
   return gameTones[h % gameTones.length];
 }
 
-function GameIcon({ id, name }: { id: string; name: string }) {
+export function GameIcon({ id, name }: { id: string; name: string }) {
   return <span className={`game-icon tone-${gameTone(id)}`}>{name.charAt(0).toUpperCase()}</span>;
 }
 

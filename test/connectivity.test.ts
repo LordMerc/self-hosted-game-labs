@@ -35,6 +35,15 @@ describe("parseUpnpList", () => {
   });
 });
 
+describe("UpnpProvider discovery", () => {
+  it("looks once more when the router misses the first broadcast", async () => {
+    let n = 0;
+    const run: UpnpcRunner = async () => (++n === 1 ? "No IGD UPnP Device found on the network !\n" : LIST);
+    expect((await new UpnpProvider(run).list()).map((m) => m.port)).toEqual([8211]);
+    expect(n).toBe(2);
+  });
+});
+
 describe("UpnpProvider", () => {
   it("adds a tagged mapping with the right upnpc arguments", async () => {
     const { run, calls } = fakeUpnpc("ExternalIPAddress = 1.2.3.4\n");
