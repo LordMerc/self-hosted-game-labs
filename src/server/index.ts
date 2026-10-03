@@ -9,6 +9,7 @@ import { openDb } from "./db/index.js";
 import { CloudflareClient } from "./dns/cloudflare.js";
 import { DockerodeDriver } from "./docker/driver.js";
 import { ServerService } from "./servers/service.js";
+import { detectLanIp } from "./lan-ip.js";
 import { loadTemplates } from "./templates/loader.js";
 
 /** Sessions need a stable secret. Use SESSION_SECRET if given, otherwise generate one once and keep it in the data dir. */
@@ -24,6 +25,7 @@ function sessionSecret(): string | undefined {
 }
 
 const config = loadConfig({ ...process.env, SESSION_SECRET: sessionSecret() });
+config.HOST_LAN_IP ||= detectLanIp();
 const { db } = openDb(path.join(config.DATA_DIR, "panel.db"));
 const templates = loadTemplates(config.TEMPLATES_DIR);
 const docker = new DockerodeDriver();
