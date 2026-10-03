@@ -7,6 +7,7 @@ import { DeployDialog } from "./DeployDialog";
 import { HiddenIp, isIpAddress } from "./HiddenIp";
 import { Icon, type IconName } from "./Icons";
 import { LogViewer } from "./LogViewer";
+import { limitText } from "./Limits";
 import { Nav, type Page } from "./Nav";
 import { NetworkPanel } from "./NetworkPanel";
 import { UpdateBanner } from "./UpdateNotice";
@@ -271,6 +272,14 @@ export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: 
                                 {stats.servers[s.id].cpuPercent == null ? "CPU —" : `CPU ${stats.servers[s.id].cpuPercent!.toFixed(stats.servers[s.id].cpuPercent! < 10 ? 1 : 0)}%`} · {bytes(stats.servers[s.id].memBytes)}
                               </div>
                             )}
+                            {limitText(s.limits) && (
+                              <div className="muted usage" title="The most CPU and memory this server may use. Change it on the server's page.">
+                                Limit {limitText(s.limits)}
+                              </div>
+                            )}
+                            {s.limits.warnings.map((w) => (
+                              <div key={w} className="warn small-text wrap">{w}</div>
+                            ))}
                             {s.lastError && <div className="error small-text">{s.lastError}</div>}
                           </td>
                           <td>

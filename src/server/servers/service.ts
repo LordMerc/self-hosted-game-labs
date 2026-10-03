@@ -2,6 +2,7 @@ import { chownSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { randomBytes, randomUUID } from "node:crypto";
 import path from "node:path";
 import net from "node:net";
+import os from "node:os";
 import { eq } from "drizzle-orm";
 import type { Config } from "../config.js";
 import type { Db } from "../db/index.js";
@@ -21,6 +22,7 @@ import type { TcpProbe } from "../reachability.js";
 import { queryMinecraft } from "../players/minecraft.js";
 import type { NotifyEvent, NotifySink } from "../notifications/notifier.js";
 import { slugify, uniqueSlug } from "../slug.js";
+import { checkCpus, checkMemory, limitWarnings, type Limits } from "./limits.js";
 
 export class UserError extends Error {
   constructor(
@@ -39,6 +41,10 @@ export interface DeployRequest {
   /** Optional manual port choices keyed by template port name. */
   ports?: Record<string, number>;
   access?: "private" | "public";
+  /** Most CPU cores the game may use (e.g. 1.5). Empty or null: no limit. */
+  cpus?: number | null;
+  /** Most memory the game may use, in MB. Empty or null: no limit. */
+  memoryMb?: number | null;
   /** Set the new server up from this backup: its world is put in place before the server first starts. */
   restoreFrom?: { slug: string; name: string };
 }
@@ -74,6 +80,8 @@ export interface ServiceDeps {
   /** TCP probe used for readiness; injectable for tests. */
   probeTcp?: (port: number) => Promise<boolean>;
   stableMs?: number;
+  /** Number of CPU cores on this machine, the highest CPU limit Docker accepts. Defaults to the real count. */
+  hostCores?: number;
   /** Asks an outside machine whether a TCP port answers. Absent or null: the outside check is off. */
   portProbe?: TcpProbe | null;
   /** Sets a folder's owner; injectable because tests do not run as root. */
@@ -185,7 +193,7 @@ export class ServerService {
   }
 
   /** Set up a server from any Docker image. Ports are used exactly as given, because the image decides where it listens. */
-  async deployCustom(req: CustomInput & { access?: "private" | "public" }): Promise<string> {
+  async deployCustom(req: CustomInput & { access?: "private" | "public"; cpus?: number | null; memoryMb?: number | null }): Promise<string> {
     const name = req.name.trim();
     if (!name || name.length > 60) throw new UserError("Give the server a name (up to 60 characters)");
     const problem = checkCustomInput(req);
@@ -199,6 +207,8 @@ export class ServerService {
         env: req.env,
         ports: Object.fromEntries(t.ports.map((p) => [p.name, p.default])),
         access: req.access,
+        cpus: req.cpus,
+        memoryMb: req.memoryMb,
       });
       this.saveCustomTemplates();
       return id;
@@ -282,6 +292,15 @@ export class ServerService {
     }
   }
 
+  /** Check the limits a request carries. Throws a message for the person if one is not usable. */
+  private checkLimits(cpus: unknown, memoryMb: unknown): Limits {
+    const c = checkCpus(cpus, this.d.hostCores ?? os.availableParallelism());
+    if (!c.ok) throw new UserError(c.message, 400, { field: c.field });
+    const m = checkMemory(memoryMb);
+    if (!m.ok) throw new UserError(m.message, 400, { field: m.field });
+    return { cpus: c.value, memoryMb: m.value };
+  }
+
   private takenPorts(): Set<PortKey> {
     return new Set(this.d.db.select().from(schema.serverPorts).all().map((p) => portKey(p.port, p.protocol)));
   }
@@ -310,6 +329,8 @@ export class ServerService {
       checkEnvValue(key, def, v);
       if (v) env[key] = v;
     }
+
+    const limits = this.checkLimits(req.cpus, req.memoryMb);
 
     const taken = this.takenPorts();
     const busy = this.busyPorts();
@@ -348,10 +369,11 @@ export class ServerService {
     }
 
     this.d.db.transaction((tx) => {
-      tx.insert(schema.servers).values({ id, slug, name, templateId: t.id, status: "deploying", access: "private", env, createdAt: new Date() }).run();
+      tx.insert(schema.servers).values({ id, slug, name, templateId: t.id, status: "deploying", access: "private", env, cpus: limits.cpus, memoryMb: limits.memoryMb, createdAt: new Date() }).run();
       for (const a of allocation) tx.insert(schema.serverPorts).values({ serverId: id, name: a.name, port: a.port, protocol: a.protocol }).run();
     });
     this.event(id, "info", `Deploy started from template ${t.id}${req.restoreFrom ? `, with the world from backup ${req.restoreFrom.name}` : ""}`);
+    for (const w of limitWarnings(t, limits)) this.event(id, "warn", w);
 
     const job = this.runDeploy(id, req.access ?? "private");
     if (this.d.background === false) await job;
@@ -405,6 +427,8 @@ export class ServerService {
         env,
         ...(t.command ? { command: expandCommand(t.command, env) } : {}),
         ...(t.tty ? { tty: true } : {}),
+        ...(row.cpus ? { nanoCpus: Math.round(row.cpus * 1e9) } : {}),
+        ...(row.memoryMb ? { memoryBytes: row.memoryMb * 1024 * 1024 } : {}),
         ports: ports.map((p) => ({ port: p.port, protocol: p.protocol })),
         binds,
         labels: { [LABEL_MANAGED]: "true", [LABEL_ID]: id, [LABEL_SLUG]: row.slug },
@@ -767,6 +791,7 @@ export class ServerService {
         templateName: tpl?.name ?? r.templateId,
         status: r.status,
         starting: starting.has(r.id),
+        limits: { cpus: r.cpus, memoryMb: r.memoryMb, warnings: tpl ? limitWarnings(tpl, { cpus: r.cpus, memoryMb: r.memoryMb }) : [] },
         access: r.access,
         lastError: r.lastError,
         ports: sp.map((p) => ({ name: p.name, port: p.port, protocol: p.protocol })),
@@ -861,6 +886,7 @@ export class ServerService {
         value: def.secret ? null : (row.env[key] ?? ""),
         isSet: Boolean(row.env[key]),
       })),
+      minMemoryMb: tpl.resources.minMemoryMb ?? null,
       console: tpl.console ? { examples: tpl.console.examples } : null,
       events: this.events(id, 30).reverse(),
     };
@@ -871,7 +897,7 @@ export class ServerService {
    * container (the world data folder is kept) and the server restarts. A name-only change is instant.
    * For each setting: left out = unchanged; empty = cleared (or a new random value for a generated password).
    */
-  async updateSettings(id: string, input: { name?: string; env?: Record<string, string> }): Promise<{ restarting: boolean }> {
+  async updateSettings(id: string, input: { name?: string; env?: Record<string, string>; cpus?: number | null; memoryMb?: number | null }): Promise<{ restarting: boolean }> {
     const row = this.row(id);
     const tpl = this.template(row.templateId);
     if (row.status === "deploying" || row.status === "updating") throw new UserError("Wait for the server to finish starting before changing its settings", 409);
@@ -891,13 +917,17 @@ export class ServerService {
       else delete env[key];
     }
     const envChanged = JSON.stringify(Object.entries(env).sort()) !== JSON.stringify(Object.entries(row.env).sort());
+    // A limit that is left out stays as it is; null (or empty) removes it.
+    const limits = this.checkLimits(input.cpus === undefined ? row.cpus : input.cpus, input.memoryMb === undefined ? row.memoryMb : input.memoryMb);
+    const limitsChanged = limits.cpus !== row.cpus || limits.memoryMb !== row.memoryMb;
 
-    this.d.db.update(schema.servers).set({ name, env }).where(eq(schema.servers.id, id)).run();
-    if (!envChanged) {
+    this.d.db.update(schema.servers).set({ name, env, cpus: limits.cpus, memoryMb: limits.memoryMb }).where(eq(schema.servers.id, id)).run();
+    if (!envChanged && !limitsChanged) {
       if (name !== row.name) this.event(id, "info", "Renamed");
       return { restarting: false };
     }
-    this.event(id, "info", "Settings changed; recreating the container to apply them (world data is kept)");
+    this.event(id, "info", `${limitsChanged ? "Limits" : "Settings"} changed; recreating the container to apply them (world data is kept)`);
+    if (limitsChanged) for (const w of limitWarnings(tpl, limits)) this.event(id, "warn", w);
     if (row.containerId) {
       this.setStatus(id, "updating");
       try {

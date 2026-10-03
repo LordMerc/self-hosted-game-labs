@@ -148,12 +148,13 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
   const idParam = (req: { params: unknown }) => (req.params as { id: string }).id;
 
   app.get("/api/templates", async () =>
-    templates.filter((t) => !isCustomId(t.id)).map(({ id, name, image, maxPlayers, notes, join, ports, env }) => ({
+    templates.filter((t) => !isCustomId(t.id)).map(({ id, name, image, maxPlayers, notes, resources, join, ports, env }) => ({
       id,
       name,
       image,
       maxPlayers,
       notes,
+      minMemoryMb: resources.minMemoryMb ?? null,
       join,
       ports,
       env: Object.entries(env).map(([key, v]) => ({ key, ...v })),
@@ -176,6 +177,8 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
     env: z.record(z.string(), z.string()).optional(),
     ports: z.record(z.string(), z.number()).optional(),
     access: z.enum(["private", "public"]).optional(),
+    cpus: z.number().nullable().optional(),
+    memoryMb: z.number().nullable().optional(),
   });
   app.post("/api/servers", async (req, reply) => {
     const body = deployBody.safeParse(req.body);
@@ -192,6 +195,8 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
     dataPath: z.string().trim().optional(),
     dataOwner: z.string().trim().optional(),
     access: z.enum(["private", "public"]).optional(),
+    cpus: z.number().nullable().optional(),
+    memoryMb: z.number().nullable().optional(),
   });
   app.post("/api/servers/custom", async (req, reply) => {
     const body = customBody.safeParse(req.body);
@@ -241,7 +246,7 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
 
   app.get("/api/servers/:id", async (req) => service.detail(idParam(req)));
   app.put("/api/servers/:id/settings", async (req, reply) => {
-    const body = z.object({ name: z.string().optional(), env: z.record(z.string(), z.string()).optional() }).safeParse(req.body);
+    const body = z.object({ name: z.string().optional(), env: z.record(z.string(), z.string()).optional(), cpus: z.number().nullable().optional(), memoryMb: z.number().nullable().optional() }).safeParse(req.body);
     if (!body.success) throw new UserError(body.error.issues[0].message);
     const r = await service.updateSettings(idParam(req), body.data);
     return reply.code(r.restarting ? 202 : 200).send(r);
