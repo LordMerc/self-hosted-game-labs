@@ -1,7 +1,8 @@
 # Runs the published image from ghcr.io instead of building from source:
 #   docker compose -f compose.image.yaml up -d
 # Same settings as compose.yaml (a .env file next to this file, or the stack's environment variables).
-# Pin IMAGE_TAG to a release (for example 1.0.0) if you do not want to follow :latest.
+# :latest is the newest release (it does not change on every commit). Pin IMAGE_TAG to a version (for example 0.1.0)
+# to stay put, or set IMAGE_TAG=beta to try the preview image.
 services:
   gamelabs:
     image: ghcr.io/lordmerc/self-hosted-game-labs:${IMAGE_TAG:-latest}
