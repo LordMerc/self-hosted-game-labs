@@ -1,0 +1,20 @@
+name: Feature request
+description: An idea for the panel
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like the panel to do
+    validations:
+      required: true
+  - type: textarea
+    id: other
+    attributes:
+      label: Anything you do today instead

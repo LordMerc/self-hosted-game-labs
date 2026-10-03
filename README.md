@@ -54,3 +54,7 @@ Game templates live in `templates/*.yaml` and are validated on startup against `
 ## License
 
 MIT
+
+## Contributing
+
+Changes go through pull requests so CI can check them; see [CONTRIBUTING.md](CONTRIBUTING.md).
