@@ -7,7 +7,8 @@ import { isCustomId } from "./servers/custom.js";
 import { z } from "zod";
 import { parseTrustProxy, type Config } from "./config.js";
 import type { Db } from "./db/index.js";
-import type { GameTemplate } from "../shared/template.js";
+import { isArtworkUrl, type GameTemplate } from "../shared/template.js";
+import type { ArtworkCache } from "./templates/artwork.js";
 import type { ContainerDriver } from "./docker/driver.js";
 import { ServerService, UserError } from "./servers/service.js";
 import { CloudflareClient } from "./dns/cloudflare.js";
@@ -41,12 +42,14 @@ export interface AppDeps {
   /** Injectable for tests. */
   updates?: UpdateChecker;
   loginGuard?: LoginGuardOptions;
+  /** Pictures that templates link to, fetched into the data folder. Without it, linked pictures are never shown. */
+  artwork?: ArtworkCache;
 }
 
 const passwordBody = z.object({ password: z.string().min(1) });
 const newPasswordBody = z.object({ password: z.string().min(10, "Use at least 10 characters") });
 
-export function buildApp({ config, db, templates, service, docker, dnsSettings, notifier, inspectToken = CloudflareClient.inspect, hostStats = new HostStats([config.GAMESERVERS_DIR, config.DATA_DIR]), history = new StatsHistory({ store: settingsPeakStore(db) }), webRoot, updates = new UpdateChecker(db, { current: runningVersion(config.APP_VERSION), envEnabled: config.UPDATE_CHECK === "on" }), loginGuard }: AppDeps): FastifyInstance {
+export function buildApp({ config, db, templates, service, docker, dnsSettings, notifier, inspectToken = CloudflareClient.inspect, hostStats = new HostStats([config.GAMESERVERS_DIR, config.DATA_DIR]), history = new StatsHistory({ store: settingsPeakStore(db) }), webRoot, artwork, updates = new UpdateChecker(db, { current: runningVersion(config.APP_VERSION), envEnabled: config.UPDATE_CHECK === "on" }), loginGuard }: AppDeps): FastifyInstance {
   // Behind a reverse proxy the connection comes from the proxy; TRUST_PROXY says whose word to take for the visitor's address and HTTPS.
   const app = Fastify({ logger: false, trustProxy: parseTrustProxy(config.TRUST_PROXY) });
   const guard = new LoginGuard(loginGuard);
@@ -151,32 +154,46 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
 
   const idParam = (req: { params: unknown }) => (req.params as { id: string }).id;
 
+  /** The picture file for a template's card, or null when it has none or it is not there (the card then keeps its gradient). */
+  const artworkOf = (t: GameTemplate | undefined): { file: string; type: string } | null => {
+    if (!t?.artwork) return null;
+    if (isArtworkUrl(t.artwork)) return artwork?.get(t.id) ?? null;
+    const root = path.resolve(config.TEMPLATES_DIR);
+    const file = path.resolve(root, t.artwork);
+    const type = ARTWORK_TYPES[path.extname(file).toLowerCase()];
+    return type && file.startsWith(root + path.sep) && existsSync(file) ? { file, type } : null;
+  };
+
   app.get("/api/templates", async () =>
-    templates.filter((t) => !isCustomId(t.id)).map(({ id, name, image, maxPlayers, notes, resources, join, ports, env, accent, artwork, playerCount }) => ({
-      id,
-      accent: accent ?? null,
-      artwork: artwork && existsSync(path.join(config.TEMPLATES_DIR, artwork)) ? `/api/templates/${id}/artwork` : null,
-      name,
-      image,
-      maxPlayers,
-      /** Whether the panel can read this game's live player count; false means it never will, so the page says so. */
-      reportsPlayers: Boolean(playerCount) || ports.some((p) => p.query !== "none"),
-      notes,
-      minMemoryMb: resources.minMemoryMb ?? null,
-      join,
-      ports,
-      env: Object.entries(env).map(([key, v]) => ({ key, ...v })),
-    })),
+    templates
+      .filter((t) => !isCustomId(t.id))
+      .map((t) => {
+        const hasArt = artworkOf(t) !== null;
+        return {
+          id: t.id,
+          accent: t.accent ?? null,
+          artwork: hasArt ? `/api/templates/${t.id}/artwork` : null,
+          artworkCredit: hasArt ? (t.artworkCredit ?? null) : null,
+          artworkPosition: hasArt ? (t.artworkPosition ?? 50) : 50,
+          name: t.name,
+          image: t.image,
+          maxPlayers: t.maxPlayers,
+          /** Whether the panel can read this game's live player count; false means it never will, so the page says so. */
+          reportsPlayers: Boolean(t.playerCount) || t.ports.some((p) => p.query !== "none"),
+          notes: t.notes,
+          minMemoryMb: t.resources.minMemoryMb ?? null,
+          join: t.join,
+          ports: t.ports,
+          env: Object.entries(t.env).map(([key, v]) => ({ key, ...v })),
+        };
+      }),
   );
 
-  /** Optional picture a template ships for its card. Only files inside the templates folder, with an image extension, are served. */
+  /** A template's card picture: a file inside the templates folder, or one the panel fetched from the template's link into its data folder. The visitor's browser never contacts the publisher. */
   app.get("/api/templates/:id/artwork", async (req, reply) => {
-    const t = templates.find((x) => x.id === idParam(req));
-    const root = path.resolve(config.TEMPLATES_DIR);
-    const file = t?.artwork ? path.resolve(root, t.artwork) : null;
-    const type = file ? ARTWORK_TYPES[path.extname(file).toLowerCase()] : undefined;
-    if (!file || !type || !file.startsWith(root + path.sep) || !existsSync(file)) return reply.code(404).send({ error: "no artwork" });
-    return reply.header("cache-control", "public, max-age=3600").type(type).send(readFileSync(file));
+    const found = artworkOf(templates.find((x) => x.id === idParam(req)));
+    if (!found) return reply.code(404).send({ error: "no artwork" });
+    return reply.header("cache-control", "public, max-age=3600").type(found.type).send(readFileSync(found.file));
   });
 
   app.get("/api/templates/:id/plan", async (req) => ({ ports: service.planPorts(idParam(req)) }));

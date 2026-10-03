@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/server/app.js";
 import { loadConfig } from "../src/server/config.js";
 import { openDb } from "../src/server/db/index.js";
-import { loadTemplates } from "../src/server/templates/loader.js";
+import { ArtworkCache } from "../src/server/templates/artwork.js";
+import { loadTemplates, parseTemplate } from "../src/server/templates/loader.js";
 import { ServerService } from "../src/server/servers/service.js";
 import { FakeConnectivity, FakeDocker } from "./helpers/fakes.js";
 import { DnsSettings } from "../src/server/dns/settings.js";
@@ -150,6 +151,58 @@ describe("stats", () => {
     // The panel can read a player count for these games and cannot for the rest, which the page says instead of showing a blank.
     expect(Object.fromEntries(list.map((t) => [t.id, t.reportsPlayers]))).toMatchObject({ palworld: true, minecraft: true, valheim: true, dragonwilds: false, satisfactory: false, terraria: false });
     expect((await app.inject({ url: "/api/templates/palworld/artwork", headers })).statusCode).toBe(404);
+  });
+});
+
+describe("template artwork from a link", () => {
+  const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(32, 1)]);
+  const yaml = (artwork: string) => `id: demo\nname: Demo\nimage: example/demo:1\nartwork: ${artwork}\nartworkCredit: Press kit, non-commercial community use\nports:\n  - { name: game, default: 7777, protocol: udp }\n`;
+  const build = (artwork: string, fetcher: () => Promise<{ body: Buffer }>, templatesDir?: string) => {
+    const cfg = templatesDir ? loadConfig({ SESSION_SECRET: "x".repeat(32), DATA_DIR: "/tmp/unused", GAMESERVERS_DIR: games, TEMPLATES_DIR: templatesDir }) : config;
+    const { db } = openDb(":memory:");
+    const templates = [parseTemplate(yaml(artwork))];
+    const cache = new ArtworkCache(mkdtempSync(path.join(os.tmpdir(), "gl-art-")), { fetcher });
+    const docker = new FakeDocker();
+    const service = new ServerService({ config: cfg, db, templates, docker, connectivity: new FakeConnectivity(), hostPorts: () => new Set(), background: false, stableMs: 0 });
+    return { cache, templates, app: buildApp({ config: cfg, db, templates, service, docker, dnsSettings: new DnsSettings(db, cfg), notifier: new Notifier(db, cfg), artwork: cache }) };
+  };
+  const signIn = async (a: FastifyInstance) => ({ cookie: cookieOf(await a.inject({ method: "POST", url: "/api/auth/setup", payload: { password: "correct horse battery" } })) });
+  type Listed = { artwork: string | null; artworkCredit: string | null };
+
+  it("shows no artwork until the panel has fetched the picture, then serves it from the panel itself", async () => {
+    const t = build("https://cdn.example.com/demo.png", async () => ({ body: PNG }));
+    const headers = await signIn(t.app);
+    expect(((await t.app.inject({ url: "/api/templates", headers })).json() as Listed[])[0]).toMatchObject({ artwork: null, artworkCredit: null });
+    expect((await t.app.inject({ url: "/api/templates/demo/artwork", headers })).statusCode).toBe(404);
+
+    await t.cache.refresh(t.templates);
+    expect(((await t.app.inject({ url: "/api/templates", headers })).json() as Listed[])[0]).toMatchObject({ artwork: "/api/templates/demo/artwork", artworkCredit: "Press kit, non-commercial community use" });
+    const img = await t.app.inject({ url: "/api/templates/demo/artwork", headers });
+    expect(img.statusCode).toBe(200);
+    expect(img.headers["content-type"]).toMatch(/image\/png/);
+    expect(img.rawPayload.equals(PNG)).toBe(true);
+    expect((await t.app.inject("/api/templates/demo/artwork")).statusCode).toBe(401);
+  });
+
+  it("keeps the gradient (artwork null) when the fetch fails", async () => {
+    const t = build("https://cdn.example.com/demo.png", () => Promise.reject(new Error("timed out")));
+    const headers = await signIn(t.app);
+    await t.cache.refresh(t.templates);
+    expect(((await t.app.inject({ url: "/api/templates", headers })).json() as Listed[])[0].artwork).toBeNull();
+  });
+
+  it("still serves a local file from the templates folder, and offers nothing when the file is missing", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "gl-tpl-"));
+    mkdirSync(path.join(dir, "artwork"));
+    writeFileSync(path.join(dir, "artwork", "demo.png"), PNG);
+    const there = build("artwork/demo.png", () => Promise.reject(new Error("unused")), dir);
+    const headers = await signIn(there.app);
+    expect(((await there.app.inject({ url: "/api/templates", headers })).json() as Listed[])[0].artwork).toBe("/api/templates/demo/artwork");
+    expect((await there.app.inject({ url: "/api/templates/demo/artwork", headers })).statusCode).toBe(200);
+
+    const gone = build("artwork/gone.png", () => Promise.reject(new Error("unused")), dir);
+    const h2 = await signIn(gone.app);
+    expect(((await gone.app.inject({ url: "/api/templates", headers: h2 })).json() as Listed[])[0].artwork).toBeNull();
   });
 });
 

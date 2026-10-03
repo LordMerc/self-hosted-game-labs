@@ -46,6 +46,35 @@ const envVarSchema = z
 /** A path inside a server's data folder: plain names joined by slashes, no `..`. */
 const relPath = z.string().regex(/^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/, "must be a relative path of plain names").refine((p) => !p.split("/").some((x) => x === ".." || x === "."), "must not contain . or .. parts");
 
+const ARTWORK_EXT = /\.(png|jpe?g|webp)$/i;
+
+/** Whether an `artwork` value is a link rather than a path inside the templates folder. */
+export const isArtworkUrl = (v: string) => /^[a-z][a-z0-9+.-]*:\/\//i.test(v);
+
+/** Why an `artwork` value is not allowed, or null when it is fine. A link must be https, name a public host (no IP addresses or local names) and end in png, jpg or webp. */
+export function artworkProblem(v: string): string | null {
+  if (!isArtworkUrl(v)) {
+    if (!/^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/.test(v) || !ARTWORK_EXT.test(v)) return "must be an https link, or a relative png, jpg or webp path of plain names";
+    return v.split("/").some((x) => x === ".." || x === ".") ? "must not contain . or .. parts" : null;
+  }
+  if (v.length > 500) return "link is too long";
+  let u: URL;
+  try {
+    u = new URL(v);
+  } catch {
+    return "is not a valid link";
+  }
+  if (u.protocol !== "https:") return "link must use https";
+  if (u.username || u.password) return "link must not contain a user name or password";
+  if (u.port && u.port !== "443") return "link must use the standard https port";
+  if (u.hash) return "link must not contain a # part";
+  const host = u.hostname.toLowerCase();
+  if (host.includes(":") || /^[0-9.]+$/.test(host) || /^0x/i.test(host)) return "link must use a host name, not an IP address";
+  if (!host.includes(".") || /\.(local|localhost|internal|lan|home|corp)$/.test(host)) return "link must point at a public host name";
+  if (!ARTWORK_EXT.test(u.pathname)) return "link must end in .png, .jpg or .webp";
+  return null;
+}
+
 // `.strict()` everywhere: unknown keys (privileged, networkMode, binds, ...) are rejected rather than
 // ignored, so a template can never smuggle in container options the panel does not deliberately support.
 export const templateSchema = z
@@ -56,8 +85,21 @@ export const templateSchema = z
     maxPlayers: z.number().int().positive().optional(),
     /** Colour for the game's card and icon (a hex colour such as `#4ade80`). Without it the panel picks one from the game's id. */
     accent: z.string().regex(/^#[0-9a-fA-F]{6}$/, "must be a hex colour such as #4ade80").optional(),
-    /** Optional picture for the game's card: a png, jpg or webp inside the templates folder, such as `artwork/palworld.webp`. Nothing is shipped by default; the card uses a gradient. */
-    artwork: z.string().regex(/^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*\.(png|jpe?g|webp)$/i, "must be a relative png, jpg or webp path of plain names").refine((p) => !p.split("/").some((x) => x === ".." || x === "."), "must not contain . or .. parts").optional(),
+    /**
+     * Optional picture for the game's card: a png, jpg or webp inside the templates folder (`artwork/palworld.webp`), or an https link to one.
+     * The panel fetches a link once and keeps the file in its data folder, so visitors never contact the publisher. Nothing is shipped by default; the card uses a gradient.
+     */
+    artwork: z
+      .string()
+      .superRefine((v, ctx) => {
+        const problem = artworkProblem(v);
+        if (problem) ctx.addIssue({ code: "custom", message: problem });
+      })
+      .optional(),
+    /** Where the picture came from and the terms it is used under; shown as a small tooltip on the card. */
+    artworkCredit: z.string().trim().min(1).max(300).optional(),
+    /** Which part of a tall picture the banner keeps, as a percentage from the top (0) to the bottom (100). Default 50, the middle. */
+    artworkPosition: z.number().int().min(0).max(100).optional(),
     /** What the game needs to run well. A memory cap below `minMemoryMb` gets a warning (the cap is still allowed). */
     resources: z.object({ minMemoryMb: z.number().int().positive().optional() }).strict().default({}),
     /** Shown in the deploy form: what to know before starting (memory needs, first-run steps). */

@@ -7,6 +7,8 @@ image: thijsvanloef/palworld-server-docker:v2.8.0
 # so the panel offers a newer version tag as an update instead of taking it silently.
 versionPattern: "^v\\d+\\.\\d+\\.\\d+$"
 accent: "#4ade80"
+artwork: https://cdn.cloudflare.steamstatic.com/steam/apps/1623730/library_hero.jpg
+artworkCredit: "Steam store art for Palworld, © Pocketpair. Shown as the game's store picture, not under an open license"
 maxPlayers: 32
 join:
   method: direct
