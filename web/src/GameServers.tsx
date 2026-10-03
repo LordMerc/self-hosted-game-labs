@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type Network, type Server, type Template } from "./api";
 import { CopyButton } from "./CopyButton";
 import { DeployDialog } from "./DeployDialog";
+import { HiddenIp, isIpAddress } from "./HiddenIp";
 import { Icon, type IconName } from "./Icons";
 import { LogViewer } from "./LogViewer";
 import { Nav, type Page } from "./Nav";
@@ -201,7 +202,9 @@ export function GameServers({ onLogout, onNavigate }: { onLogout: () => void; on
                           <td>
                             <div className="address">
                               <div>
-                                <div className={`mono addr-main${s.access === "private" ? " dim" : ""}`}>{primary ?? "—"}</div>
+                                <div className={`mono addr-main${s.access === "private" ? " dim" : ""}`}>
+                                  {primary && isIpAddress(primary) && primary === s.connect.public ? <HiddenIp value={primary} /> : (primary ?? "—")}
+                                </div>
                                 {s.connect.public && s.connect.lan && <div className="mono muted addr-sub">LAN {s.connect.lan}</div>}
                                 {s.connect.instructions && <div className="muted small-text wrap">{s.connect.instructions}</div>}
                                 {s.access === "public" && s.pendingRules.length === 0 && (

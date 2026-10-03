@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, type Network } from "./api";
-import { CopyButton } from "./CopyButton";
+import { HiddenIp } from "./HiddenIp";
 import { Icon } from "./Icons";
 
 function ago(iso: string | null) {
@@ -50,9 +50,7 @@ export function NetworkPanel({ network, onChange }: { network: Network | null; o
           <dt>Public IP</dt>
           <dd className="mono">
             {network.publicIp ? (
-              <>
-                {network.publicIp} <CopyButton text={network.publicIp} label="Copy public IP" />
-              </>
+              <HiddenIp value={network.publicIp} copy />
             ) : (
               <span className="error">{network.ipError ?? "unknown"}</span>
             )}
@@ -119,7 +117,21 @@ export function NetworkPanel({ network, onChange }: { network: Network | null; o
             </div>
             <dl>
               <dt>Last update</dt>
-              <dd>{updated ? `${updated}${network.dns.lastIp ? ` · ${network.dns.lastIp}` : ""}` : "Not updated yet"}</dd>
+              <dd>
+                {updated ? (
+                  <>
+                    {updated}
+                    {network.dns.lastIp && (
+                      <>
+                        {" · "}
+                        <HiddenIp value={network.dns.lastIp} />
+                      </>
+                    )}
+                  </>
+                ) : (
+                  "Not updated yet"
+                )}
+              </dd>
             </dl>
             <p className="muted small-text">Proxy stays off. Cloudflare's proxy can't carry game traffic.</p>
             <button className="ghost small" onClick={ddns}>
