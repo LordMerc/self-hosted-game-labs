@@ -3,6 +3,7 @@ import cookie from "@fastify/cookie";
 import fastifyStatic from "@fastify/static";
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
+import { isCustomId } from "./servers/custom.js";
 import { z } from "zod";
 import type { Config } from "./config.js";
 import type { Db } from "./db/index.js";
@@ -114,7 +115,7 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
   const idParam = (req: { params: unknown }) => (req.params as { id: string }).id;
 
   app.get("/api/templates", async () =>
-    templates.map(({ id, name, image, maxPlayers, notes, join, ports, env }) => ({
+    templates.filter((t) => !isCustomId(t.id)).map(({ id, name, image, maxPlayers, notes, join, ports, env }) => ({
       id,
       name,
       image,
@@ -144,6 +145,22 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
     const body = deployBody.safeParse(req.body);
     if (!body.success) throw new UserError(body.error.issues[0].message);
     const id = await service.deploy(body.data);
+    return reply.code(202).send({ id });
+  });
+
+  const customBody = z.object({
+    name: z.string(),
+    image: z.string().trim(),
+    ports: z.array(z.object({ port: z.number(), protocol: z.enum(["tcp", "udp"]) })),
+    env: z.record(z.string(), z.string()).optional(),
+    dataPath: z.string().trim().optional(),
+    dataOwner: z.string().trim().optional(),
+    access: z.enum(["private", "public"]).optional(),
+  });
+  app.post("/api/servers/custom", async (req, reply) => {
+    const body = customBody.safeParse(req.body);
+    if (!body.success) throw new UserError("Fill in a name, an image and at least one port");
+    const id = await service.deployCustom(body.data);
     return reply.code(202).send({ id });
   });
 

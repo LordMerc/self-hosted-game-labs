@@ -647,4 +647,69 @@ describe("template settings", () => {
     expect(readFileSync(path.join(data, "gamefiles/big.bin"), "utf8")).toHaveLength(20_000);
     expect(readFileSync(path.join(data, "saved/world.sav"), "utf8")).toBe("save");
   });
+
+  it("sets up a server from any image, with its ports used exactly as given", async () => {
+    const id = await svc.deployCustom({
+      name: "My Bedrock",
+      image: "itzg/minecraft-bedrock-server:latest",
+      ports: [{ port: 19132, protocol: "udp" }],
+      env: { EULA: "TRUE", ADMIN_PASSWORD: "hunter22" },
+      dataPath: "/data/",
+      dataOwner: "1000:1000",
+    });
+    const c = [...docker.containers.values()][0];
+    expect(c.spec.image).toBe("itzg/minecraft-bedrock-server:latest");
+    expect(c.spec.env).toEqual({ EULA: "TRUE", ADMIN_PASSWORD: "hunter22" });
+    expect(c.spec.ports).toEqual([{ port: 19132, protocol: "udp" }]);
+    expect(c.spec.binds.map((b) => b.container)).toEqual(["/data"]);
+    const [s] = await svc.list();
+    expect(s).toMatchObject({ id, templateName: "Custom image", status: "online", secrets: ["ADMIN_PASSWORD"] });
+    expect(svc.secret(id, "ADMIN_PASSWORD")).toBe("hunter22");
+    // It survives a restart of the panel.
+    const templates: unknown[] = [];
+    const again = new ServerService({ ...(svc as unknown as { d: ConstructorParameters<typeof ServerService>[0] }).d, templates: templates as never });
+    expect(again).toBeDefined();
+    expect((templates as { id: string }[]).map((t) => t.id)).toEqual(["custom-my-bedrock"]);
+  });
+
+  it("does not shift a custom server's ports: a clash is reported instead", async () => {
+    hostBusy.add("19132/udp");
+    await expect(svc.deployCustom({ name: "B", image: "x/y", ports: [{ port: 19132, protocol: "udp" }] })).rejects.toMatchObject({ status: 409 });
+    expect((svc as unknown as { d: { templates: { id: string }[] } }).d.templates.some((t) => t.id.startsWith("custom-"))).toBe(false);
+  });
+
+  it.each([
+    [{ image: "bad image!" }, /Docker image name/],
+    [{ ports: [] }, /at least one port/],
+    [{ ports: [{ port: 80, protocol: "tcp" as const }] }, /not valid/],
+    [{ ports: [{ port: 2000, protocol: "tcp" as const }, { port: 2000, protocol: "tcp" as const }] }, /twice/],
+    [{ env: { "bad name": "x" } }, /not a valid setting name/],
+    [{ dataPath: "../etc" }, /inside the container/],
+    [{ dataPath: "//" }, /inside the container/],
+    [{ dataOwner: "me" }, /1000:1000/],
+  ])("rejects a custom server with a bad %j", async (bad, message) => {
+    await expect(svc.deployCustom({ name: "C", image: "x/y", ports: [{ port: 2000, protocol: "tcp" }], ...bad })).rejects.toThrow(message);
+  });
+
+  it("forgets a custom image once its server is deleted with nothing left to restore", async () => {
+    const templates = (svc as unknown as { d: { templates: { id: string }[] } }).d.templates;
+    const id = await svc.deployCustom({ name: "Temp", image: "x/y", ports: [{ port: 2000, protocol: "tcp" }], dataPath: "/data" });
+    await svc.remove(id); // data kept: the template stays so the server can be set up again
+    expect(templates.some((t) => t.id === "custom-temp")).toBe(true);
+    const id2 = await svc.deployCustom({ name: "Temp2", image: "x/y", ports: [{ port: 2001, protocol: "tcp" }] });
+    await svc.remove(id2);
+    expect(templates.some((t) => t.id === "custom-temp2")).toBe(false);
+  });
+
+  it("sets a deleted custom server up again from its backup on the same ports", async () => {
+    const id = await svc.deployCustom({ name: "Bedrock", image: "x/y", ports: [{ port: 19132, protocol: "udp" }], dataPath: "/data" });
+    writeFileSync(path.join(dir, "games", "bedrock", "level.dat"), "world");
+    const b = await svc.backup(id);
+    await svc.remove(id, { deleteData: true, confirmName: "Bedrock" });
+    const again = await svc.deploy({ templateId: "custom-bedrock", name: "Bedrock 2", restoreFrom: { slug: "bedrock", name: b.name } });
+    expect(readFileSync(path.join(dir, "games", "bedrock-2", "level.dat"), "utf8")).toBe("world");
+    const [s] = await svc.list();
+    expect(s.id).toBe(again);
+    expect(s.ports).toEqual([{ name: "udp-19132", port: 19132, protocol: "udp" }]);
+  });
 });
