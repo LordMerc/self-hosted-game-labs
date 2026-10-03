@@ -30,8 +30,8 @@ export function DeployDialog({ template, onClose, onDeployed }: { template: Temp
   }
 
   return (
-    <div className="backdrop" onClick={onClose}>
-      <form className="card dialog" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
+    <div className="backdrop">
+      <form className="card dialog" onSubmit={submit}>
         <h2>Deploy {template.name}</h2>
         <label>
           Server name
