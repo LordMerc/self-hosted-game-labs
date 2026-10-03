@@ -22,7 +22,7 @@ These are generated from the real app against a fake Docker and router with demo
 
 ### The server list
 
-Each row has a Stop/Start button, logs and a **...** menu (restart, backups, passwords, settings, make public or private, delete). The charts show the last 15 minutes the panel measured, and the player peak is today's highest count. On a laptop the Network health panel moves under the table; on a phone each server is a card.
+Each row has a Stop/Start button, logs and a **...** menu (restart, backups, passwords, settings, make public or private, delete). The charts show the last 15 minutes the panel measured, and the player peak is today's highest count. The Network health panel sits beside the table, and moves under it on narrower windows; on a phone each server is a card.
 
 ![The "..." menu open on a server row](docs/images/row-menu.png)
 ![The dashboard in a 1440 pixel wide window](docs/images/dashboard-1440.png)
