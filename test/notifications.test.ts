@@ -189,6 +189,8 @@ describe("server events", () => {
     docker = new FakeDocker();
     rec = new Recorder();
     players = { online: 0, max: 32 };
+    // Palworld is asked through its REST API inside the container, so the fake game answers there with the same numbers.
+    docker.execReply = (cmd) => (cmd.join(" ").includes("/v1/api/metrics") && players ? JSON.stringify({ currentplayernum: players.online, maxplayernum: players.max }) : "");
     svc = new ServerService({
       config: loadConfig({ SESSION_SECRET: "x".repeat(32), DATA_DIR: dir, GAMESERVERS_DIR: path.join(dir, "games") }),
       db: openDb(":memory:").db,
@@ -308,7 +310,7 @@ describe("server events", () => {
     await deploy();
     let asked = 0;
     players = { online: 1, max: 8 };
-    (svc as unknown as { d: { queryPlayers: unknown } }).d.queryPlayers = async () => (asked++, players);
+    docker.execReply = (cmd) => (cmd.join(" ").includes("/v1/api/metrics") ? (asked++, "{}") : "");
     rec.off = new Set<NotifyKind>(["playerJoin", "playerLeave"]);
     await svc.pollPlayers();
     expect(asked).toBe(0);

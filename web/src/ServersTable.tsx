@@ -82,6 +82,8 @@ export function ServersTable({
   const [testing, setTesting] = useState<string | null>(null);
   const post = (s: Server, what: string) => act(api(`/servers/${s.id}/${what}`, { method: "POST" }));
   const maxPlayers = (s: Server) => templates.find((t) => t.id === s.templateId)?.maxPlayers;
+  /** Known only for the shipped templates; a custom server's template is not in the list, so it says nothing either way. */
+  const noPlayerCount = (s: Server) => templates.find((t) => t.id === s.templateId)?.reportsPlayers === false;
 
   async function test(s: Server) {
     setTesting(s.id);
@@ -146,8 +148,9 @@ export function ServersTable({
                 <td data-label="Status">
                   <StatusPill server={s} />
                   {(live || max !== undefined) && (
-                    <div className="muted players" title={live ? "Players connected right now" : "This game does not report live player counts yet"}>
-                      <Icon name="users" size={13} /> {live ? `${live.online} / ${live.max || max || "?"} players` : `up to ${max} players`}
+                    <div className="muted players" title={live ? "Players connected right now" : noPlayerCount(s) ? "This game has no way for the panel to ask who is connected" : "The server has not reported a player count yet"}>
+                      <Icon name="users" size={13} />{" "}
+                      {live ? `${live.online} / ${live.max || max || "?"} players` : noPlayerCount(s) ? "player count not available for this game" : `up to ${max} players`}
                     </div>
                   )}
                   {use && (

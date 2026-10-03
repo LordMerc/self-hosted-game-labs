@@ -158,7 +158,7 @@ export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: 
         <UpdateBanner />
         {message && <p className="error banner">{message}</p>}
 
-        <StatTiles stats={stats} />
+        <StatTiles stats={stats} servers={servers ?? []} templates={templates} />
 
         <div className="layout">
           <div className="main-col">
