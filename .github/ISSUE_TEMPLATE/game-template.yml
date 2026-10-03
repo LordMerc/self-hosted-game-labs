@@ -1,0 +1,32 @@
+name: New game template
+description: Ask for a game to be added
+labels: [template]
+body:
+  - type: input
+    id: game
+    attributes:
+      label: Game
+    validations:
+      required: true
+  - type: input
+    id: image
+    attributes:
+      label: Docker image
+      description: The image you would use, and a link to its documentation.
+    validations:
+      required: true
+  - type: textarea
+    id: ports
+    attributes:
+      label: Ports
+      description: For example 8211/udp for the game and 27015/udp for queries.
+  - type: textarea
+    id: settings
+    attributes:
+      label: Settings players usually change
+      description: Server name, password, world name, player limit and so on.
+  - type: dropdown
+    id: tested
+    attributes:
+      label: Have you run this image yourself
+      options: ["Yes, it works", "Yes, with problems", "No"]
