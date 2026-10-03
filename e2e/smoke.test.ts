@@ -65,6 +65,16 @@ afterAll(async () => {
 
 const shot = (name: string) => (shots ? page.screenshot({ path: path.join(shots, `${name}.png`) }) : undefined);
 const row = (name: string) => page.locator("tbody tr", { hasText: name });
+/** Opens a row's "..." menu and picks an item. */
+/** Picks a template from the "View more" dialog, which holds every game and the custom image. */
+const pick = async (name: string) => {
+  await page.getByRole("button", { name: "View more" }).click();
+  await page.getByRole("dialog", { name: "All games" }).getByRole("button", { name }).click();
+};
+const choose = async (name: string, item: string) => {
+  await row(name).getByRole("button", { name: /More actions/ }).click();
+  await page.getByRole("menuitem", { name: item }).click();
+};
 
 describe("the panel in a browser", () => {
   it("asks for an admin password on first run, then shows the empty server list and the templates", async () => {
@@ -73,14 +83,22 @@ describe("the panel in a browser", () => {
     await page.getByPlaceholder("Password").fill(PASSWORD);
     await page.keyboard.press("Enter");
     await page.getByRole("heading", { name: "Game servers" }).waitFor();
+    // A few templates sit on the page; "View more" opens a dialog with all of them and the custom image, and Close puts it away.
+    expect(await page.locator(".deploy > .templates .template-card").count()).toBe(4);
+    await page.getByRole("button", { name: "View more" }).click();
+    const all = page.getByRole("dialog", { name: "All games" });
     for (const t of ["Palworld", "Minecraft (Java)", "Valheim", "Satisfactory", "Terraria", "Custom Docker image"]) {
-      await page.getByRole("button", { name: t }).waitFor();
+      await all.getByRole("button", { name: t }).waitFor();
     }
+    await page.mouse.click(5, 5); // clicking outside does not close it
+    await all.waitFor();
+    await all.getByRole("button", { name: "Close" }).click();
+    await all.waitFor({ state: "detached" });
     await shot("1-empty");
   });
 
   it("deploys a template from the form and shows the server running", async () => {
-    await page.getByRole("button", { name: "Palworld" }).first().click();
+    await pick("Palworld");
     await page.getByRole("heading", { name: "Deploy Palworld" }).waitFor();
     await page.getByRole("button", { name: "Deploy", exact: true }).click();
     await row("Palworld").getByText("Running").waitFor();
@@ -88,7 +106,7 @@ describe("the panel in a browser", () => {
   });
 
   it("makes the user choose the Minecraft EULA, and shows what the choices are", async () => {
-    await page.getByRole("button", { name: "Minecraft (Java)" }).click();
+    await pick("Minecraft (Java)");
     const eula = page.getByLabel(/Accept the Minecraft EULA/);
     expect(await eula.locator("option").allTextContents()).toEqual(["Choose…", "TRUE"]);
     await page.getByRole("button", { name: "Deploy", exact: true }).click();
@@ -101,7 +119,7 @@ describe("the panel in a browser", () => {
   });
 
   it("sets up a custom Docker image, and says so when a port is taken", async () => {
-    await page.getByRole("button", { name: "Custom Docker image" }).click();
+    await pick("Custom Docker image");
     await page.getByLabel("Server name").fill("Bedrock");
     await page.getByLabel("Docker image").fill("itzg/minecraft-bedrock-server:latest");
     await page.getByLabel("Ports the game uses").fill("25565/tcp");
@@ -109,12 +127,12 @@ describe("the panel in a browser", () => {
     await page.getByText(/already in use/).waitFor(); // Minecraft above holds 25565/tcp
     await page.getByLabel("Ports the game uses").fill("19132/udp");
     await page.getByRole("button", { name: "Deploy", exact: true }).click();
-    await row("Bedrock").getByText("Running").waitFor();
+    await row("Bedrock").getByText(/Running|Starting/).waitFor();
     await shot("3-custom");
   });
 
   it("warns when a memory limit is below what the game needs, shows the limit, and changes it from the server page", async () => {
-    await page.getByRole("button", { name: "Satisfactory" }).click();
+    await pick("Satisfactory");
     await page.getByRole("spinbutton", { name: /Memory limit/ }).fill("4");
     await page.getByText(/needs about 8 GB of memory, so a 4 GB limit/).waitFor();
     await page.getByRole("button", { name: "Deploy", exact: true }).click();
@@ -131,11 +149,16 @@ describe("the panel in a browser", () => {
   });
 
   it("checks a public server's port from outside and shows the answer", async () => {
-    await row("Minecraft").getByRole("button", { name: "Public" }).click();
-    await page.getByRole("button", { name: "Run" }).first().waitFor();
-    await page.getByRole("button", { name: "Run", exact: true }).first().click();
+    await choose("Minecraft", "Make public");
+    await row("Minecraft").getByText("Untested").waitFor();
+    await page.getByText("hasn't been tested from outside").waitFor(); // Network health flags it too
+    await row("Minecraft").getByRole("button", { name: /^Test / }).click();
+    await row("Minecraft").getByText("Reachable").waitFor();
+    await page.getByText(/reachable from the internet/).waitFor();
+    // The whole-network check lists each port it tried and names who was asked.
+    await page.getByRole("button", { name: "Check again" }).click();
     await page.getByText("Connected from 3 of 3 locations").waitFor();
-    await page.getByText("via fake-checker").waitFor();
+    await page.getByText(/sends your public IP and the port number to fake-checker/).waitFor();
     await shot("3b-port-check");
   });
 
@@ -173,12 +196,63 @@ describe("the panel in a browser", () => {
     await row("Palworld Prime").waitFor();
   });
 
+  it("has a row menu that stays on screen, closes on Escape and outside clicks, and names the icon buttons", async () => {
+    const more = row("Bedrock").getByRole("button", { name: /More actions/ });
+    await more.click();
+    const menu = page.getByRole("menu");
+    await menu.waitFor();
+    const box = (await menu.boundingBox())!;
+    const view = page.viewportSize()!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(view.width);
+    expect(box.y + box.height).toBeLessThanOrEqual(view.height);
+    await shot("3c-row-menu");
+    await page.keyboard.press("Escape");
+    await menu.waitFor({ state: "detached" });
+    await more.click();
+    await menu.waitFor();
+    await page.getByRole("heading", { name: "Game servers" }).click();
+    await menu.waitFor({ state: "detached" });
+    // The primary button says what it does, in words and to screen readers.
+    await row("Bedrock").getByRole("button", { name: "Stop Bedrock" }).waitFor();
+    await row("Bedrock").getByRole("button", { name: "Logs for Bedrock" }).waitFor();
+  });
+
+  it("shows Stopped, then Starting again, and answers the \"/\" shortcut by focusing the search box", async () => {
+    await row("Bedrock").getByRole("button", { name: "Stop Bedrock" }).click();
+    await row("Bedrock").getByText("Stopped").waitFor();
+    await row("Bedrock").getByRole("button", { name: "Start Bedrock" }).waitFor();
+    await page.getByRole("tab", { name: /^Stopped/ }).click();
+    expect(await row("Bedrock").count()).toBe(1);
+    expect(await row("Minecraft").count()).toBe(0); // running servers are filtered out
+    await page.getByRole("tab", { name: /^All/ }).click();
+    await row("Bedrock").getByRole("button", { name: "Start Bedrock" }).click();
+    await row("Bedrock").getByText(/Running|Starting/).waitFor();
+    await page.getByRole("heading", { name: "Game servers" }).click();
+    await page.keyboard.press("/");
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Search servers");
+    await page.keyboard.press("Escape");
+  });
+
+  it("lays the dashboard out without sideways scrolling at laptop, tablet and phone widths", async () => {
+    for (const [width, height] of [[1440, 900], [1024, 800], [390, 844]] as const) {
+      await page.setViewportSize({ width, height });
+      await page.waitForTimeout(150);
+      const wide = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      const culprits = wide <= 0 ? [] : await page.evaluate(() => [...document.querySelectorAll("body *")].filter((e) => e.getBoundingClientRect().right > window.innerWidth + 1).slice(0, 5).map((e) => `${e.tagName}.${e.className}`));
+      expect(wide, `${width}px wide; too wide: ${culprits.join(", ")}`).toBeLessThanOrEqual(0);
+      await shot(`3d-${width}`);
+    }
+    await page.setViewportSize({ width: 1300, height: 1100 });
+  });
+
   it("backs up a server, deletes it, and sets it up again from the Backups page", async () => {
-    await row("Palworld Prime").getByRole("button", { name: "Backups" }).click();
+    await choose("Palworld Prime", "Backups…");
     await page.getByRole("button", { name: "Back up now" }).click();
     await page.locator(".backup-list li").first().waitFor();
     await page.getByRole("button", { name: "Close" }).click();
-    await row("Palworld Prime").getByRole("button", { name: "Delete" }).click();
+    await choose("Palworld Prime", "Delete server…");
     await page.locator("tbody tr", { hasText: "Palworld Prime" }).waitFor({ state: "detached" });
 
     await page.getByRole("link", { name: "Backups" }).click();

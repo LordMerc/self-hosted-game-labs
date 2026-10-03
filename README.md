@@ -2,7 +2,7 @@
 
 **Run game servers at home without becoming a sysadmin.** Game Labs is an open-source control panel for your own hardware. Pick a game, click deploy, and the panel starts the container, opens the ports on your router, keeps a friendly name pointed at your home IP, and backs up your world. Friends join from the internet; you never touch Docker commands, your router's admin page or a DNS dashboard after first-time setup.
 
-![The Game Labs dashboard: host stats, a table of game servers with status, address, ports and a Private/Public switch, and the Network panel on the right](docs/images/dashboard.png)
+![The Game Labs dashboard: host stats with small charts, a table of game servers with status, address, ports and an Access column, and the Network health checklist on the right](docs/images/dashboard.png)
 
 > **Early release (v0.1.0).** Palworld and RuneScape: Dragonwilds are running on a real homelab, with friends joining over the internet. The other games are built and tested against fakes and throwaway containers but not played on yet. See [Supported games](#supported-games) and [docs/verification.md](docs/verification.md) for exactly what has and has not been tried.
 
@@ -11,14 +11,21 @@
 - **One-click game templates** for Palworld, RuneScape: Dragonwilds, Minecraft (Java), Valheim, Satisfactory and Terraria, plus a **Custom Docker image** card for anything else.
 - **Daily restarts and updates:** restart a server every day at a time you pick (with an in-game warning for games that can show one), check for a newer version of a game and switch to it after a backup, and move a server to another port, all from its page.
 - **Start, stop, restart, delete and live logs** for every server from one page, with CPU, memory and player counts.
-- **A Private / Public switch per server.** Public opens the game ports on your router (UPnP automatically, or a checklist of rules if your router has no UPnP) and gives the server a DNS name such as `palworld.example.com`.
+- **Private or Public per server.** Each row says which, and whether the server was reachable from outside. Public opens the game ports on your router (UPnP automatically, or a checklist of rules if your router has no UPnP) and gives the server a DNS name such as `palworld.example.com`.
 - **Backups that outlive the server.** Worlds are backed up automatically and on demand, deleting a server never deletes its backups, and a deleted server can be set up again from its backup.
-- **An honest Network panel.** It shows your public IP (blurred until you click the eye), the router rules the panel opened, your dynamic DNS record, and an optional outside port check that never says "open" without a real test.
+- **An honest Network health checklist.** Public IP (blurred until you click the eye), router ports, your dynamic DNS record and whether your servers can be reached from outside, each with one button for what to do about it. The outside check never says "open" without a real test.
 - **Setup inside the app.** Cloudflare is connected on the panel's Settings page, game options are edited on each server's page, and backup schedules on the Backups page, so there are no environment variables to juggle.
 
 ## Screenshots
 
 These are generated from the real app against a fake Docker and router with demo servers (see [docs/capture-screenshots.ts](docs/capture-screenshots.ts)). The demo public IP is blurred, as it is by default in the app.
+
+### The server list
+
+Each row has a Stop/Start button, logs and a **...** menu (restart, backups, passwords, settings, make public or private, delete). The charts show the last 15 minutes the panel measured, and the player peak is today's highest count. The Network health panel sits beside the table, and moves under it on narrower windows; on a phone each server is a card.
+
+![The "..." menu open on a server row](docs/images/row-menu.png)
+![The dashboard in a 1440 pixel wide window](docs/images/dashboard-1440.png)
 
 ### A server's page
 
@@ -32,11 +39,11 @@ Every backup in one place, including those of servers you have deleted. Pick one
 
 ![The Backups page listing each server's backups with Restore and Delete buttons, and a deleted server with a Set up again button](docs/images/backups.png)
 
-### The Network panel
+### Network health
 
 What the router forwards, what name your servers have, and a check from outside the house. The public IP stays blurred until you reveal it, so a screenshot of your dashboard does not leak it.
 
-![The Network panel: public IP (blurred), UPnP rules, Cloudflare dynamic DNS and the external port check results](docs/images/network-panel.png)
+![Network health: public IP (blurred), UPnP port mapping, Cloudflare dynamic DNS, external reachability and recent activity](docs/images/network-panel.png)
 
 ## Quick start
 
@@ -106,7 +113,7 @@ Design notes are in [docs/design.md](docs/design.md); what is built and what is 
 
 ### Port check, in short
 
-Press Run in the Network panel to test a public server's TCP ports from outside. UDP games cannot be tested that way, so the panel shows whether the router forwards the port and never says "open" without a real test. The test sends your public IP and port to a third-party checker (check-host.net) only when you press Run; set `PORT_CHECK=off` to remove it.
+Press **Test** on a server's row (or **Run check** in Network health) to test a public server's TCP ports from outside. UDP games cannot be tested that way, so the panel shows whether the router forwards the port and never says "open" without a real test. The test sends your public IP and port to a third-party checker (check-host.net) only when you press one of those; set `PORT_CHECK=off` to remove it.
 
 ## Trying changes before a release
 

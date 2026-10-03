@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type AuthStatus } from "./api";
+import { api, type AuthStatus, type UpdateState } from "./api";
 import { Icon } from "./Icons";
 
 export type Page = "servers" | "backups" | "settings";
@@ -12,7 +12,9 @@ export function Nav({ page, onNavigate, onLogout }: { page: Page; onNavigate: (p
     </a>
   );
   const [instance, setInstance] = useState<string | null>(null);
+  const [version, setVersion] = useState<UpdateState | null>(null);
   useEffect(() => void api<AuthStatus>("/auth/status").then((s) => setInstance(s.instance), () => {}), []);
+  useEffect(() => void api<UpdateState>("/updates").then(setVersion, () => {}), []);
   return (
     <aside className="nav">
       <div className="brand">
@@ -28,10 +30,26 @@ export function Nav({ page, onNavigate, onLogout }: { page: Page; onNavigate: (p
         {item("backups", "archive", "Backups")}
         {item("settings", "settings", "Settings")}
       </nav>
-      <button className="nav-foot" onClick={onLogout}>
-        <Icon name="signout" size={17} />
-        Sign out
-      </button>
+      <div className="nav-foot">
+        {version && (
+          <div className="version">
+            <span className="mono">{/^\d/.test(version.current) ? `v${version.current}` : version.current.startsWith("dev-") ? "dev build" : version.current}</span>
+            {version.updateAvailable && version.latest && (
+              <a className="new-version" href={version.latest.url} target="_blank" rel="noreferrer" title={`Version ${version.latest.version} is available`}>
+                {version.latest.version} available
+              </a>
+            )}
+          </div>
+        )}
+        <a className="nav-plain" href="https://github.com/LordMerc/self-hosted-game-labs" target="_blank" rel="noreferrer">
+          <Icon name="external" size={17} />
+          GitHub
+        </a>
+        <button className="nav-plain" onClick={onLogout}>
+          <Icon name="signout" size={17} />
+          Sign out
+        </button>
+      </div>
     </aside>
   );
 }
