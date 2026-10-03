@@ -8,7 +8,7 @@ export type ServerSample = { cpuPercent: number | null; memBytes: number; player
 export interface HistoryView {
   /** Seconds between points. */
   intervalSec: number;
-  host: { cpu: (number | null)[]; rx: (number | null)[]; tx: (number | null)[]; players: (number | null)[] };
+  host: { cpu: (number | null)[]; mem: (number | null)[]; storage: (number | null)[]; rx: (number | null)[]; tx: (number | null)[]; players: (number | null)[] };
   /** Per running server, same length and spacing as the host series (null where the server was not running or gave no figure). */
   servers: Record<string, { cpu: (number | null)[]; memBytes: (number | null)[]; players: (number | null)[] }>;
   peaks: { cpuPercent: number | null; playersToday: number | null; windowMinutes: number };
@@ -26,7 +26,7 @@ export interface PeakStore {
  * is today's highest player count, through `store`.
  */
 export class StatsHistory {
-  private host = { cpu: [] as (number | null)[], rx: [] as (number | null)[], tx: [] as (number | null)[], players: [] as (number | null)[] };
+  private host = { cpu: [] as (number | null)[], mem: [] as (number | null)[], storage: [] as (number | null)[], rx: [] as (number | null)[], tx: [] as (number | null)[], players: [] as (number | null)[] };
   private servers = new Map<string, { cpu: (number | null)[]; memBytes: (number | null)[]; players: (number | null)[] }>();
 
   constructor(
@@ -50,6 +50,8 @@ export class StatsHistory {
 
   record(host: HostSnapshot, servers: Record<string, ServerSample>) {
     this.push(this.host.cpu, host.cpu.percent);
+    this.push(this.host.mem, host.memory?.usedBytes ?? null);
+    this.push(this.host.storage, host.storage?.usedBytes ?? null);
     this.push(this.host.rx, host.network?.rxPerSec ?? null);
     this.push(this.host.tx, host.network?.txPerSec ?? null);
     const reported = Object.values(servers).flatMap((s) => (s.players ? [s.players.online] : []));
@@ -101,7 +103,7 @@ export class StatsHistory {
     const cpu = this.host.cpu.filter((v): v is number => v !== null);
     return {
       intervalSec: this.intervalSec,
-      host: { cpu: [...this.host.cpu], rx: [...this.host.rx], tx: [...this.host.tx], players: [...this.host.players] },
+      host: { cpu: [...this.host.cpu], mem: [...this.host.mem], storage: [...this.host.storage], rx: [...this.host.rx], tx: [...this.host.tx], players: [...this.host.players] },
       servers: Object.fromEntries([...this.servers].map(([id, s]) => [id, { cpu: [...s.cpu], memBytes: [...s.memBytes], players: [...s.players] }])),
       peaks: {
         cpuPercent: cpu.length > 0 ? Math.max(...cpu) : null,

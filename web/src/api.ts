@@ -150,7 +150,7 @@ export interface Stats {
   servers: Record<string, { cpuPercent: number | null; memBytes: number; players: { online: number; max: number } | null }>;
   history: {
     intervalSec: number;
-    host: { cpu: (number | null)[]; rx: (number | null)[]; tx: (number | null)[]; players: (number | null)[] };
+    host: { cpu: (number | null)[]; mem: (number | null)[]; storage: (number | null)[]; rx: (number | null)[]; tx: (number | null)[]; players: (number | null)[] };
     servers: Record<string, { cpu: (number | null)[]; memBytes: (number | null)[]; players: (number | null)[] }>;
     peaks: { cpuPercent: number | null; playersToday: number | null; windowMinutes: number };
   };

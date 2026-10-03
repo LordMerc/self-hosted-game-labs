@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react";
 import type { Server, Stats, Template } from "./api";
 import { bytes, rate } from "./format";
 import { Spark } from "./Spark";
@@ -6,17 +5,13 @@ import { Skel } from "./Skeleton";
 
 const pct = (used: number, total: number) => (total > 0 ? Math.min(100, (used / total) * 100) : 0);
 
-function Meter({ fill, tone, label }: { fill: number; tone: string; label: string }) {
-  return <div className="meter" role="img" aria-label={label} style={{ "--tone": tone, "--fill": `${fill}%` } as CSSProperties} />;
-}
-
 function Tile({ label, value, children, sub, loading }: { label: string; value: string | null; children?: React.ReactNode; sub: string; loading?: boolean }) {
   if (loading) {
     return (
       <div className="stat" aria-busy="true">
         <span className="stat-label">{label}</span>
         <Skel w="5rem" className="skel-value" />
-        <Skel w="100%" h="30px" style={{ margin: "0.2rem 0" }} />
+        <Skel w="100%" h="var(--spark-h)" />
         <Skel w="70%" h="0.8rem" />
       </div>
     );
@@ -26,7 +21,7 @@ function Tile({ label, value, children, sub, loading }: { label: string; value: 
       <span className="stat-label">{label}</span>
       <span className={`stat-value${value === null ? " pending" : ""}`}>{value ?? "—"}</span>
       {children}
-      <span className="stat-sub">{sub}</span>
+      <span className="stat-sub" title={sub}>{sub}</span>
     </div>
   );
 }
@@ -57,17 +52,16 @@ export function StatTiles({ stats, servers, templates }: { stats: Stats | null; 
   return (
     <section className="stats" aria-label="Host">
       <Tile loading={loading} label="CPU" value={cpu == null ? null : `${Math.round(cpu)}%`} sub={cpu == null ? none : `${host!.cpu.cores} cores${cpuPeak != null ? ` · peak ${Math.round(cpuPeak)}% (${minutes} min)` : ""}`}>
-        {hist && hist.host.cpu.length > 0 && <Spark values={hist.host.cpu} floor={20} tone="var(--stat-cpu)" label={`CPU over the last ${minutes} minutes`} />}
-        {(!hist || hist.host.cpu.length === 0) && cpu != null && <Meter fill={cpu} tone="var(--stat-cpu)" label="CPU in use" />}
+        <Spark values={hist?.host.cpu ?? []} floor={20} tone="var(--stat-cpu)" label={`CPU over the last ${minutes} minutes`} />
       </Tile>
       <Tile loading={loading} label="Memory" value={host?.memory ? bytes(host.memory.usedBytes) : null} sub={host?.memory ? `of ${bytes(host.memory.totalBytes)} · ${Math.round(pct(host.memory.usedBytes, host.memory.totalBytes))}%` : none}>
-        {host?.memory && <Meter fill={pct(host.memory.usedBytes, host.memory.totalBytes)} tone="var(--stat-memory)" label="Memory in use" />}
+        <Spark values={hist?.host.mem ?? []} max={host?.memory?.totalBytes} tone="var(--stat-memory)" label={`Memory in use over the last ${minutes} minutes`} />
       </Tile>
       <Tile loading={loading} label="Storage" value={host?.storage ? bytes(host.storage.usedBytes) : null} sub={host?.storage ? `of ${bytes(host.storage.totalBytes)} · ${Math.round(pct(host.storage.usedBytes, host.storage.totalBytes))}% used` : none}>
-        {host?.storage && <Meter fill={pct(host.storage.usedBytes, host.storage.totalBytes)} tone="var(--stat-storage)" label="Storage in use" />}
+        <Spark values={hist?.host.storage ?? []} max={host?.storage?.totalBytes} tone="var(--stat-storage)" label={`Storage in use over the last ${minutes} minutes`} />
       </Tile>
       <Tile loading={loading} label="Network" value={host?.network ? `↓ ${rate(host.network.rxPerSec)}` : null} sub={host?.network ? `↑ ${rate(host.network.txPerSec)}` : none}>
-        {hist && hist.host.rx.some((v) => v !== null) && <Spark values={hist.host.rx} floor={10_000} tone="var(--stat-network)" label={`Download over the last ${minutes} minutes`} />}
+        <Spark values={hist?.host.rx ?? []} floor={10_000} tone="var(--stat-network)" label={`Download over the last ${minutes} minutes`} />
       </Tile>
       <Tile
         loading={loading}
@@ -75,7 +69,7 @@ export function StatTiles({ stats, servers, templates }: { stats: Stats | null; 
         value={counts.length === 0 ? null : String(online)}
         sub={counts.length === 0 ? playersNone : `${slots > 0 ? `of ${slots} slots` : `across ${counts.length} server${counts.length === 1 ? "" : "s"}`}${peakToday != null ? ` · peak ${peakToday} today` : ""}`}
       >
-        {hist && hist.host.players.some((v) => v !== null) && <Spark values={hist.host.players} floor={4} tone="var(--stat-players)" label={`Players over the last ${minutes} minutes`} />}
+        <Spark values={hist?.host.players ?? []} floor={4} tone="var(--stat-players)" label={`Players over the last ${minutes} minutes`} />
       </Tile>
     </section>
   );
