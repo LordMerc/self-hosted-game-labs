@@ -6,6 +6,7 @@ image: thijsvanloef/palworld-server-docker:v2.8.0
 # Pinned to the version that was current when the first world ran (2026-10): a new image can change settings or break saves,
 # so the panel offers a newer version tag as an update instead of taking it silently.
 versionPattern: "^v\\d+\\.\\d+\\.\\d+$"
+accent: "#4ade80"
 maxPlayers: 32
 join:
   method: direct

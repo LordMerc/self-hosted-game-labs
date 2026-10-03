@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HostStats, parseCpu, parseMeminfo, parseNetDev } from "../src/server/host-stats.js";
+import { HostStats, parseCpu, parseMeminfo, parseNetDev, parseUptime } from "../src/server/host-stats.js";
 import { usageFromStats } from "../src/server/docker/driver.js";
 
 const stat = (busyish: number, idle: number) => `cpu  ${busyish} 0 0 ${idle} 0 0 0 0 0 0\ncpu0 1 2 3 4\n`;
@@ -18,6 +18,10 @@ describe("proc parsing", () => {
   it("counts memory used as total minus available", () => {
     expect(parseMeminfo("MemTotal:       1000 kB\nMemFree: 10 kB\nMemAvailable:    250 kB\n")).toEqual({ totalBytes: 1024000, usedBytes: 768000 });
     expect(parseMeminfo("")).toBeNull();
+  });
+  it("reads uptime in seconds", () => {
+    expect(parseUptime("2050000.51 15000000.00\n")).toBe(2050001);
+    expect(parseUptime("")).toBeNull();
   });
   it("ignores loopback, Docker bridges and veth pairs", () => {
     expect(parseNetDev(netdev(1000, 2000))).toEqual({ rx: 1000, tx: 2000 });

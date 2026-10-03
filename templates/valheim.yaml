@@ -3,6 +3,7 @@
 id: valheim
 name: Valheim
 image: ghcr.io/community-valheim-tools/valheim-server:latest
+accent: "#60a5fa"
 maxPlayers: 10
 notes: The first start downloads the game server from Steam (about 1 GB), which can take several minutes. It shows Starting until it is ready.
 join:

@@ -13,6 +13,10 @@ export interface Template {
   id: string;
   name: string;
   image: string;
+  /** Hex colour for the game's card, or null (a colour is then picked from the id). */
+  accent: string | null;
+  /** URL of a picture the template ships, or null (the card shows a gradient). */
+  artwork: string | null;
   maxPlayers?: number;
   notes?: string;
   /** Memory the game needs, in MB; a lower memory limit gets a warning. */
@@ -134,9 +138,34 @@ export interface Stats {
     memory: { usedBytes: number; totalBytes: number } | null;
     storage: { usedBytes: number; totalBytes: number } | null;
     network: { rxPerSec: number; txPerSec: number } | null;
+    uptimeSec: number | null;
   };
   servers: Record<string, { cpuPercent: number | null; memBytes: number; players: { online: number; max: number } | null }>;
+  history: {
+    intervalSec: number;
+    host: { cpu: (number | null)[]; rx: (number | null)[]; tx: (number | null)[]; players: (number | null)[] };
+    servers: Record<string, { cpu: (number | null)[]; memBytes: (number | null)[]; players: (number | null)[] }>;
+    peaks: { cpuPercent: number | null; playersToday: number | null; windowMinutes: number };
+  };
+  docker: { name: string; version: string } | null;
 }
+
+export interface ActivityItem {
+  id: number;
+  level: "info" | "warn" | "error";
+  message: string;
+  at: string;
+  server: string | null;
+}
+
+const accents = new Map<string, string>();
+/** Loads the templates and remembers each game's colour, so its icon looks the same on every page. */
+export async function loadTemplates(): Promise<Template[]> {
+  const list = await api<Template[]>("/templates");
+  for (const t of list) if (t.accent) accents.set(t.id, t.accent);
+  return list;
+}
+export const accentFor = (templateId: string) => accents.get(templateId) ?? null;
 
 export interface Backup {
   name: string;

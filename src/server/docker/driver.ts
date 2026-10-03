@@ -86,6 +86,8 @@ export interface ContainerDriver {
   listOtherPanels(): Promise<OtherPanelContainer[]>;
   /** Current CPU and memory of a running container. */
   usage(id: string): Promise<ContainerUsage>;
+  /** The Docker host's name and Docker version, for the dashboard header. Optional: a driver that cannot say is simply not shown. */
+  info?(): Promise<{ name: string; version: string }>;
   /** Follow logs until the signal aborts. */
   streamLogs(id: string, onLine: (line: string) => void, signal: AbortSignal, tail?: number): Promise<void>;
 }
@@ -103,6 +105,11 @@ export class DockerodeDriver implements ContainerDriver {
       if (!have) throw e;
       return false;
     }
+  }
+
+  async info() {
+    const i = await this.docker.info();
+    return { name: String(i.Name ?? ""), version: String(i.ServerVersion ?? "") };
   }
 
   async imageId(image: string): Promise<string | null> {

@@ -87,4 +87,13 @@ backup: { exclude: [gamefiles, config/backups] }
       expect(() => parseTemplate(`${base}\nbackup: { exclude: ["${bad}"] }`), bad).toThrow(/Invalid template/);
     }
   });
+
+  it("accepts an accent colour and an artwork path inside the templates folder, and rejects anything else", () => {
+    const ok = parseTemplate(`${base}accent: "#4ade80"\nartwork: artwork/demo.webp\n`);
+    expect(ok.accent).toBe("#4ade80");
+    expect(ok.artwork).toBe("artwork/demo.webp");
+    for (const bad of ['accent: green', "artwork: ../secret.png", "artwork: /etc/passwd.png", "artwork: art/x.svg", "artwork: http://example.com/x.png"]) {
+      expect(() => parseTemplate(`${base}${bad}\n`), bad).toThrow(/Invalid/);
+    }
+  });
 });

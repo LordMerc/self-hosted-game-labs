@@ -54,6 +54,10 @@ export const templateSchema = z
     name: z.string().min(1),
     image: z.string().min(1),
     maxPlayers: z.number().int().positive().optional(),
+    /** Colour for the game's card and icon (a hex colour such as `#4ade80`). Without it the panel picks one from the game's id. */
+    accent: z.string().regex(/^#[0-9a-fA-F]{6}$/, "must be a hex colour such as #4ade80").optional(),
+    /** Optional picture for the game's card: a png, jpg or webp inside the templates folder, such as `artwork/palworld.webp`. Nothing is shipped by default; the card uses a gradient. */
+    artwork: z.string().regex(/^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*\.(png|jpe?g|webp)$/i, "must be a relative png, jpg or webp path of plain names").refine((p) => !p.split("/").some((x) => x === ".." || x === "."), "must not contain . or .. parts").optional(),
     /** What the game needs to run well. A memory cap below `minMemoryMb` gets a warning (the cap is still allowed). */
     resources: z.object({ minMemoryMb: z.number().int().positive().optional() }).strict().default({}),
     /** Shown in the deploy form: what to know before starting (memory needs, first-run steps). */
