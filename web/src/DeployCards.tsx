@@ -18,7 +18,7 @@ function TemplateCard({ t, installed, onPick }: { t: Template; installed: boolea
   const g = gameStyle(t.id);
   return (
     <button className="template-card" onClick={() => onPick(t)}>
-      <span className={`card-banner ${g.className}`.trim()} style={{ ...g.style, ...(t.artwork ? ({ "--art": `url(${t.artwork})` } as CSSProperties) : {}) }} data-art={t.artwork ? "yes" : undefined} aria-hidden="true">
+      <span className={`card-banner ${g.className}`.trim()} style={{ ...g.style, ...(t.artwork ? ({ "--art": `url(${t.artwork})` } as CSSProperties) : {}) }} data-art={t.artwork ? "yes" : undefined} title={t.artwork && t.artworkCredit ? t.artworkCredit : undefined} aria-hidden="true">
         <span className="banner-letter">{t.name.charAt(0)}</span>
         {installed && <span className="tag">Installed</span>}
       </span>

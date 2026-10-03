@@ -17,6 +17,8 @@ export interface Template {
   accent: string | null;
   /** URL of a picture the template ships, or null (the card shows a gradient). */
   artwork: string | null;
+  /** Where the picture came from and its terms, for a tooltip; null when there is no picture. */
+  artworkCredit: string | null;
   maxPlayers?: number;
   /** The panel can read this game's live player count. False: it never will, so say so rather than show nothing. */
   reportsPlayers: boolean;

@@ -40,7 +40,7 @@ Games are plain files in `templates/`. Copy a similar one (`templates/terraria.y
 - Check the image name, ports and settings against the image's own documentation.
 - Run the template tests (`npm test`); they reject unknown or unsafe settings.
 - Deploy it on a real Docker host if you can, and say what you saw in the pull request.
-- Optionally set `accent: "#4ade80"` (the game's colour on its card and icon). A game card is a colour gradient; a template may also name a picture with `artwork: artwork/yourgame.webp` (png, jpg or webp, inside `templates/`), but only add art you have the right to ship, and none is included by default.
+- Optionally set `accent: "#4ade80"` (the game's colour on its card and icon). A game card is a colour gradient. A template may also set `artwork` to a picture: either a path inside `templates/` (`artwork/yourgame.webp`) or an `https://` link to a png, jpg or webp. Add `artworkCredit` with where the picture came from and the terms it is used under; it shows as a tooltip on the card. A link is fetched once by the panel and served from its own data folder, so visitors never contact the publisher; if the fetch fails the card keeps its gradient. Only add art whose terms allow community use in third-party software, and none is included by default. See [docs/artwork.md](docs/artwork.md).
 
 Templates cannot ask for privileged containers, host networking or bind mounts. That is on purpose.
 
