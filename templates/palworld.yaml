@@ -1,0 +1,32 @@
+# Verify image, ports and env names against the image's current docs before changing.
+# https://github.com/thijsvanloef/palworld-server-docker
+id: palworld
+name: Palworld
+image: thijsvanloef/palworld-server-docker:latest
+maxPlayers: 32
+join:
+  method: direct
+ports:
+  - name: game
+    default: 8211
+    protocol: udp
+    env: PORT
+  - name: query
+    default: 27015
+    protocol: udp
+    env: QUERY_PORT
+env:
+  SERVER_NAME:
+    label: Server name
+    default: Palworld Server
+  SERVER_PASSWORD:
+    label: Server password
+    secret: true
+    help: Leave empty for a password-free server.
+  ADMIN_PASSWORD:
+    label: Admin password
+    secret: true
+    generate: true
+    help: Used for in-game admin commands and RCON.
+data:
+  - containerPath: /palworld
