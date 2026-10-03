@@ -1,5 +1,5 @@
 import type { ContainerDriver, ContainerSpec, ContainerState } from "../../src/server/docker/driver.js";
-import type { ConnectivityProvider, Mapping, OpenResult } from "../../src/server/connectivity/provider.js";
+import { RouterNotFoundError, type ConnectivityProvider, type Mapping, type OpenResult } from "../../src/server/connectivity/provider.js";
 import type { DnsClient } from "../../src/server/dns/cloudflare.js";
 import type { Protocol } from "../../src/server/ports/allocator.js";
 
@@ -50,8 +50,11 @@ export class FakeConnectivity implements ConnectivityProvider {
   kind = "upnp" as const;
   open = new Map<string, string>(); // "8211/udp" -> slug
   fail: string | null = null;
+  /** Simulates discovery finding no router at all. */
+  missing = false;
   ip = "203.0.113.7";
   async ensureOpen(_id: string, slug: string, port: number, protocol: Protocol): Promise<OpenResult> {
+    if (this.missing) throw new RouterNotFoundError("No UPnP router found.");
     if (this.fail) throw new Error(this.fail);
     this.open.set(`${port}/${protocol}`, slug);
     return { state: "open" };
@@ -60,12 +63,14 @@ export class FakeConnectivity implements ConnectivityProvider {
     if (this.open.get(`${port}/${protocol}`) === slug) this.open.delete(`${port}/${protocol}`);
   }
   async list(): Promise<Mapping[]> {
+    if (this.missing) throw new RouterNotFoundError("No UPnP router found.");
     return [...this.open].map(([k, slug]) => {
       const [port, protocol] = k.split("/");
       return { port: Number(port), protocol: protocol as Protocol, description: `gamelabs:${slug}` };
     });
   }
   async externalIp() {
+    if (this.missing) throw new RouterNotFoundError("No UPnP router found.");
     return this.ip;
   }
 }
