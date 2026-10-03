@@ -9,6 +9,8 @@ import type { Db } from "./db/index.js";
 import type { GameTemplate } from "../shared/template.js";
 import type { ContainerDriver } from "./docker/driver.js";
 import { ServerService, UserError } from "./servers/service.js";
+import { CloudflareClient } from "./dns/cloudflare.js";
+import type { DnsSettings } from "./dns/settings.js";
 import { hasAdminPassword, setAdminPassword, verifyAdminPassword } from "./auth/password.js";
 import { LoginRateLimiter } from "./auth/rate-limit.js";
 
@@ -21,13 +23,16 @@ export interface AppDeps {
   templates: GameTemplate[];
   service: ServerService;
   docker: ContainerDriver;
+  dnsSettings: DnsSettings;
+  /** Injectable for tests. */
+  inspectToken?: typeof CloudflareClient.inspect;
   webRoot?: string;
 }
 
 const passwordBody = z.object({ password: z.string().min(1) });
 const newPasswordBody = z.object({ password: z.string().min(10, "Use at least 10 characters") });
 
-export function buildApp({ config, db, templates, service, docker, webRoot }: AppDeps): FastifyInstance {
+export function buildApp({ config, db, templates, service, docker, dnsSettings, inspectToken = CloudflareClient.inspect, webRoot }: AppDeps): FastifyInstance {
   const app = Fastify({ logger: false });
   const limiter = new LoginRateLimiter();
 
@@ -174,6 +179,36 @@ export function buildApp({ config, db, templates, service, docker, webRoot }: Ap
       .streamLogs(row.containerId, (line) => res.write(`data: ${JSON.stringify(line)}\n\n`), ac.signal)
       .catch(() => undefined);
     res.end();
+  });
+
+  app.get("/api/settings/dns", async () => dnsSettings.status());
+
+  // Check a pasted token and list the domains it can see, so the user can pick one.
+  app.post("/api/settings/dns/check", async (req) => {
+    const body = z.object({ token: z.string().optional() }).safeParse(req.body);
+    const token = body.success ? body.data.token?.trim() : undefined;
+    if (!token) throw new UserError("Paste your Cloudflare API token");
+    return inspectToken(token);
+  });
+
+  app.put("/api/settings/dns", async (req) => {
+    const body = z.object({ token: z.string().optional(), zone: z.string(), host: z.string() }).safeParse(req.body);
+    if (!body.success) throw new UserError("Choose a domain and a hostname");
+    if (dnsSettings.status().source === "env") throw new UserError("DNS is set by environment variables (CF_API_TOKEN, CF_ZONE, PUBLIC_HOST). Remove them to manage it here.", 409);
+    try {
+      await dnsSettings.save(body.data);
+    } catch (e) {
+      throw new UserError(e instanceof Error ? e.message : String(e), 400);
+    }
+    // Point the name at the current IP right away; a failure here should not undo the save.
+    const sync = await service.syncDdns().catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }));
+    return { ok: true, sync };
+  });
+
+  app.delete("/api/settings/dns", async () => {
+    if (dnsSettings.status().source === "env") throw new UserError("DNS is set by environment variables and can't be removed here", 409);
+    dnsSettings.clear();
+    return { ok: true };
   });
 
   app.get("/api/network", async () => service.network());

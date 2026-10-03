@@ -46,6 +46,36 @@ export class CloudflareClient implements DnsClient {
     return `${slug}.${this.zone}`;
   }
 
+  /** Throws a readable DnsError unless the token can see (and so edit) this zone. */
+  async checkZone(): Promise<void> {
+    await this.zoneIdOf();
+  }
+
+  /**
+   * What a token can do, for the Settings page: is it active, and which zones can it see? A token without
+   * Zone:Read can be valid yet unable to list zones; that is reported rather than thrown.
+   */
+  static async inspect(token: string, fetchFn: typeof fetch = fetch, base = "https://api.cloudflare.com/client/v4") {
+    const call = async <T>(path: string) => {
+      const res = await fetchFn(`${base}${path}`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) });
+      const data = (await res.json().catch(() => null)) as CfEnvelope<T> | null;
+      if (!res.ok || !data?.success) throw new DnsError(data?.errors?.map((e) => e.message).join("; ") || res.statusText);
+      return data.result;
+    };
+    try {
+      const v = await call<{ status: string }>("/user/tokens/verify");
+      if (v.status !== "active") return { valid: false as const, error: `Token is ${v.status}` };
+    } catch (e) {
+      return { valid: false as const, error: e instanceof Error ? e.message : String(e) };
+    }
+    try {
+      const zones = await call<{ name: string }[]>("/zones?per_page=50&status=active");
+      return { valid: true as const, zones: zones.map((z) => z.name).sort(), zonesError: null };
+    } catch (e) {
+      return { valid: true as const, zones: [] as string[], zonesError: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
   private async call<T>(method: string, path: string, body?: unknown): Promise<T> {
     const res = await this.fetchFn(`${this.base}${path}`, {
       method,

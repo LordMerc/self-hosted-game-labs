@@ -4,6 +4,7 @@ import { CopyButton } from "./CopyButton";
 import { DeployDialog } from "./DeployDialog";
 import { Icon, type IconName } from "./Icons";
 import { LogViewer } from "./LogViewer";
+import { Nav, type Page } from "./Nav";
 import { NetworkPanel } from "./NetworkPanel";
 
 const statusLabel: Record<Server["status"], string> = {
@@ -48,7 +49,7 @@ function IconButton({ icon, label, onClick, disabled, danger }: { icon: IconName
   );
 }
 
-export function GameServers({ onLogout }: { onLogout: () => void }) {
+export function GameServers({ onLogout, onNavigate }: { onLogout: () => void; onNavigate: (p: Page) => void }) {
   const [servers, setServers] = useState<Server[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [network, setNetwork] = useState<Network | null>(null);
@@ -112,25 +113,7 @@ export function GameServers({ onLogout }: { onLogout: () => void }) {
 
   return (
     <div className="shell">
-      <aside className="nav">
-        <div className="brand">
-          <span className="brand-mark">
-            <Icon name="server" size={18} />
-          </span>
-          Game Labs
-        </div>
-        <div className="nav-label">Menu</div>
-        <nav>
-          <a className="active">
-            <Icon name="server" size={17} />
-            Game servers
-          </a>
-        </nav>
-        <button className="nav-foot" onClick={onLogout}>
-          <Icon name="signout" size={17} />
-          Sign out
-        </button>
-      </aside>
+      <Nav page="servers" onNavigate={onNavigate} onLogout={onLogout} />
 
       <main className="content">
         <header className="page-head">

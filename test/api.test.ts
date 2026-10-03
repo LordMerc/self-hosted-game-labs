@@ -7,6 +7,7 @@ import { openDb } from "../src/server/db/index.js";
 import { loadTemplates } from "../src/server/templates/loader.js";
 import { ServerService } from "../src/server/servers/service.js";
 import { FakeConnectivity, FakeDocker } from "./helpers/fakes.js";
+import { DnsSettings } from "../src/server/dns/settings.js";
 
 const config = loadConfig({ SESSION_SECRET: "x".repeat(32), DATA_DIR: "/tmp/unused" });
 let app: FastifyInstance;
@@ -16,7 +17,7 @@ beforeEach(() => {
   const templates = loadTemplates(path.resolve("templates"));
   const docker = new FakeDocker();
   const service = new ServerService({ config, db, templates, docker, connectivity: new FakeConnectivity(), hostPorts: () => new Set(), background: false, stableMs: 0 });
-  app = buildApp({ config, db, templates, service, docker });
+  app = buildApp({ config, db, templates, service, docker, dnsSettings: new DnsSettings(db, config) });
 });
 
 const cookieOf = (res: { headers: Record<string, unknown> }) => String(([] as string[]).concat(res.headers["set-cookie"] as string)[0]).split(";")[0];
@@ -75,5 +76,16 @@ describe("api", () => {
     expect(clash.statusCode).toBe(409);
     expect(clash.json().suggestion).toBeTruthy();
     expect((await app.inject({ method: "POST", url: "/api/servers", headers, payload: { templateId: "nope", name: "x" } })).statusCode).toBe(404);
+  });
+
+  it("DNS settings API: check lists zones, save validates, env-managed DNS is read-only", async () => {
+    const setup = await app.inject({ method: "POST", url: "/api/auth/setup", payload: { password: "correct horse battery" } });
+    const headers = { cookie: cookieOf(setup) };
+    expect((await app.inject({ url: "/api/settings/dns", headers })).json()).toMatchObject({ configured: false });
+    expect((await app.inject({ url: "/api/settings/dns", headers: {} })).statusCode).toBe(401);
+    const empty = await app.inject({ method: "POST", url: "/api/settings/dns/check", headers, payload: {} });
+    expect(empty.statusCode).toBe(400);
+    const bad = await app.inject({ method: "PUT", url: "/api/settings/dns", headers, payload: { zone: "example.com", host: "play.other.org" } });
+    expect(bad.statusCode).toBe(400);
   });
 });

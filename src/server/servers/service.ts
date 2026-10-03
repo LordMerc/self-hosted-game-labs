@@ -40,8 +40,10 @@ export interface ServiceDeps {
   templates: GameTemplate[];
   docker: ContainerDriver;
   connectivity: ConnectivityProvider;
-  /** Undefined when Cloudflare is not configured. */
+  /** Fixed DNS client plus `config.PUBLIC_HOST` (used by tests and env-only setups). */
   dns?: DnsClient;
+  /** Takes precedence over `dns`: lets DNS be configured at runtime from the Settings page. */
+  dnsProvider?: () => DnsContext | undefined;
   hostPorts?: () => Set<PortKey>;
   /** Run the deploy in the background (default) or await it (tests). */
   background?: boolean;
@@ -49,6 +51,13 @@ export interface ServiceDeps {
   probeTcp?: (port: number) => Promise<boolean>;
   readyTimeoutMs?: number;
   stableMs?: number;
+}
+
+export interface DnsContext {
+  client: DnsClient;
+  /** Hostname players' CNAMEs point at; its A record tracks the public IP. */
+  host: string;
+  zone: string | null;
 }
 
 const randomSecret = () => randomBytes(12).toString("base64url");
@@ -66,6 +75,13 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export class ServerService {
   constructor(private readonly d: ServiceDeps) {}
+
+  /** The active DNS setup, or undefined when Cloudflare is not configured. */
+  private dnsCtx(): DnsContext | undefined {
+    if (this.d.dnsProvider) return this.d.dnsProvider();
+    if (this.d.dns && this.d.config.PUBLIC_HOST) return { client: this.d.dns, host: this.d.config.PUBLIC_HOST, zone: this.d.config.CF_ZONE ?? null };
+    return undefined;
+  }
 
   private template(id: string): GameTemplate {
     const t = this.d.templates.find((x) => x.id === id);
@@ -292,9 +308,10 @@ export class ServerService {
       const lan = this.lanIp();
       try {
         for (const p of ports) await this.d.connectivity.ensureOpen(id, row.slug, p.port, p.protocol, lan);
-        if (this.d.dns && this.d.config.PUBLIC_HOST) {
+        const dns = this.dnsCtx();
+        if (dns) {
           await this.syncDdns();
-          await this.d.dns.upsertCname(row.slug, this.d.config.PUBLIC_HOST);
+          await dns.client.upsertCname(row.slug, dns.host);
         }
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
@@ -323,9 +340,10 @@ export class ServerService {
         errors.push(e instanceof Error ? e.message : String(e));
       }
     }
-    if (this.d.dns) {
+    const dns = this.dnsCtx();
+    if (dns) {
       try {
-        await this.d.dns.deleteCname(row.slug);
+        await dns.client.deleteCname(row.slug);
       } catch (e) {
         errors.push(e instanceof Error ? e.message : String(e));
       }
@@ -334,10 +352,11 @@ export class ServerService {
 
   /** Point PUBLIC_HOST at the current public IP (dynamic DNS). */
   async syncDdns(): Promise<{ ip: string; result: string } | null> {
-    const { dns, config, connectivity, db } = this.d;
-    if (!dns || !config.PUBLIC_HOST) return null;
+    const { connectivity, db } = this.d;
+    const ctx = this.dnsCtx();
+    if (!ctx) return null;
     const ip = await connectivity.externalIp();
-    const result = await dns.upsertA(config.PUBLIC_HOST, ip);
+    const result = await ctx.client.upsertA(ctx.host, ip);
     const now = new Date().toISOString();
     for (const [key, value] of [["public_ip", ip], ["ddns_updated_at", now]] as const) {
       db.insert(schema.settings).values({ key, value }).onConflictDoUpdate({ target: schema.settings.key, set: { value } }).run();
@@ -394,9 +413,10 @@ export class ServerService {
     }
 
     // 3. DNS: DDNS A record, CNAMEs for public servers, drop tagged CNAMEs for everything else.
-    if (this.d.dns && this.d.config.PUBLIC_HOST) {
-      const dns = this.d.dns;
-      const host = this.d.config.PUBLIC_HOST;
+    const dnsCtx = this.dnsCtx();
+    if (dnsCtx) {
+      const dns = dnsCtx.client;
+      const host = dnsCtx.host;
       await attempt("ddns", async () => {
         const r = await this.syncDdns();
         if (r && r.result !== "unchanged") actions.push(`DDNS ${r.result} (${r.ip})`);
@@ -451,7 +471,8 @@ export class ServerService {
       const sp = ports.filter((p) => p.serverId === r.id);
       const tpl = t(r.templateId);
       const gamePort = sp[0];
-      const host = this.d.dns && this.d.config.PUBLIC_HOST ? this.d.dns.fqdn(r.slug) : this.d.config.PUBLIC_HOST;
+      const dnsC = this.dnsCtx();
+      const host = dnsC ? dnsC.client.fqdn(r.slug) : this.d.config.PUBLIC_HOST;
       const secrets = tpl ? Object.entries(tpl.env).filter(([, v]) => v.secret).map(([k]) => k) : [];
       return {
         id: r.id,
@@ -503,6 +524,7 @@ export class ServerService {
     } catch (e) {
       ipError = e instanceof Error ? e.message : String(e);
     }
+    const dnsNow = this.dnsCtx();
     const setting = (k: string) => db.select().from(schema.settings).where(eq(schema.settings.key, k)).get()?.value ?? null;
     return {
       provider: connectivity.kind,
@@ -510,7 +532,7 @@ export class ServerService {
       publicIp,
       ipError,
       reconcile: { at: setting("reconcile_at"), problems: JSON.parse(setting("reconcile_problems") ?? "[]") as string[] },
-      dns: this.d.dns && config.PUBLIC_HOST ? { host: config.PUBLIC_HOST, zone: config.CF_ZONE ?? null, lastUpdate: setting("ddns_updated_at"), lastIp: setting("public_ip") } : null,
+      dns: dnsNow ? { host: dnsNow.host, zone: dnsNow.zone, lastUpdate: setting("ddns_updated_at"), lastIp: setting("public_ip") } : null,
       rules: connectivity.kind === "manual" ? rules : [],
       mappings: connectivity.kind === "upnp" ? await connectivity.list().catch(() => []) : [],
     };

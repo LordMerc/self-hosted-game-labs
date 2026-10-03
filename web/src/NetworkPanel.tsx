@@ -113,7 +113,7 @@ export function NetworkPanel({ network, onChange }: { network: Network | null; o
           <>
             <div className="sec-head tight">
               <span className="chip mono">
-                <span className="proto">A</span> *.{network.dns.host}
+                <span className="proto">A</span> {network.dns.host}
               </span>
               <span className="badge">DNS only</span>
             </div>
@@ -127,7 +127,7 @@ export function NetworkPanel({ network, onChange }: { network: Network | null; o
             </button>
           </>
         ) : (
-          <p className="muted">Cloudflare DNS is not configured, so public servers are reached by IP address.</p>
+          <p className="muted">Cloudflare DNS is not set up, so public servers are reached by IP address. <a href="#settings">Set it up in Settings</a>.</p>
         )}
       </section>
 

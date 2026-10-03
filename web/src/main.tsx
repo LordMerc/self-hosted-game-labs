@@ -3,16 +3,21 @@ import { createRoot } from "react-dom/client";
 import { api, type AuthStatus } from "./api";
 import { Login } from "./Login";
 import { GameServers } from "./GameServers";
+import type { Page } from "./Nav";
+import { Settings } from "./Settings";
 import "./styles.css";
 
 function App() {
   const [status, setStatus] = useState<AuthStatus | null>(null);
+  const [page, setPage] = useState<Page>(() => (location.hash === "#settings" ? "settings" : "servers"));
+  const navigate = (p: Page) => (setPage(p), history.replaceState(null, "", `#${p}`));
   const refresh = () => api<AuthStatus>("/auth/status").then(setStatus);
   useEffect(() => void refresh(), []);
 
   if (!status) return null;
   if (!status.authenticated) return <Login setup={status.setupRequired} onDone={refresh} />;
-  return <GameServers onLogout={() => api("/auth/logout", { method: "POST" }).then(refresh)} />;
+  const logout = () => api("/auth/logout", { method: "POST" }).then(refresh);
+  return page === "settings" ? <Settings onLogout={logout} onNavigate={navigate} /> : <GameServers onLogout={logout} onNavigate={navigate} />;
 }
 
 /** Errors React cannot catch (event handlers, async code): show them instead of failing silently. */
