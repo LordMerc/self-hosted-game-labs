@@ -182,3 +182,14 @@ Built against fakes (a fake checker in the service and browser tests, and a fake
 - **What it does:** press Run in the Network panel. For every running public server, each TCP port is sent to check-host.net (`/check-tcp`, then `/check-result`), asking 3 locations to connect to `<public IP>:<port>`. Any location connecting means open; all failing means closed, with the reasons; no usable answer means unknown, with the reason. UDP ports are not tested (a UDP game gives no reply to a bare probe); the panel shows "Router forwards the port" when the router's mapping list (or a rule you confirmed) has it, and "not forwarded" when it does not.
 - **Privacy:** nothing is sent unless Run is pressed. What is sent is the public IP and the port number. `PORT_CHECK=off` removes the button's backend.
 - **To check on the homelab:** Run on a public Minecraft or Terraria server returns "open" with "Connected from N of 3 locations"; with the server stopped or the rule removed it should say closed. If it says unknown, the detail line names what went wrong (send a screenshot); the provider's response format is the part most likely to need adjusting.
+
+
+## Notifications
+
+Built against fakes: a recording notifier in the service tests, a fake `fetch` for the webhook calls, and a local HTTP server standing in for the webhook in the browser test. Not sent to a real Discord channel: the build sandbox cannot reach Discord.
+
+- **What it does:** Settings → Notifications stores a webhook address encrypted (same scheme as the Cloudflare token), sends a test message on request, and has one checkbox per event. A `discord.com` or `discordapp.com` `/api/webhooks/` address gets an embed with mentions disabled; any other http(s) address gets a plain JSON body (`content`, `text`, `event`, `server`, `title`, `message`, `instance`, `at`).
+- **Events:** online (deploy finished, started, or seen running again), down (a running server stopped or errored without the panel stopping it, a deploy that failed, or a container whose start time changed because Docker restarted it), player joined/left (a changed count from the game's query port, polled every 30 seconds; the first reading is only a baseline), backup failed.
+- **Quiet on purpose:** stop and restart from the panel are not reported as down; messages carry the server name only, never an address or password.
+- **To check on the homelab:** paste a real webhook, press Send test message (expect a green embed in the channel). Stop a game with `docker stop gl-<name>` and expect "went down" within about 30 seconds; start it again for "is online". For a crash, `docker kill gl-<name>` should say "went down", then Docker restarts it and, within the next poll, it should say "online" or "started it again". Join Palworld from the game and expect "1 player joined" (Palworld's A2S count accuracy is itself unverified, see above).
+
