@@ -8,6 +8,10 @@ export interface BackupInfo {
   createdAt: string;
 }
 
+/** A backup is never removed to make room until it is at least this old, however many newer ones exist. */
+export const MIN_KEEP_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 const NAME = /^[a-z0-9][a-z0-9-]*-\d{8}-\d{6}(-\d+)?\.tar\.gz$/;
 export const isBackupName = (name: string) => NAME.test(name);
 
@@ -25,7 +29,9 @@ const stamp = (d: Date) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$
 
 /**
  * Compressed copies of a server's data folder, kept in `<gameservers>/.backups/<slug>/`.
- * Backups live outside the data folder, so deleting a server's data does not delete its backups.
+ * Backups live outside the data folder, so deleting a server or its data never deletes its backups. Only a newer
+ * backup of the same server can push an old one out, and only once it is beyond the newest `keep` and at least
+ * MIN_KEEP_DAYS old. Backups of a deleted server are never pruned.
  */
 export class BackupStore {
   constructor(
@@ -70,7 +76,12 @@ export class BackupStore {
       rmSync(tmp, { force: true });
       throw e;
     }
-    if (opts.prune !== false) for (const old of this.list(slug).slice(this.keep)) rmSync(path.join(dir, old.name), { force: true });
+    if (opts.prune !== false) {
+      const cutoff = now.getTime() - MIN_KEEP_DAYS * DAY_MS;
+      for (const old of this.list(slug).slice(this.keep)) {
+        if (new Date(old.createdAt).getTime() <= cutoff) rmSync(path.join(dir, old.name), { force: true });
+      }
+    }
     return this.list(slug).find((b) => b.name === name)!;
   }
 

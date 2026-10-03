@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { randomBytes, randomUUID } from "node:crypto";
 import path from "node:path";
 import net from "node:net";
@@ -282,6 +282,14 @@ export class ServerService {
     const row = this.row(id);
     if (opts.deleteData && opts.confirmName !== row.name) throw new UserError("Type the server name to delete its world data", 400);
     const errors: string[] = [];
+    // Deleting world data leaves one last backup behind (outside the data folder), so a change of heart days later can still be undone.
+    if (opts.deleteData && existsSync(path.join(this.d.config.GAMESERVERS_DIR, row.slug))) {
+      try {
+        await this.store().create(row.slug, { prune: false });
+      } catch (e) {
+        throw new UserError(`Could not make a final backup, so nothing was deleted: ${(e as Error).message}`, 500);
+      }
+    }
     await this.closeAccess(row, errors);
     if (row.containerId) await this.d.docker.remove(row.containerId);
     if (opts.deleteData) rmSync(path.join(this.d.config.GAMESERVERS_DIR, row.slug), { recursive: true, force: true });

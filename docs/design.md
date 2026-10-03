@@ -222,7 +222,7 @@ Keep the concept's layout: left nav, header stats (CPU, Memory, Storage, Network
 
 - SQLite at `/data/panel.db`, migrated via Drizzle on startup.
 - World data at `/srv/gameservers/<slug>/` (bind mounts).
-- Backups (Milestone 4): per-server schedule, daily by default, keep 7, tar of the data directory to `/data/backups/<slug>/`, server paused or stopped first when the template requires it. One-click restore.
+- Backups (Milestone 4): per-server schedule, daily by default, keep 7 (and never remove a backup younger than 7 days), tar of the data directory to `<game data dir>/.backups/<slug>/`, which survives deleting the server or its data (deleting data takes a final backup first), server paused or stopped first when the template requires it. One-click restore.
 - Optional later: scheduled restarts; auto-update (pull, compare digest, recreate during an empty-server window).
 
 ---
