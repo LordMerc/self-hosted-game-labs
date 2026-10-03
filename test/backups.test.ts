@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { BackupStore, isBackupName } from "../src/server/backups.js";
@@ -86,6 +86,25 @@ describe("BackupStore", () => {
     expect(readFileSync(path.join(root, "pal/Saved/world.sav"), "utf8")).toBe("v1");
     expect(existsSync(path.join(root, "pal/Saved/new.txt"))).toBe(false);
     expect(readdirNames(root)).toEqual([".backups", "pal"]);
+  });
+
+  it("keeps a server's saved settings private and lists every server that has a backup folder", async () => {
+    const s = new BackupStore(root);
+    await s.create("pal");
+    expect(s.meta("pal")).toBeNull();
+    s.setMeta("pal", { name: "Pal", templateId: "palworld", env: { X: "1" }, access: "public" });
+    expect(s.meta("pal")).toEqual({ name: "Pal", templateId: "palworld", env: { X: "1" }, access: "public" });
+    expect(statSync(path.join(root, ".backups/pal/server.json")).mode & 0o077).toBe(0);
+    expect(s.slugs()).toEqual(["pal"]);
+    expect(() => s.list("../etc")).toThrow(/not a valid/);
+  });
+
+  it("can restore a backup into a different server name", async () => {
+    const s = new BackupStore(root);
+    const b = await s.create("pal");
+    await s.restore("pal", b.name, Date.now(), "pal-2");
+    expect(readFileSync(path.join(root, "pal-2/Saved/world.sav"), "utf8")).toBe("v1");
+    expect(existsSync(path.join(root, "pal/Saved/world.sav"))).toBe(true);
   });
 
   it("refuses names that are not backups of this server, and a missing data folder", async () => {

@@ -27,6 +27,16 @@ export function parseSettings(v: unknown, fallback: BackupSettings): BackupSetti
 }
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** What it takes to set a server up again from one of its backups. Kept beside the backups, since the server's own record is deleted with it. */
+export interface ServerMeta {
+  name: string;
+  templateId: string;
+  env: Record<string, string>;
+  access: "private" | "public";
+}
+
+const SLUG = /^[a-z0-9][a-z0-9-]*$/;
+
 const NAME = /^[a-z0-9][a-z0-9-]*-\d{8}-\d{6}(-\d+)?\.tar\.gz$/;
 export const isBackupName = (name: string) => NAME.test(name);
 
@@ -79,7 +89,37 @@ export class BackupStore {
   }
 
   private dir(slug: string) {
+    if (!SLUG.test(slug)) throw new Error("not a valid server name");
     return path.join(this.root, ".backups", slug);
+  }
+
+  /** Every server (current or deleted) that has a backup folder. */
+  slugs(): string[] {
+    const dir = path.join(this.root, ".backups");
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && SLUG.test(e.name))
+      .map((e) => e.name);
+  }
+
+  meta(slug: string): ServerMeta | null {
+    try {
+      const o = JSON.parse(readFileSync(path.join(this.dir(slug), "server.json"), "utf8")) as Partial<ServerMeta>;
+      if (typeof o.name !== "string" || typeof o.templateId !== "string") return null;
+      const env = Object.fromEntries(Object.entries(o.env ?? {}).filter(([, v]) => typeof v === "string")) as Record<string, string>;
+      return { name: o.name, templateId: o.templateId, env, access: o.access === "public" ? "public" : "private" };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Written only when it changed. The file holds the server's passwords, so only this process can read it. */
+  setMeta(slug: string, meta: ServerMeta) {
+    const file = path.join(this.dir(slug), "server.json");
+    const json = JSON.stringify(meta);
+    if (existsSync(file) && readFileSync(file, "utf8") === json) return;
+    mkdirSync(this.dir(slug), { recursive: true });
+    writeFileSync(file, json, { mode: 0o600 });
   }
 
   private file(slug: string, name: string) {
@@ -131,18 +171,22 @@ export class BackupStore {
     rmSync(f);
   }
 
-  /** Replace the server's data folder with the backup. The old folder is only removed once the new one is in place. */
-  async restore(slug: string, name: string, now = Date.now()): Promise<void> {
+  /**
+   * Replace a data folder with the backup. The old folder is only removed once the new one is in place.
+   * `target` is the folder to restore into; it defaults to the backed-up server's own, and differs when a deleted server is set up again under a new name.
+   */
+  async restore(slug: string, name: string, now = Date.now(), target = slug): Promise<void> {
+    if (!SLUG.test(target)) throw new Error("not a valid server name");
     const f = this.file(slug, name);
     if (!existsSync(f)) throw new Error("backup not found");
-    const tmp = path.join(this.root, `.restore-${slug}`);
+    const tmp = path.join(this.root, `.restore-${target}`);
     rmSync(tmp, { recursive: true, force: true });
     mkdirSync(tmp, { recursive: true });
     try {
       await tar(["-xzf", f, "-C", tmp]);
       if (!existsSync(path.join(tmp, slug))) throw new Error("the backup does not contain this server's data");
-      const live = path.join(this.root, slug);
-      const aside = path.join(this.root, `.old-${slug}-${now}`);
+      const live = path.join(this.root, target);
+      const aside = path.join(this.root, `.old-${target}-${now}`);
       if (existsSync(live)) renameSync(live, aside);
       try {
         renameSync(path.join(tmp, slug), live);

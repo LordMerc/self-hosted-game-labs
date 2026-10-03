@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, type Backup, type BackupSettings } from "./api";
 import { Hint } from "./Hint";
 
-function size(n: number) {
+export function size(n: number) {
   if (n < 1000) return `${n} B`;
   const units = ["KB", "MB", "GB", "TB"];
   let i = -1;
@@ -70,7 +70,7 @@ export function Backups({ id, name, running, onClose, onChange }: { id: string; 
           </button>
         </div>
         <p className="muted note">
-          A backup is a compressed copy of this server&apos;s world and settings. The server keeps running while it is made; for a perfectly clean copy, stop it first. Deleting the server does not delete its backups: to get one back later, create a new server with the same name and open its Backups.
+          A backup is a compressed copy of this server&apos;s world and settings. The server keeps running while it is made; for a perfectly clean copy, stop it first. Deleting the server does not delete its backups. They stay on the Backups page, where you can set the server up again from any of them.
         </p>
         <div className="backup-settings">
           <label>

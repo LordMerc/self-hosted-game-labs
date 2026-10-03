@@ -165,6 +165,26 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
     return service.remove(idParam(req), { deleteData: q.deleteData === "true", confirmName: q.confirmName });
   });
 
+  app.get("/api/backups", async () => service.allBackups());
+  app.delete("/api/backups/:slug/:name", async (req) => {
+    const { slug, name } = req.params as { slug: string; name: string };
+    service.deleteBackupBySlug(slug, name);
+    return { ok: true };
+  });
+  const redeployBody = z.object({
+    name: z.string().optional(),
+    templateId: z.string().optional(),
+    env: z.record(z.string(), z.string()).optional(),
+    access: z.enum(["private", "public"]).optional(),
+  });
+  app.post("/api/backups/:slug/:name/redeploy", async (req, reply) => {
+    const { slug, name } = req.params as { slug: string; name: string };
+    const body = redeployBody.safeParse(req.body ?? {});
+    if (!body.success) throw new UserError(body.error.issues[0].message);
+    const id = await service.redeployFromBackup(slug, name, body.data);
+    return reply.code(202).send({ id });
+  });
+
   app.get("/api/servers/:id/backups", async (req) => service.listBackups(idParam(req)));
   app.get("/api/servers/:id/backups/settings", async (req) => service.backupSettings(idParam(req)));
   app.put("/api/servers/:id/backups/settings", async (req) => service.setBackupSettings(idParam(req), req.body));

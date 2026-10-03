@@ -101,3 +101,16 @@ export interface BackupSettings {
   minDays: number;
   everyHours: number;
 }
+
+export interface BackupGroup {
+  slug: string;
+  name: string;
+  deleted: boolean;
+  serverId: string | null;
+  status: Server["status"] | null;
+  templateId: string | null;
+  templateName: string | null;
+  backups: Backup[];
+  totalBytes: number;
+  saved: { name: string; templateId: string | null; env: Record<string, string>; savedSecrets: string[]; access: "private" | "public" } | null;
+}
