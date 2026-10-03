@@ -13,10 +13,12 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - gamelabs-data:/data
-      # World data. The host path must equal the container path: the Docker daemon resolves bind mounts on the host.
-      - /srv/gameservers:/srv/gameservers
+      # Game and world data. The host path must equal the container path: the Docker daemon resolves bind mounts
+      # on the host. Point GAME_DATA_DIR at another drive (for example /mnt/games) to keep game data off the system disk.
+      - ${GAME_DATA_DIR:-/srv/gameservers}:${GAME_DATA_DIR:-/srv/gameservers}
     environment:
       PANEL_PORT: ${PANEL_PORT:-8090}
+      GAMESERVERS_DIR: ${GAME_DATA_DIR:-/srv/gameservers}
       HOST_LAN_IP: ${HOST_LAN_IP:-}
       PUBLIC_HOST: ${PUBLIC_HOST:-}
       CONNECTIVITY: ${CONNECTIVITY:-manual}
