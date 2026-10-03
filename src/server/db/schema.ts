@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, uniqueIndex, primaryKey } from "drizzle-orm/sqlite-core";
 
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
@@ -65,4 +65,25 @@ export const manualRules = sqliteTable(
     confirmed: integer("confirmed", { mode: "boolean" }).notNull().default(false),
   },
   (t) => [uniqueIndex("manual_rules_port_proto").on(t.port, t.protocol)],
+);
+
+/**
+ * The last real answer of the outside port check, per server port, so it survives a panel restart. Only a definite answer
+ * is kept (reachable, not reachable, or what the router forwards): a check that could not finish never overwrites it.
+ */
+export const portChecks = sqliteTable(
+  "port_checks",
+  {
+    serverId: text("server_id")
+      .notNull()
+      .references(() => servers.id, { onDelete: "cascade" }),
+    port: integer("port").notNull(),
+    protocol: text("protocol", { enum: ["tcp", "udp"] }).notNull(),
+    state: text("state", { enum: ["open", "closed", "forwarded", "not-forwarded"] }).notNull(),
+    detail: text("detail").notNull(),
+    checkedAt: integer("checked_at", { mode: "timestamp" }).notNull(),
+    /** The public IP when the check ran, to tell later whether the answer is about a different address. */
+    publicIp: text("public_ip"),
+  },
+  (t) => [primaryKey({ columns: [t.serverId, t.port, t.protocol] })],
 );

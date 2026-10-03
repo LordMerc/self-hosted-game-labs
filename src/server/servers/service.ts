@@ -156,18 +156,28 @@ export interface ReachItem {
 export interface Reachability {
   state: "ok" | "problem" | "forwarded" | "unknown";
   text: string;
+  /** When the answer was obtained. */
   at: string;
+  /** Why the answer may no longer hold: the public IP changed since it was taken, or it is more than a day old. */
+  stale: "ip-changed" | "old" | null;
+  /** A later check that could not finish. It never replaces the answer above. */
+  attempt: { at: string; text: string } | null;
 }
 
+/** A saved outside-check answer is flagged out of date after this long. */
+export const REACH_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+type PortAnswer = Pick<ReachItem, "port" | "protocol" | "state" | "detail">;
+
 /** One line per server out of the per-port results. A problem outranks good news, because it is what the person needs to see. */
-function summarize(items: ReachItem[], at: string): Reachability {
+function summarize(items: PortAnswer[]): { state: Reachability["state"]; text: string } {
   const bad = items.find((i) => i.state === "closed" || i.state === "not-forwarded");
-  if (bad) return { state: "problem", text: bad.state === "closed" ? `Port ${bad.port} is not reachable from the internet` : `The router is not forwarding ${bad.port}/${bad.protocol}`, at };
+  if (bad) return { state: "problem", text: bad.state === "closed" ? `Port ${bad.port} is not reachable from the internet` : `The router is not forwarding ${bad.port}/${bad.protocol}` };
   const open = items.find((i) => i.state === "open");
-  if (open) return { state: "ok", text: "Reachable from the internet", at };
+  if (open) return { state: "ok", text: "Reachable from the internet" };
   const fwd = items.find((i) => i.state === "forwarded");
-  if (fwd) return { state: "forwarded", text: "Router forwards the port. UDP can't be tested from outside", at };
-  return { state: "unknown", text: items[0]?.detail ?? "Could not be checked", at };
+  if (fwd) return { state: "forwarded", text: "Router forwards the port. UDP can't be tested from outside" };
+  return { state: "unknown", text: items[0]?.detail ?? "Could not be checked" };
 }
 
 export class ServerService {
@@ -531,7 +541,7 @@ export class ServerService {
     if (row.containerId) await this.d.docker.remove(row.containerId);
     if (opts.deleteData) rmSync(path.join(this.d.config.GAMESERVERS_DIR, row.slug), { recursive: true, force: true });
     this.d.db.delete(schema.servers).where(eq(schema.servers.id, id)).run();
-    this.reach.delete(id);
+    this.attempts.delete(id); // the saved answers go with the server (cascade)
     this.careStore().drop(id);
     this.dropCustomTemplate(row.templateId, row.slug);
     this.event(null, "info", `Deleted ${row.slug}${opts.deleteData ? " and its world data" : " (data kept)"}`);
@@ -580,6 +590,7 @@ export class ServerService {
       }
     }
     this.d.db.update(schema.servers).set({ access }).where(eq(schema.servers.id, id)).run();
+    this.resetReach(id);
     this.event(id, "info", `Access set to ${access}`);
   }
 
@@ -608,6 +619,7 @@ export class ServerService {
     const ctx = this.dnsCtx();
     if (!ctx) return null;
     const ip = await connectivity.externalIp();
+    this.knownIp = ip;
     const result = await ctx.client.upsertA(ctx.host, ip);
     const now = new Date().toISOString();
     for (const [key, value] of [["public_ip", ip], ["ddns_updated_at", now]] as const) {
@@ -652,6 +664,7 @@ export class ServerService {
       }
     }
     await this.refreshStatuses();
+    await this.refreshKnownIp();
 
     const servers = this.d.db.select().from(schema.servers).all();
     const publicServers = servers.filter((s) => s.access === "public" && s.status !== "error");
@@ -781,6 +794,7 @@ export class ServerService {
     const starting = new Set((await Promise.all(rows.map(async (r) => ((await this.isStarting(r)) ? r.id : null)))).filter((x): x is string => x !== null));
     const ports = this.d.db.select().from(schema.serverPorts).all();
     const rules = this.d.db.select().from(schema.manualRules).all();
+    const checks = this.d.db.select().from(schema.portChecks).all();
     const t = (id: string) => this.d.templates.find((x) => x.id === id);
     return rows.map((r) => {
       const check = this.careStore().state(r.id).check;
@@ -808,7 +822,7 @@ export class ServerService {
           public: r.access === "public" && host && gamePort ? `${host}:${gamePort.port}` : null,
           instructions: r.access === "public" && tpl?.join.method === "server-browser" ? (tpl.join.instructions ?? null) : null,
         },
-        reachability: r.access === "public" ? (this.reach.get(r.id) ?? null) : null,
+        reachability: r.access === "public" ? this.reachabilityOf(r.id, sp, checks) : null,
         update: check?.available ? { to: check.latest ?? "a newer build" } : null,
         pendingRules: this.d.connectivity.kind !== "manual" ? [] : rules.filter((x) => x.serverId === r.id && !x.confirmed).map((x) => ({ id: x.id, port: x.port, protocol: x.protocol })),
       };
@@ -1173,7 +1187,7 @@ export class ServerService {
       tx.delete(schema.serverPorts).where(eq(schema.serverPorts.serverId, id)).run();
       for (const a of next) tx.insert(schema.serverPorts).values({ serverId: id, name: a.name, port: a.port, protocol: a.protocol }).run();
     });
-    this.reach.delete(id);
+    this.resetReach(id);
     this.event(id, "info", `Ports changed to ${next.map((a) => `${a.port}/${a.protocol}`).join(", ")}; recreating the container (world data is kept)`);
     const job = this.runDeploy(id, row.access, { pull: false });
     if (this.d.background === false) await job;
@@ -1465,7 +1479,51 @@ export class ServerService {
 
   // ------------------------------------------------- outside port check
 
-  private reach = new Map<string, Reachability>();
+  /** The public IP as last seen by the reconcile pass or a check, so listing servers never waits on the router or the internet. */
+  private knownIp: string | null = null;
+
+  /** Checks that ended without an answer, kept only until the panel restarts. They are not results, so they are never saved. */
+  private attempts = new Map<string, { at: string; text: string }>();
+
+  /**
+   * What a server's row shows: the saved answer for its current ports, with the time it was taken. The last answer stays
+   * until a real check replaces it; it is marked stale when the public IP has changed since, or it is over a day old.
+   * No saved answer means untested (null), unless a check was tried and could not finish.
+   */
+  private reachabilityOf(serverId: string, ports: { port: number; protocol: "tcp" | "udp" }[], checks: (typeof schema.portChecks.$inferSelect)[]): Reachability | null {
+    const attempt = this.attempts.get(serverId) ?? null;
+    const mine = checks.filter((c) => c.serverId === serverId && ports.some((p) => p.port === c.port && p.protocol === c.protocol));
+    if (mine.length === 0) return attempt ? { state: "unknown", text: attempt.text, at: attempt.at, stale: null, attempt: null } : null;
+    const oldest = Math.min(...mine.map((c) => c.checkedAt.getTime()));
+    const stale = this.knownIp && mine.some((c) => c.publicIp && c.publicIp !== this.knownIp) ? "ip-changed" : Date.now() - oldest > REACH_MAX_AGE_MS ? "old" : null;
+    return { ...summarize(mine), at: new Date(oldest).toISOString(), stale, attempt };
+  }
+
+  /** Forget what the outside check said about a server, because its ports or its exposure changed. */
+  private resetReach(serverId: string) {
+    this.d.db.delete(schema.portChecks).where(eq(schema.portChecks.serverId, serverId)).run();
+    this.attempts.delete(serverId);
+  }
+
+  private async refreshKnownIp() {
+    try {
+      this.knownIp = await this.d.connectivity.externalIp();
+    } catch {
+      /* keep the last address we saw */
+    }
+  }
+
+  /** Keep each definite answer. A stopped server or a check that could not finish leaves the saved answer as it was. */
+  private saveAnswers(serverId: string, items: ReachItem[], ip: string, at: string) {
+    const unfinished = items.find((i) => i.state === "unknown");
+    if (unfinished) this.attempts.set(serverId, { at, text: unfinished.detail });
+    else if (items.every((i) => i.state !== "stopped")) this.attempts.delete(serverId);
+    for (const i of items) {
+      if (i.state === "unknown" || i.state === "stopped") continue;
+      const row = { serverId, port: i.port, protocol: i.protocol, state: i.state, detail: i.detail, checkedAt: new Date(at), publicIp: ip };
+      this.d.db.insert(schema.portChecks).values(row).onConflictDoUpdate({ target: [schema.portChecks.serverId, schema.portChecks.port, schema.portChecks.protocol], set: row }).run();
+    }
+  }
 
   /** Whether the Run button works, and who would be asked. */
   portCheckInfo() {
@@ -1522,9 +1580,10 @@ export class ServerService {
           }
         }
       }
-      if (!mine.some((i) => i.state === "stopped")) this.reach.set(r.id, summarize(mine, checkedAt));
+      this.saveAnswers(r.id, mine, ip, checkedAt);
       results.push(...mine);
     }
+    this.knownIp = ip;
     this.event(null, "info", `Outside port check run for ${rows.length} server${rows.length === 1 ? "" : "s"} via ${probe.name}`);
     return { via: probe.name, checkedAt, results };
   }
@@ -1540,6 +1599,7 @@ export class ServerService {
     let ipError: string | null = null;
     try {
       publicIp = await connectivity.externalIp();
+      this.knownIp = publicIp;
     } catch (e) {
       ipError = e instanceof Error ? e.message : String(e);
     }

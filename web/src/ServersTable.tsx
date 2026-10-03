@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, type Network, type Server, type Stats, type Template } from "./api";
-import { bytes } from "./format";
+import { ago, bytes } from "./format";
 import { CopyButton } from "./CopyButton";
 import { GameIcon } from "./GameIcon";
 import { HiddenIp, isIpAddress } from "./HiddenIp";
@@ -28,6 +28,14 @@ export function StatusPill({ server }: { server: Pick<Server, "status" | "starti
 
 const reachWord = { ok: "Reachable", forwarded: "Forwarded", problem: "Problem", unknown: "Unknown" } as const;
 
+/** "Checked 2h ago", the way a saved outside-check answer is dated. */
+export const checkedAgo = (at: string) => {
+  const t = ago(at);
+  return t === "now" ? "Checked just now" : `Checked ${t} ago`;
+};
+
+const staleWhy = { "ip-changed": "Your public IP changed since, so this may be out of date.", old: "More than a day old, so this may be out of date." } as const;
+
 function Access({ s, canTest, testing, onTest }: { s: Server; canTest: boolean; testing: boolean; onTest: () => void }) {
   const pub = s.access === "public";
   const r = s.reachability;
@@ -43,7 +51,10 @@ function Access({ s, canTest, testing, onTest }: { s: Server; canTest: boolean; 
           <Icon name={r.state === "problem" ? "alert" : r.state === "unknown" ? "info" : "check"} size={13} /> {reachWord[r.state]}
         </span>
       )}
+      {pub && s.pendingRules.length === 0 && r && <span className="access-text muted">{checkedAgo(r.at)}</span>}
+      {pub && s.pendingRules.length === 0 && r?.stale && <span className="access-text warn">{staleWhy[r.stale]}</span>}
       {pub && s.pendingRules.length === 0 && r?.state === "problem" && <span className="access-text bad">{r.text}</span>}
+      {pub && s.pendingRules.length === 0 && r?.attempt && <span className="access-text muted">{`The last test could not finish: ${r.attempt.text}`}</span>}
       {pub && s.pendingRules.length === 0 && !r && <span className="access-line warn">Untested</span>}
       {pub && s.pendingRules.length === 0 && canTest && s.status !== "error" && (
         <button className="text-btn" onClick={onTest} disabled={testing} aria-label={`Test ${s.name} from outside`} title="Ask an outside service to try this server's ports. UDP ports cannot be tested that way; for those the panel shows whether the router forwards them.">

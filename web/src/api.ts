@@ -84,7 +84,12 @@ export interface ReachItem {
 export interface Reachability {
   state: "ok" | "problem" | "forwarded" | "unknown";
   text: string;
+  /** When the answer was taken. */
   at: string;
+  /** The public IP changed since the answer, or it is over a day old. */
+  stale: "ip-changed" | "old" | null;
+  /** A later check that could not finish; it did not replace the answer. */
+  attempt: { at: string; text: string } | null;
 }
 
 export interface AuthStatus {
