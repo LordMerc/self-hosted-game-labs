@@ -19,7 +19,8 @@ ports:
     default: 27015
     protocol: udp
     env: QUERY_PORT
-    query: a2s
+    # Not `query: a2s`: Palworld opens this port but never answers on it (its receive queue fills and drops every packet),
+    # so the player count comes from the game's REST API instead, below.
 env:
   SERVER_NAME:
     label: Server name
@@ -33,6 +34,10 @@ env:
     secret: true
     generate: true
     help: Used for in-game admin commands and RCON.
+# The image turns the REST API on by default, with the admin password. Asked from inside the container, so port 8212 is never published.
+playerCount:
+  exec: [sh, -c, 'curl -fsS -m 3 -u "admin:$ADMIN_PASSWORD" "http://127.0.0.1:${REST_API_PORT:-8212}/v1/api/metrics"']
+  format: palworld-rest
 # The image ships `rcon-cli`, which talks to the server's own RCON using ADMIN_PASSWORD.
 console:
   exec: [rcon-cli]

@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { Stats } from "./api";
+import type { Server, Stats, Template } from "./api";
 import { bytes, rate } from "./format";
 import { Spark } from "./Spark";
 
@@ -24,7 +24,7 @@ function Tile({ label, value, children, sub }: { label: string; value: string | 
  * The five figures along the top. Anything the host cannot report stays an empty tile rather than an invented number, and the
  * small charts and peaks come only from what the panel has actually measured (the last few minutes, or today for players).
  */
-export function StatTiles({ stats }: { stats: Stats | null }) {
+export function StatTiles({ stats, servers, templates }: { stats: Stats | null; servers: Server[]; templates: Template[] }) {
   const host = stats?.host;
   const hist = stats?.history;
   const none = "Not reported yet";
@@ -36,6 +36,11 @@ export function StatTiles({ stats }: { stats: Stats | null }) {
   const online = counts.reduce((a, b) => a + b.online, 0);
   const slots = counts.every((c) => c.max > 0) ? counts.reduce((a, b) => a + b.max, 0) : 0; // a server that does not report its limit makes the total unknowable
   const peakToday = hist?.peaks.playersToday;
+  // Only games the panel can ask count towards the tile. When every running game is one it cannot ask, say that rather than "not reported yet".
+  const running = servers.filter((s) => s.status === "online");
+  const askable = running.filter((s) => templates.find((t) => t.id === s.templateId)?.reportsPlayers !== false);
+  const noneAskable = running.length > 0 && askable.length === 0;
+  const playersNone = noneAskable ? "No running game reports players" : none;
 
   return (
     <section className="stats" aria-label="Host">
@@ -55,7 +60,7 @@ export function StatTiles({ stats }: { stats: Stats | null }) {
       <Tile
         label="Players online"
         value={counts.length === 0 ? null : String(online)}
-        sub={counts.length === 0 ? none : `${slots > 0 ? `of ${slots} slots` : `across ${counts.length} server${counts.length === 1 ? "" : "s"}`}${peakToday != null ? ` · peak ${peakToday} today` : ""}`}
+        sub={counts.length === 0 ? playersNone : `${slots > 0 ? `of ${slots} slots` : `across ${counts.length} server${counts.length === 1 ? "" : "s"}`}${peakToday != null ? ` · peak ${peakToday} today` : ""}`}
       >
         {hist && hist.host.players.some((v) => v !== null) && <Spark values={hist.host.players} floor={4} tone="var(--stat-players)" label={`Players over the last ${minutes} minutes`} />}
       </Tile>

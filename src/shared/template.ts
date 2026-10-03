@@ -71,6 +71,17 @@ export const templateSchema = z
       .default({ method: "direct" }),
     ports: z.array(portSchema).min(1),
     env: z.record(envName, envVarSchema).default({}),
+    /**
+     * For games whose query port does not work: a program run inside the container that prints the player count, and how to read
+     * what it prints. It is run as given (no shell added), so a template that needs variables wraps it in `sh -c`.
+     */
+    playerCount: z
+      .object({
+        exec: z.array(z.string().min(1)).min(1),
+        format: z.enum(["palworld-rest"]),
+      })
+      .strict()
+      .optional(),
     /** A command box on the server page: each command is passed as one argument to this program inside the container (no shell). */
     console: z
       .object({

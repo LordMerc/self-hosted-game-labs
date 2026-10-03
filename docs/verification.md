@@ -98,6 +98,10 @@ Not run: per-server CPU and memory against a real container (the Docker stats ca
 
 Only `a2s` is implemented; `query: minecraft` is accepted by the template schema but not queried yet.
 
+### Palworld correction (2026-10-03, real server)
+
+The A2S row above turned out wrong. On the real server (image v2.8.0) a correct A2S_INFO sent to `127.0.0.1:27015` and to the LAN address from the host itself got no reply at all, and `/proc/net/udp` inside the container showed the query socket listening with a full receive queue and thousands of dropped packets: Palworld opens the port but never reads from it. So the Palworld template no longer uses `query: a2s`. It has a `playerCount` command instead, run inside the container with `docker exec`: `curl` against the image's REST API `/v1/api/metrics` (on by default, port 8212, never published), reading `currentplayernum` and `maxplayernum`. That command was run by hand against the real container and returned the live counts. Also seen: the image ships with `RCON_ENABLED=false`, so the console's `rcon-cli` examples (such as ShowPlayers) fail with "connection refused" until RCON is turned on.
+
 ## Backups (2026-10-03)
 
 | Check | Result |
