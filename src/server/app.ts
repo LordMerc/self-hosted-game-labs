@@ -211,6 +211,8 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
     return { ok: true };
   });
 
+  app.get("/api/network/diagnostics", async () => service.diagnostics());
+
   app.get("/api/network", async () => service.network());
 
   app.put("/api/network/rules/:id", async (req) => {

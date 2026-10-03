@@ -12,6 +12,19 @@ function ago(iso: string | null) {
   return `${Math.round(mins / 60 / 24)} d ago`;
 }
 
+/** Raw router reply, so an odd router can be diagnosed from a screenshot. */
+function RouterDetails() {
+  const [text, setText] = useState<string | null>(null);
+  const load = () => api<{ output: string | null }>("/network/diagnostics").then((r) => setText(r.output ?? "(nothing)")).catch((e) => setText(`Error: ${e.message}`));
+  return text === null ? (
+    <button className="ghost small" onClick={load}>
+      Show router details
+    </button>
+  ) : (
+    <pre className="router-details mono">{text}</pre>
+  );
+}
+
 export function NetworkPanel({ network, onChange }: { network: Network | null; onChange: () => void }) {
   const [checking, setChecking] = useState(false);
   if (!network) return null;
@@ -70,6 +83,7 @@ export function NetworkPanel({ network, onChange }: { network: Network | null; o
             <p className="muted">
               {network.mappings.length === 0 ? "No ports open on the router" : `${network.mappings.length} port${network.mappings.length === 1 ? "" : "s"} open on the router`}
             </p>
+            {network.mappingsError && <p className="error small-text">Can't read the router's port list: {network.mappingsError}</p>}
             {network.mappings.map((m) => (
               <div key={`${m.port}${m.protocol}`} className="map">
                 <span className="chip mono">
@@ -78,6 +92,7 @@ export function NetworkPanel({ network, onChange }: { network: Network | null; o
                 <span className="muted">→ {m.description.replace("gamelabs:", "")}</span>
               </div>
             ))}
+            <RouterDetails />
           </>
         ) : (
           <>
