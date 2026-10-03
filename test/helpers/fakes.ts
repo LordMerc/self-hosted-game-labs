@@ -36,6 +36,10 @@ export class FakeDocker implements ContainerDriver {
   async state(id: string): Promise<ContainerState> {
     return this.containers.get(id)?.state ?? "missing";
   }
+  usageById = new Map<string, { cpuPercent: number | null; memBytes: number }>();
+  async usage(id: string) {
+    return this.usageById.get(id) ?? { cpuPercent: 1.5, memBytes: 512 * 1024 * 1024 };
+  }
   async streamLogs(_id: string, onLine: (l: string) => void, signal: AbortSignal) {
     onLine("hello from the game");
     await new Promise<void>((r) => signal.addEventListener("abort", () => r(), { once: true }));

@@ -76,9 +76,11 @@ button.small { padding: 0.25rem 0.75rem; font-size: 0.8rem; justify-self: start;
 .stat { padding: 0.25rem 1.6rem; border-left: 1px solid var(--border); display: grid; gap: 0.35rem; align-content: start; }
 .stat:first-child { padding-left: 0; border-left: 0; }
 .stat-label { color: var(--muted); font-size: 0.9rem; }
-.stat-value { font-size: 2.1rem; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; }
+.stat-value { white-space: nowrap; font-size: 2.1rem; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; }
 .stat-value.pending { color: var(--faint); }
 .stat-bar { height: 3px; width: 100%; border-radius: 3px; background: var(--border); position: relative; overflow: hidden; }
+.stat-bar::after { content: ""; position: absolute; inset: 0 auto 0 0; width: var(--fill, 0%); background: var(--tone, var(--accent)); border-radius: 3px; transition: width 0.4s ease; }
+.usage { white-space: nowrap; font-size: 0.8rem; margin-top: 0.1rem; }
 .stat-sub { color: var(--faint); font-size: 0.8rem; }
 .tone-blue { --tone: #3b82f6; --tone-bg: #10203d; }
 .tone-violet { --tone: #a78bfa; --tone-bg: #221a3d; }

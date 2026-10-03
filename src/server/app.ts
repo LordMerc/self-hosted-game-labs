@@ -13,6 +13,7 @@ import { CloudflareClient } from "./dns/cloudflare.js";
 import type { DnsSettings } from "./dns/settings.js";
 import { hasAdminPassword, setAdminPassword, verifyAdminPassword } from "./auth/password.js";
 import { LoginRateLimiter } from "./auth/rate-limit.js";
+import { HostStats } from "./host-stats.js";
 
 const SESSION_COOKIE = "gl_session";
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -26,13 +27,14 @@ export interface AppDeps {
   dnsSettings: DnsSettings;
   /** Injectable for tests. */
   inspectToken?: typeof CloudflareClient.inspect;
+  hostStats?: HostStats;
   webRoot?: string;
 }
 
 const passwordBody = z.object({ password: z.string().min(1) });
 const newPasswordBody = z.object({ password: z.string().min(10, "Use at least 10 characters") });
 
-export function buildApp({ config, db, templates, service, docker, dnsSettings, inspectToken = CloudflareClient.inspect, webRoot }: AppDeps): FastifyInstance {
+export function buildApp({ config, db, templates, service, docker, dnsSettings, inspectToken = CloudflareClient.inspect, hostStats = new HostStats([config.GAMESERVERS_DIR, config.DATA_DIR]), webRoot }: AppDeps): FastifyInstance {
   const app = Fastify({ logger: false });
   const limiter = new LoginRateLimiter();
 
@@ -126,6 +128,9 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
   app.get("/api/templates/:id/plan", async (req) => ({ ports: service.planPorts(idParam(req)) }));
 
   app.get("/api/servers", async () => service.list());
+
+  /** Host figures and per-server usage for the dashboard. Players are not reported yet. */
+  app.get("/api/stats", async () => ({ host: hostStats.snapshot(), servers: await service.usage() }));
 
   const deployBody = z.object({
     templateId: z.string(),

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, type Network, type Server, type Template } from "./api";
+import { api, type Network, type Server, type Stats, type Template } from "./api";
 import { CopyButton } from "./CopyButton";
 import { DeployDialog } from "./DeployDialog";
 import { HiddenIp, isIpAddress } from "./HiddenIp";
@@ -20,14 +20,47 @@ const statusLabel: Record<Server["status"], string> = {
 type Tab = "all" | "online" | "paused" | "offline" | "error";
 const tabLabel: Record<Tab, string> = { all: "All", online: "Running", paused: "Paused", offline: "Stopped", error: "Error" };
 
-/** Host figures the backend does not report yet. They render as an empty tile rather than an invented number. */
-const hostTiles = [
-  { label: "CPU", tone: "blue" },
-  { label: "Memory", tone: "violet" },
-  { label: "Storage", tone: "cyan" },
-  { label: "Network", tone: "none" },
-  { label: "Players online", tone: "none" },
-] as const;
+function bytes(n: number) {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  while (n >= 1000 && i < units.length - 1) (n /= 1000), i++;
+  return `${n >= 100 || i === 0 ? Math.round(n) : n.toFixed(1)} ${units[i]}`;
+}
+
+const rate = (n: number) => `${bytes(n).replace(/(\d+)\.\d+/, "$1")}/s`;
+
+type Tile = { label: string; tone: "blue" | "violet" | "cyan" | "none"; value: string | null; sub: string; fill?: number };
+
+/** Host figures for the top row. Anything the backend cannot report stays an empty tile rather than an invented number. */
+function hostTiles(host: Stats["host"] | null): Tile[] {
+  const none = "Not reported yet";
+  const pct = (used: number, total: number) => (total > 0 ? Math.min(100, (used / total) * 100) : 0);
+  const cpu = host?.cpu.percent;
+  return [
+    { label: "CPU", tone: "blue", value: cpu == null ? null : `${Math.round(cpu)}%`, sub: cpu == null ? none : `${host!.cpu.cores} cores`, fill: cpu ?? undefined },
+    {
+      label: "Memory",
+      tone: "violet",
+      value: host?.memory ? bytes(host.memory.usedBytes) : null,
+      sub: host?.memory ? `of ${bytes(host.memory.totalBytes)}` : none,
+      fill: host?.memory ? pct(host.memory.usedBytes, host.memory.totalBytes) : undefined,
+    },
+    {
+      label: "Storage",
+      tone: "cyan",
+      value: host?.storage ? bytes(host.storage.usedBytes) : null,
+      sub: host?.storage ? `of ${bytes(host.storage.totalBytes)} used` : none,
+      fill: host?.storage ? pct(host.storage.usedBytes, host.storage.totalBytes) : undefined,
+    },
+    {
+      label: "Network",
+      tone: "none",
+      value: host?.network ? `↓ ${rate(host.network.rxPerSec)}` : null,
+      sub: host?.network ? `↑ ${rate(host.network.txPerSec)}` : none,
+    },
+    { label: "Players online", tone: "none", value: null, sub: none },
+  ];
+}
 
 const gameTones = ["green", "orange", "teal", "violet", "amber", "red"] as const;
 
@@ -57,6 +90,7 @@ export function GameServers({ onLogout, onNavigate }: { onLogout: () => void; on
   const [deploying, setDeploying] = useState<Template | null>(null);
   const [logsFor, setLogsFor] = useState<Server | null>(null);
   const [message, setMessage] = useState("");
+  const [stats, setStats] = useState<Stats | null>(null);
   const [tab, setTab] = useState<Tab>("all");
   const [query, setQuery] = useState("");
   const templatesRef = useRef<HTMLElement>(null);
@@ -76,6 +110,26 @@ export function GameServers({ onLogout, onNavigate }: { onLogout: () => void; on
     const t = setInterval(() => void refresh(), busy ? 2500 : 15000);
     return () => clearInterval(t);
   }, [busy, refresh]);
+
+  // Poll one request at a time: Docker takes a second or two to answer a stats call.
+  useEffect(() => {
+    let stop = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      try {
+        const next = await api<Stats>("/stats");
+        if (!stop) setStats(next);
+      } catch {
+        /* keep the last numbers; the page-level poll reports real outages */
+      }
+      if (!stop) timer = setTimeout(tick, 5000);
+    };
+    void tick();
+    return () => {
+      stop = true;
+      clearTimeout(timer);
+    };
+  }, []);
 
   async function act(promise: Promise<unknown>) {
     setMessage("");
@@ -129,12 +183,12 @@ export function GameServers({ onLogout, onNavigate }: { onLogout: () => void; on
         {message && <p className="error banner">{message}</p>}
 
         <section className="stats" aria-label="Host">
-          {hostTiles.map((t) => (
+          {hostTiles(stats?.host ?? null).map((t) => (
             <div key={t.label} className="stat">
               <span className="stat-label">{t.label}</span>
-              <span className="stat-value pending">—</span>
-              {t.tone !== "none" && <span className={`stat-bar tone-${t.tone}`} />}
-              <span className="stat-sub">Not reported yet</span>
+              <span className={`stat-value${t.value === null ? " pending" : ""}`}>{t.value ?? "—"}</span>
+              {t.tone !== "none" && <span className={`stat-bar tone-${t.tone}`} style={{ "--fill": `${t.fill ?? 0}%` } as React.CSSProperties} />}
+              <span className="stat-sub">{t.sub}</span>
             </div>
           ))}
         </section>
@@ -195,6 +249,11 @@ export function GameServers({ onLogout, onNavigate }: { onLogout: () => void; on
                             {max !== undefined && (
                               <div className="muted players" title="Live player counts are not reported yet">
                                 <Icon name="users" size={13} /> up to {max}
+                              </div>
+                            )}
+                            {stats?.servers[s.id] && (
+                              <div className="muted usage" title="Share of the whole host's CPU, and memory in use">
+                                {stats.servers[s.id].cpuPercent == null ? "CPU —" : `CPU ${stats.servers[s.id].cpuPercent!.toFixed(stats.servers[s.id].cpuPercent! < 10 ? 1 : 0)}%`} · {bytes(stats.servers[s.id].memBytes)}
                               </div>
                             )}
                             {s.lastError && <div className="error small-text">{s.lastError}</div>}

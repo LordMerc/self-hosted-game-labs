@@ -225,3 +225,16 @@ describe("reconcile", () => {
     expect((await svc.network()).reconcile.problems.join(" ")).toMatch(/No UPnP router found/);
   });
 });
+
+describe("usage", () => {
+  it("reports CPU and memory for running servers only, and skips one whose stats fail", async () => {
+    const a = await deploy("Alpha");
+    const b = await deploy("Bravo");
+    await svc.stop(b);
+    expect(Object.keys(await svc.usage())).toEqual([a]);
+    docker.usage = async () => {
+      throw new Error("docker busy");
+    };
+    expect(await svc.usage()).toEqual({});
+  });
+});

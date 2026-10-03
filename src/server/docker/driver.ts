@@ -17,6 +17,33 @@ export interface ContainerSpec {
 
 export type ContainerState = "running" | "paused" | "exited" | "missing";
 
+export interface ContainerUsage {
+  /** Share of the whole host's CPU, 0-100. Null when Docker has no earlier sample yet. */
+  cpuPercent: number | null;
+  memBytes: number;
+}
+
+interface RawStats {
+  cpu_stats?: { cpu_usage?: { total_usage?: number }; system_cpu_usage?: number };
+  precpu_stats?: { cpu_usage?: { total_usage?: number }; system_cpu_usage?: number };
+  memory_stats?: { usage?: number; stats?: Record<string, number> };
+}
+
+/** Turn one Docker stats reply into the figures the panel shows (page cache is not counted as memory use). */
+export function usageFromStats(s: RawStats): ContainerUsage {
+  const cur = s.cpu_stats;
+  const pre = s.precpu_stats;
+  const dCpu = (cur?.cpu_usage?.total_usage ?? 0) - (pre?.cpu_usage?.total_usage ?? 0);
+  const dSys = (cur?.system_cpu_usage ?? 0) - (pre?.system_cpu_usage ?? 0);
+  const havePrev = pre?.system_cpu_usage !== undefined && dSys > 0;
+  const m = s.memory_stats;
+  const cache = m?.stats?.inactive_file ?? m?.stats?.total_inactive_file ?? m?.stats?.cache ?? 0;
+  return {
+    cpuPercent: havePrev ? Math.min(100, Math.max(0, (dCpu / dSys) * 100)) : null,
+    memBytes: Math.max(0, (m?.usage ?? 0) - cache),
+  };
+}
+
 /** The small slice of Docker the panel needs. Swapped for a fake in tests. */
 export interface ContainerDriver {
   pullImage(image: string, onProgress?: (line: string) => void): Promise<void>;
@@ -27,6 +54,8 @@ export interface ContainerDriver {
   restart(id: string): Promise<void>;
   remove(id: string): Promise<void>;
   state(id: string): Promise<ContainerState>;
+  /** Current CPU and memory of a running container. */
+  usage(id: string): Promise<ContainerUsage>;
   /** Follow logs until the signal aborts. */
   streamLogs(id: string, onLine: (line: string) => void, signal: AbortSignal, tail?: number): Promise<void>;
 }
@@ -123,6 +152,10 @@ export class DockerodeDriver implements ContainerDriver {
       if ((e as { statusCode?: number }).statusCode === 404) return "missing";
       throw e;
     }
+  }
+
+  async usage(id: string): Promise<ContainerUsage> {
+    return usageFromStats((await this.docker.getContainer(id).stats({ stream: false })) as unknown as RawStats);
   }
 
   async streamLogs(id: string, onLine: (line: string) => void, signal: AbortSignal, tail = 200): Promise<void> {
