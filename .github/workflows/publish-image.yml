@@ -1,9 +1,11 @@
 # Builds the panel image and publishes it to GitHub Container Registry (ghcr.io/lordmerc/self-hosted-game-labs).
 # No secrets to set up: it uses the repository's built-in GITHUB_TOKEN.
-#   push to main    -> :latest and :sha-<short commit>
+# Images change only when you release (or push to the beta branch). Nothing else publishes.
+#   tag v1.2.3      -> :1.2.3, :1.2 and :latest (and :sha-<short commit>). :latest is the newest release.
+#                      A pre-release tag such as v1.3.0-rc1 gets its own tag and does not move :latest.
 #   push to beta    -> :beta and :sha-<short commit> (a preview image; see "Trying changes before a release" in the README)
-#   tag v1.2.3      -> :1.2.3 and :1.2 (and :sha-<short commit>)
-#   pull request    -> builds the image for both platforms to prove the Dockerfile works, but publishes nothing
+#   push to main    -> builds for both platforms to prove the Dockerfile works, but publishes nothing
+#   pull request    -> same: build only, publishes nothing
 name: Publish image
 on:
   push:
@@ -31,7 +33,7 @@ jobs:
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - name: Log in to ghcr.io
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/beta' || startsWith(github.ref, 'refs/tags/v')
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -41,9 +43,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
-          flavor: latest=false
+          flavor: latest=auto
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=beta,enable=${{ github.ref == 'refs/heads/beta' }}
             type=sha,format=short
             type=semver,pattern={{version}}
@@ -52,7 +53,7 @@ jobs:
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
+          push: ${{ github.ref == 'refs/heads/beta' || startsWith(github.ref, 'refs/tags/v') }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

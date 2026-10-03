@@ -134,4 +134,4 @@ Once a day the panel asks GitHub for this project's newest release (`api.github.
 - It sends no information about you or your machine, only an ordinary web request that carries the program name and version. GitHub sees your IP address, like any website you visit.
 - The panel **never installs updates by itself.** To update, pull the new image or redeploy the stack, as you do today.
 - Switch it off on the **Settings** page ("Check for new versions once a day"), or for good with `UPDATE_CHECK=off`.
-- Development builds (images from `main` between releases, labelled `dev-<commit>`) have no release number, so they never show the notice. If you build from the source yourself, the version is the one in `package.json`.
+- Development builds (the `:beta` preview image and builds made from source, labelled `dev-<commit>`) have no release number, so they never show the notice. If you build from the source yourself, the version is the one in `package.json`.
