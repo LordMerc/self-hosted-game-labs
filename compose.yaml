@@ -1,0 +1,26 @@
+# Works with plain `docker compose up -d --build` and with Git-based stack deploys (Dockhand, Portainer, ...).
+# Every setting below can come from a .env file next to this file, or from the stack's environment variables.
+services:
+  gamelabs:
+    build: .
+    container_name: gamelabs
+    # Host networking is required: UPnP discovery (SSDP) does not cross the Docker bridge,
+    # and game servers are exposed on the host's own ports.
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - gamelabs-data:/data
+      # World data. The host path must equal the container path: the Docker daemon resolves bind mounts on the host.
+      - /srv/gameservers:/srv/gameservers
+    environment:
+      PANEL_PORT: ${PANEL_PORT:-8090}
+      HOST_LAN_IP: ${HOST_LAN_IP:-}
+      PUBLIC_HOST: ${PUBLIC_HOST:-}
+      CONNECTIVITY: ${CONNECTIVITY:-manual}
+      CF_API_TOKEN: ${CF_API_TOKEN:-}
+      CF_ZONE: ${CF_ZONE:-}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+
+volumes:
+  gamelabs-data:
