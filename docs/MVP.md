@@ -9,13 +9,13 @@ Panel and auth, templates and port allocation, deploy / start / stop / restart /
 ## Blocking the MVP
 
 1. ~~**A friend connecting from outside.**~~ Verified 2026-10-03: a friend joined the maintainer's Palworld from the internet at `palworld.<domain>:8211`, through UPnP and the Cloudflare DNS record the panel made. Docker, UPnP on a Deco router and Cloudflare all ran for real (see [verification.md](verification.md)). The MVP goal is met; the items below are what is left to make it solid.
-2. **Verify the Palworld template** against the image's current docs (env names, ports, data path) and pin an image tag once a version works.
+2. **Verify the Palworld template** against the image's current docs (env names, ports, data path) and pin an image tag once a version works. Done: pinned to `v2.8.0`, the version that was `latest` when the first world ran (checked against Docker Hub on 2026-10-03).
 3. ~~**Honest reachability check.**~~ Built (the maintainer agreed to a third-party checker on 2026-10-03). **Run** in the Network panel asks check-host.net to connect to each public server's TCP ports from a few locations; UDP ports (Palworld, Dragonwilds, Valheim) cannot be tested from outside, so they show "Router forwards the port" from the router's mapping list. It never says "open" without a real connection. `PORT_CHECK=off` removes it. The provider's API has not been exercised from the build sandbox, see [verification.md](verification.md).
 
 ## Not needed for the MVP, planned next
 
 - Header stats: CPU, memory, storage and network are done, plus per-server CPU and memory. Live player counts work for games that answer the Steam A2S query (Palworld, unverified on a real server); other games need their own query
-- Server page: config editor and console are done (open a server's name); ports editing is not
+- Server page: config editor and console are done (open a server's name); ports editing is done too
 - Templates: Palworld, Dragonwilds, Minecraft (Java), Valheim, Satisfactory, Terraria and a Custom Docker image option are in. More games each need verifying against their image first (see verification.md for what was and was not run)
-- Backups: manual backup, restore (with a safety copy) and delete are done. Scheduled (automatic) backups are done too. Scheduled restarts and update checks are not
+- Backups: manual backup, restore (with a safety copy) and delete are done. Scheduled (automatic) backups are done too. Daily restarts (with an in-game warning where the game allows), update checks, applying updates after a backup and automatic updates are built, with Palworld pinned to `v2.8.0`; none of them has run on the real homelab yet, see [verification.md](verification.md)
 - Browser smoke test: done (`e2e/`, runs in CI). It uses a fake Docker, so it checks the UI and API together, not the games

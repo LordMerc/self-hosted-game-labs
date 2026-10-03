@@ -32,6 +32,6 @@ Still open for Milestone 1:
 
 2. **Stays working on its own**: reconcile loop and honest reachability check (TCP from outside via check-host.net, UDP shown as router-forwarded) are done; the check still needs a real-hardware run
 3. **UI to spec**: Network panel, server detail page, deploy wizard, conflict UX, Dragonwilds template
-4. **Templates and care**: Minecraft, Valheim, Satisfactory, Terraria and a custom image option (done); backups and restore (done); scheduled restarts; update checks
+4. **Templates and care**: Minecraft, Valheim, Satisfactory, Terraria and a custom image option (done); backups and restore (done); scheduled restarts, update checks and port editing (built, not yet run on real hardware); per-server CPU and memory limits (done)
 
 Ideas outside the current scope (not committed): extra navigation sections from the concept art (Overview, Network, Backups, Logs) once there is a clear reason to split them from Game servers.

@@ -56,6 +56,7 @@ beforeEach(() => {
       return hubTags;
     },
     queryPlayers: async () => (playersAnswer ? { online: 4, max: 32 } : null),
+    hostCores: 8,
   });
 });
 
@@ -919,6 +920,28 @@ describe("updates", () => {
     expect(svc.events(id).map((e) => e.message).some((m) => m.startsWith("Updating to"))).toBe(true);
   });
 
+  it("while a big download is under way, the server stays 'updating' and is not rebuilt behind its back", async () => {
+    const id = await deploy();
+    hubTags = ["v2.8.0", "v2.9.0"];
+    await svc.checkUpdate(id);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const realPull = docker.pullImage.bind(docker);
+    docker.pullImage = async (image: string) => {
+      await gate;
+      return realPull(image);
+    };
+    const job = svc.applyUpdate(id);
+    await new Promise((r) => setTimeout(r, 20));
+    expect((await svc.list())[0].status).toBe("updating");
+    await svc.reconcile();
+    expect(docker.containers.size).toBe(0); // reconcile did not start a second deploy
+    release();
+    await job;
+    expect((await svc.list())[0].status).toBe("online");
+    expect(docker.containers.size).toBe(1);
+  });
+
   it("looks for a newer version tag by itself every few hours, without downloading anything", async () => {
     await deploy();
     const pulls = docker.pulled.length;
@@ -976,5 +999,86 @@ describe("changing a server's ports", () => {
   it("refuses a custom image, whose ports the image decides", async () => {
     const id = await svc.deployCustom({ name: "Bedrock", image: "itzg/minecraft-bedrock-server:latest", ports: [{ port: 19132, protocol: "udp" }] });
     await expect(svc.changePorts(id, 20000)).rejects.toMatchObject({ status: 409 });
+  });
+});
+
+describe("resource limits", () => {
+  const MB = 1024 * 1024;
+  const spec = () => [...docker.containers.values()][0].spec;
+
+  it("starts with no limit unless asked", async () => {
+    const id = await deploy();
+    expect(spec().nanoCpus).toBeUndefined();
+    expect(spec().memoryBytes).toBeUndefined();
+    expect((await svc.list())[0].limits).toEqual({ cpus: null, memoryMb: null, warnings: [] });
+    expect(id).toBeTruthy();
+  });
+
+  it("passes a CPU and memory cap from the deploy request to Docker", async () => {
+    await deploy("Capped", { cpus: 1.5, memoryMb: 4096 });
+    expect(spec().nanoCpus).toBe(1_500_000_000);
+    expect(spec().memoryBytes).toBe(4096 * MB);
+    expect((await svc.list())[0].limits).toMatchObject({ cpus: 1.5, memoryMb: 4096 });
+  });
+
+  it("rejects limits that Docker or common sense would not accept", async () => {
+    await expect(deploy("A", { cpus: 0 })).rejects.toMatchObject({ status: 400, extra: { field: "cpus" } });
+    await expect(deploy("A", { cpus: 9 })).rejects.toThrow(/8 CPU cores/);
+    await expect(deploy("A", { cpus: "lots" })).rejects.toMatchObject({ extra: { field: "cpus" } });
+    await expect(deploy("A", { memoryMb: 64 })).rejects.toMatchObject({ extra: { field: "memoryMb" } });
+    expect(docker.containers.size).toBe(0);
+    expect(await svc.list()).toHaveLength(0);
+  });
+
+  it("changing a limit recreates the container with it, keeps data and ports, and does not pull again", async () => {
+    const id = await deploy("Alpha");
+    const portsBefore = (await svc.list())[0].ports;
+    expect(await svc.updateSettings(id, { cpus: 2, memoryMb: 2048 })).toEqual({ restarting: true });
+    expect(docker.containers.size).toBe(1);
+    expect(spec().nanoCpus).toBe(2_000_000_000);
+    expect(spec().memoryBytes).toBe(2048 * MB);
+    const s = (await svc.list())[0];
+    expect(s.status).toBe("online");
+    expect(s.ports).toEqual(portsBefore);
+    expect(docker.pulled).toHaveLength(1);
+    // A limit left out stays; null removes it.
+    await svc.updateSettings(id, { memoryMb: null });
+    expect(spec().memoryBytes).toBeUndefined();
+    expect(spec().nanoCpus).toBe(2_000_000_000);
+  });
+
+  it("does not restart when the limits are sent but unchanged", async () => {
+    const id = await deploy("Alpha", { memoryMb: 2048 });
+    expect(await svc.updateSettings(id, { memoryMb: 2048, cpus: null })).toEqual({ restarting: false });
+  });
+
+  it("keeps the old limits when a new one is rejected", async () => {
+    const id = await deploy("Alpha", { cpus: 1 });
+    await expect(svc.updateSettings(id, { cpus: 99 })).rejects.toThrow(/CPU cores/);
+    expect((await svc.list())[0].limits.cpus).toBe(1);
+  });
+
+  it("applies the limits again when a missing container is recreated", async () => {
+    await deploy("Alpha", { cpus: 1, memoryMb: 1024 });
+    docker.containers.clear();
+    await svc.reconcile();
+    expect(spec().nanoCpus).toBe(1_000_000_000);
+    expect(spec().memoryBytes).toBe(1024 * MB);
+  });
+
+  it("warns, but allows it, when the memory cap is below what the game needs", async () => {
+    const id = await svc.deploy({ templateId: "satisfactory", name: "Factory", memoryMb: 4096 });
+    const [s] = await svc.list();
+    expect(s.limits.warnings).toEqual([expect.stringMatching(/needs about 8 GB.*4 GB limit/)]);
+    expect(svc.events(id).some((e) => e.level === "warn" && /8 GB/.test(e.message))).toBe(true);
+    expect((await svc.detail(id)).minMemoryMb).toBe(8192);
+    await svc.updateSettings(id, { memoryMb: 8192 });
+    expect((await svc.list())[0].limits.warnings).toEqual([]);
+  });
+
+  it("takes limits for a custom image too", async () => {
+    await svc.deployCustom({ name: "Mine", image: "someone/game:latest", ports: [{ port: 19132, protocol: "udp" }], cpus: 1, memoryMb: 512 });
+    expect(spec().nanoCpus).toBe(1_000_000_000);
+    expect(spec().memoryBytes).toBe(512 * MB);
   });
 });

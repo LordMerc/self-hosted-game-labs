@@ -5,6 +5,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
+import http from "node:http";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
 import { chromium, type Browser, type Page } from "playwright";
@@ -12,6 +13,8 @@ import { buildApp } from "../src/server/app.js";
 import { loadConfig } from "../src/server/config.js";
 import { openDb } from "../src/server/db/index.js";
 import { DnsSettings } from "../src/server/dns/settings.js";
+import { UpdateChecker } from "../src/server/updates.js";
+import { Notifier } from "../src/server/notifications/notifier.js";
 import { ServerService } from "../src/server/servers/service.js";
 import { loadTemplates } from "../src/server/templates/loader.js";
 import { FakeConnectivity, FakeDocker } from "../test/helpers/fakes.js";
@@ -31,7 +34,11 @@ beforeAll(async () => {
   const templates = loadTemplates(path.resolve("templates"));
   const docker = new FakeDocker();
   const service = new ServerService({ config, db, templates, docker, connectivity: new FakeConnectivity(), hostPorts: () => new Set(), background: false, stableMs: 0, tagLister: async () => ["v2.8.0", "v2.9.0", "latest"], portProbe: { name: "fake-checker", check: async () => ({ state: "open", detail: "Connected from 3 of 3 locations" }) }, queryPlayers: async () => ({ online: 2, max: 32 }) });
-  const app = buildApp({ config, db, templates, service, docker, dnsSettings: new DnsSettings(db, config), webRoot: path.resolve("dist/web") });
+  // A newer release is "out there", so the update notice has something to show.
+  const release = { tag_name: "v0.2.0", name: "v0.2.0", html_url: "https://github.com/LordMerc/self-hosted-game-labs/releases/tag/v0.2.0" };
+  const updates = new UpdateChecker(db, { current: "0.1.0", envEnabled: true, fetchFn: (async () => new Response(JSON.stringify(release))) as unknown as typeof fetch });
+  await updates.checkIfDue();
+  const app = buildApp({ config, db, templates, service, docker, dnsSettings: new DnsSettings(db, config), updates, notifier: new Notifier(db, config), webRoot: path.resolve("dist/web") });
   await app.listen({ port: 0, host: "127.0.0.1" });
   url = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
   close = () => app.close();
@@ -106,6 +113,23 @@ describe("the panel in a browser", () => {
     await shot("3-custom");
   });
 
+  it("warns when a memory limit is below what the game needs, shows the limit, and changes it from the server page", async () => {
+    await page.getByRole("button", { name: "Satisfactory" }).click();
+    await page.getByRole("spinbutton", { name: /Memory limit/ }).fill("4");
+    await page.getByText(/needs about 8 GB of memory, so a 4 GB limit/).waitFor();
+    await page.getByRole("button", { name: "Deploy", exact: true }).click();
+    await row("Satisfactory").getByText("Limit 4 GB").waitFor();
+    await page.getByRole("button", { name: "Satisfactory", exact: true }).first().click();
+    await page.getByRole("spinbutton", { name: /CPU limit/ }).fill("2");
+    await page.getByRole("spinbutton", { name: /Memory limit/ }).fill("8");
+    await page.locator("form.settings-card").getByRole("button", { name: "Save and restart" }).click();
+    await page.getByText(/restarting to apply the changes/).waitFor();
+    await page.locator("dl.facts").getByText("2 cores · 8 GB").waitFor();
+    await shot("3a-limits");
+    await page.getByRole("link", { name: "Game servers" }).click();
+    await row("Satisfactory").getByText("Limit 2 cores · 8 GB").waitFor();
+  });
+
   it("checks a public server's port from outside and shows the answer", async () => {
     await row("Minecraft").getByRole("button", { name: "Public" }).click();
     await page.getByRole("button", { name: "Run" }).first().waitFor();
@@ -166,6 +190,59 @@ describe("the panel in a browser", () => {
     await page.locator("form.dialog").getByRole("button", { name: "Set up again", exact: true }).click();
     await page.getByRole("heading", { name: "Game servers" }).waitFor();
     await row("Palworld Prime").getByText("Running").waitFor();
+  });
+
+  it("shows a new-version notice that can be closed, and an Updates section in Settings with an off switch", async () => {
+    await page.reload();
+    const banner = page.getByRole("status").filter({ hasText: "Version 0.2.0 is available" });
+    await banner.waitFor();
+    expect(await banner.getByRole("link", { name: "See what's new" }).getAttribute("href")).toBe("https://github.com/LordMerc/self-hosted-game-labs/releases/tag/v0.2.0");
+    await shot("6-update-banner");
+    await banner.getByRole("button", { name: "Dismiss" }).click();
+    await banner.waitFor({ state: "detached" });
+    await page.reload();
+    await page.getByRole("heading", { name: "Game servers" }).waitFor();
+    expect(await banner.count()).toBe(0); // stays closed for this version
+
+    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await page.getByRole("heading", { name: "Updates" }).waitFor();
+    await page.getByText("Version 0.2.0 is available.").waitFor();
+    await shot("7-updates-settings");
+    await page.getByLabel("Check for new versions once a day").click();
+    await page.getByText("Update checks are off.").waitFor();
+    await page.getByLabel("Check for new versions once a day").click();
+    await page.getByText("Version 0.2.0 is available.").waitFor();
+  });
+
+  it("saves a webhook in Settings, sends a test message to it and keeps the address hidden", async () => {
+    const received: { event?: string; title?: string }[] = [];
+    const hook = http.createServer((req, res) => {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => (received.push(JSON.parse(body)), res.writeHead(204).end()));
+    });
+    await new Promise<void>((r) => hook.listen(0, "127.0.0.1", r));
+    const hookUrl = `http://127.0.0.1:${(hook.address() as AddressInfo).port}/hooks/games`;
+    try {
+      await page.getByRole("link", { name: "Settings", exact: true }).click();
+      await page.getByRole("heading", { name: "Notifications" }).waitFor();
+      await page.getByPlaceholder(/discord.com\/api\/webhooks/).fill(hookUrl);
+      await page.getByRole("button", { name: "Send test message" }).click();
+      await page.getByText("Sent. Check your channel").waitFor();
+      expect(received.map((r) => r.event)).toEqual(["test"]);
+      await page.locator("form.notify-form").getByRole("button", { name: "Save", exact: true }).click();
+      await page.getByText(/Sending to a webhook at/).waitFor();
+      expect(await page.content()).not.toContain("/hooks/games");
+      await page.getByLabel("A player leaves").check();
+      await page.getByLabel("A server comes online").uncheck();
+      await page.reload();
+      await page.getByText(/Sending to a webhook at/).waitFor();
+      expect(await page.getByLabel("A player leaves").isChecked()).toBe(true);
+      expect(await page.getByLabel("A server comes online").isChecked()).toBe(false);
+      await shot("6-notifications");
+    } finally {
+      hook.close();
+    }
   });
 
   it("has no browser errors", () => {

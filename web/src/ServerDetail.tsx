@@ -6,6 +6,7 @@ import { CopyButton } from "./CopyButton";
 import { Hint } from "./Hint";
 import { HiddenIp, isIpAddress } from "./HiddenIp";
 import { Icon } from "./Icons";
+import { LimitFields, limitInputFrom, limitText, limitsFromInput, memoryWarning } from "./Limits";
 import { LogViewer } from "./LogViewer";
 import { Nav, type Page } from "./Nav";
 
@@ -177,6 +178,13 @@ export function ServerDetail({ id, onBack, onLogout, onNavigate }: { id: string;
                     </button>
                   </div>
                 </dd>
+                <dt>Limit</dt>
+                <dd>
+                  {limitText(s.limits) ?? <span className="muted">None (can use the whole machine)</span>}
+                  {s.limits.warnings.map((w) => (
+                    <div key={w} className="warn small-text wrap">{w}</div>
+                  ))}
+                </dd>
                 {stats && (
                   <>
                     <dt>Using</dt>
@@ -240,6 +248,7 @@ function SettingsForm({ detail, disabled, onSaved }: { detail: Detail; disabled:
   const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(detail.env.map((e) => [e.key, e.value ?? ""])));
   const [reset, setReset] = useState<Set<string>>(new Set());
   const [shown, setShown] = useState<Record<string, string>>({});
+  const [limits, setLimits] = useState(() => limitInputFrom(detail.server.limits));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
@@ -253,6 +262,8 @@ function SettingsForm({ detail, disabled, onSaved }: { detail: Detail; disabled:
   }
   const envDirty = Object.keys(changedEnv).length > 0;
   const nameDirty = name.trim() !== detail.server.name;
+  const typedLimits = limitsFromInput(limits);
+  const limitsDirty = typeof typedLimits !== "string" && (typedLimits.cpus !== detail.server.limits.cpus || typedLimits.memoryMb !== detail.server.limits.memoryMb);
 
   async function reveal(key: string) {
     try {
@@ -265,13 +276,14 @@ function SettingsForm({ detail, disabled, onSaved }: { detail: Detail; disabled:
 
   async function save(ev: FormEvent) {
     ev.preventDefault();
+    if (typeof typedLimits === "string") return setError(typedLimits);
     setBusy(true);
     setError("");
     setNote("");
     try {
       const r = await api<{ restarting: boolean }>(`/servers/${detail.server.id}/settings`, {
         method: "PUT",
-        body: { ...(nameDirty ? { name } : {}), ...(envDirty ? { env: changedEnv } : {}) },
+        body: { ...(nameDirty ? { name } : {}), ...(envDirty ? { env: changedEnv } : {}), ...(limitsDirty ? typedLimits : {}) },
       });
       setValues((v) => Object.fromEntries(Object.entries(v).map(([k, x]) => [k, detail.env.find((e) => e.key === k)?.secret ? "" : x])));
       setReset(new Set());
@@ -338,12 +350,13 @@ function SettingsForm({ detail, disabled, onSaved }: { detail: Detail; disabled:
           )}
         </label>
       ))}
+      <LimitFields fieldClass="field" value={limits} onChange={setLimits} warning={memoryWarning(limits, detail.server.templateName, detail.minMemoryMb)} />
       <div className="row">
-        <button className="primary" disabled={disabled || busy || (!envDirty && !nameDirty)}>
-          {busy ? "Saving…" : envDirty ? "Save and restart" : "Save"}
+        <button className="primary" disabled={disabled || busy || (!envDirty && !nameDirty && !limitsDirty)}>
+          {busy ? "Saving…" : envDirty || limitsDirty ? "Save and restart" : "Save"}
         </button>
       </div>
-      <p className="muted note">Changing a game setting restarts the server so it takes effect. Your world and backups are not touched. Changing only the name does not restart anything.</p>
+      <p className="muted note">Changing a game setting or a limit restarts the server so it takes effect. Your world and backups are not touched. Changing only the name does not restart anything.</p>
       {error && <p className="error">{error}</p>}
       {note && <p className="muted">{note}</p>}
     </form>

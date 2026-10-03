@@ -14,6 +14,10 @@ export interface ContainerSpec {
   /** Arguments for the image's own start-up command. */
   command?: string[];
   tty?: boolean;
+  /** CPU cap in billionths of a core (Docker's NanoCPUs); omitted = no cap. */
+  nanoCpus?: number;
+  /** Memory cap in bytes, swap included; omitted = no cap. */
+  memoryBytes?: number;
   /** Host port == container port. */
   ports: { port: number; protocol: Protocol }[];
   binds: { host: string; container: string }[];
@@ -148,6 +152,9 @@ export class DockerodeDriver implements ContainerDriver {
         PortBindings: bindings,
         Binds: spec.binds.map((b) => `${b.host}:${b.container}`),
         RestartPolicy: { Name: "unless-stopped" },
+        ...(spec.nanoCpus ? { NanoCpus: spec.nanoCpus } : {}),
+        // MemorySwap equal to Memory means no swap, so the cap is a real one instead of "RAM plus the same again in swap".
+        ...(spec.memoryBytes ? { Memory: spec.memoryBytes, MemorySwap: spec.memoryBytes } : {}),
       },
     });
     return container.id;

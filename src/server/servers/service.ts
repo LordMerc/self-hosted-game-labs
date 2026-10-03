@@ -2,6 +2,7 @@ import { chownSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { randomBytes, randomUUID } from "node:crypto";
 import path from "node:path";
 import net from "node:net";
+import os from "node:os";
 import { eq } from "drizzle-orm";
 import type { Config } from "../config.js";
 import type { Db } from "../db/index.js";
@@ -20,7 +21,9 @@ import { buildCustomTemplate, checkCustomInput, isCustomId, type CustomInput } f
 import type { TcpProbe } from "../reachability.js";
 import { CareStore, compareVersions, dayKey, dockerHubTags, dueStatus, isDockerHubImage, newestTag, repoOf, tagOf, type CareSettings, type TagLister, type UpdateCheck } from "../care.js";
 import { queryMinecraft } from "../players/minecraft.js";
+import type { NotifyEvent, NotifySink } from "../notifications/notifier.js";
 import { slugify, uniqueSlug } from "../slug.js";
+import { checkCpus, checkMemory, limitWarnings, type Limits } from "./limits.js";
 
 export class UserError extends Error {
   constructor(
@@ -39,6 +42,10 @@ export interface DeployRequest {
   /** Optional manual port choices keyed by template port name. */
   ports?: Record<string, number>;
   access?: "private" | "public";
+  /** Most CPU cores the game may use (e.g. 1.5). Empty or null: no limit. */
+  cpus?: number | null;
+  /** Most memory the game may use, in MB. Empty or null: no limit. */
+  memoryMb?: number | null;
   /** Set the new server up from this backup: its world is put in place before the server first starts. */
   restoreFrom?: { slug: string; name: string };
 }
@@ -74,6 +81,8 @@ export interface ServiceDeps {
   /** TCP probe used for readiness; injectable for tests. */
   probeTcp?: (port: number) => Promise<boolean>;
   stableMs?: number;
+  /** Number of CPU cores on this machine, the highest CPU limit Docker accepts. Defaults to the real count. */
+  hostCores?: number;
   /** Asks an outside machine whether a TCP port answers. Absent or null: the outside check is off. */
   portProbe?: TcpProbe | null;
   /** Lists the version tags of a Docker Hub image, to tell when a newer one exists; injectable for tests. */
@@ -82,6 +91,8 @@ export interface ServiceDeps {
   chown?: (dir: string, uid: number, gid: number) => void;
   /** Player-count query for a template port with a `query` kind; injectable for tests. */
   queryPlayers?: (host: string, port: number, kind: "a2s" | "minecraft") => Promise<PlayerCount | null>;
+  /** Told when a server comes up, goes down, gains or loses players, or a backup fails. Absent: nobody is told. */
+  notifier?: NotifySink;
 }
 
 export interface DnsContext {
@@ -185,7 +196,7 @@ export class ServerService {
   }
 
   /** Set up a server from any Docker image. Ports are used exactly as given, because the image decides where it listens. */
-  async deployCustom(req: CustomInput & { access?: "private" | "public" }): Promise<string> {
+  async deployCustom(req: CustomInput & { access?: "private" | "public"; cpus?: number | null; memoryMb?: number | null }): Promise<string> {
     const name = req.name.trim();
     if (!name || name.length > 60) throw new UserError("Give the server a name (up to 60 characters)");
     const problem = checkCustomInput(req);
@@ -199,6 +210,8 @@ export class ServerService {
         env: req.env,
         ports: Object.fromEntries(t.ports.map((p) => [p.name, p.default])),
         access: req.access,
+        cpus: req.cpus,
+        memoryMb: req.memoryMb,
       });
       this.saveCustomTemplates();
       return id;
@@ -246,7 +259,49 @@ export class ServerService {
   }
 
   private setStatus(id: string, status: (typeof schema.servers.$inferSelect)["status"], lastError: string | null = null) {
+    const prev = this.d.db.select({ status: schema.servers.status, name: schema.servers.name }).from(schema.servers).where(eq(schema.servers.id, id)).get();
     this.d.db.update(schema.servers).set({ status, lastError }).where(eq(schema.servers.id, id)).run();
+    if (!prev || prev.status === status || this.expected.has(id)) return;
+    if (status === "online") this.notify({ kind: "online", server: prev.name });
+    else if ((status === "offline" || status === "error") && (prev.status === "online" || prev.status === "deploying" || prev.status === "updating")) {
+      this.notify({ kind: "down", server: prev.name, failedToStart: prev.status !== "online", ...(lastError ? { detail: lastError } : {}) });
+    }
+  }
+
+  // --------------------------------------------------------- notifications
+
+  private notify(e: NotifyEvent) {
+    try {
+      this.d.notifier?.notify(e);
+    } catch {
+      /* a notification problem must never break the server action that caused it */
+    }
+  }
+
+  /** Servers the panel itself is stopping or restarting right now, so that is not reported as a crash. */
+  private expected = new Set<string>();
+  /** When each running container last started, to notice one that crashed and was started again by Docker. */
+  private lastStart = new Map<string, string>();
+  /** The last player count seen per server, to tell joins from leaves. Absent until a first reading. */
+  private lastPlayers = new Map<string, number>();
+
+  private async quietly<T>(id: string, fn: () => Promise<T>): Promise<T> {
+    this.expected.add(id);
+    try {
+      return await fn();
+    } finally {
+      this.expected.delete(id);
+      this.lastStart.delete(id);
+    }
+  }
+
+  /** Check the limits a request carries. Throws a message for the person if one is not usable. */
+  private checkLimits(cpus: unknown, memoryMb: unknown): Limits {
+    const c = checkCpus(cpus, this.d.hostCores ?? os.availableParallelism());
+    if (!c.ok) throw new UserError(c.message, 400, { field: c.field });
+    const m = checkMemory(memoryMb);
+    if (!m.ok) throw new UserError(m.message, 400, { field: m.field });
+    return { cpus: c.value, memoryMb: m.value };
   }
 
   private takenPorts(): Set<PortKey> {
@@ -277,6 +332,8 @@ export class ServerService {
       checkEnvValue(key, def, v);
       if (v) env[key] = v;
     }
+
+    const limits = this.checkLimits(req.cpus, req.memoryMb);
 
     const taken = this.takenPorts();
     const busy = this.busyPorts();
@@ -315,10 +372,11 @@ export class ServerService {
     }
 
     this.d.db.transaction((tx) => {
-      tx.insert(schema.servers).values({ id, slug, name, templateId: t.id, status: "deploying", access: "private", env, createdAt: new Date() }).run();
+      tx.insert(schema.servers).values({ id, slug, name, templateId: t.id, status: "deploying", access: "private", env, cpus: limits.cpus, memoryMb: limits.memoryMb, createdAt: new Date() }).run();
       for (const a of allocation) tx.insert(schema.serverPorts).values({ serverId: id, name: a.name, port: a.port, protocol: a.protocol }).run();
     });
     this.event(id, "info", `Deploy started from template ${t.id}${req.restoreFrom ? `, with the world from backup ${req.restoreFrom.name}` : ""}`);
+    for (const w of limitWarnings(t, limits)) this.event(id, "warn", w);
 
     const job = this.runDeploy(id, req.access ?? "private");
     if (this.d.background === false) await job;
@@ -373,6 +431,8 @@ export class ServerService {
         env,
         ...(t.command ? { command: expandCommand(t.command, env) } : {}),
         ...(t.tty ? { tty: true } : {}),
+        ...(row.cpus ? { nanoCpus: Math.round(row.cpus * 1e9) } : {}),
+        ...(row.memoryMb ? { memoryBytes: row.memoryMb * 1024 * 1024 } : {}),
         ports: ports.map((p) => ({ port: p.port, protocol: p.protocol })),
         binds,
         labels: { [LABEL_MANAGED]: "true", [LABEL_ID]: id, [LABEL_SLUG]: row.slug },
@@ -435,16 +495,20 @@ export class ServerService {
   async stop(id: string) {
     const row = this.row(id);
     if (!row.containerId) throw new UserError("Server has no container yet", 409);
-    await this.d.docker.stop(row.containerId);
-    this.setStatus(id, "offline");
+    await this.quietly(id, async () => {
+      await this.d.docker.stop(row.containerId!);
+      this.setStatus(id, "offline");
+    });
     this.event(id, "info", "Stopped");
   }
 
   async restart(id: string) {
     const row = this.row(id);
     if (!row.containerId) throw new UserError("Server has no container yet", 409);
-    await this.d.docker.restart(row.containerId);
-    this.setStatus(id, "online");
+    await this.quietly(id, async () => {
+      await this.d.docker.restart(row.containerId!);
+      this.setStatus(id, "online");
+    });
     this.event(id, "info", "Restarted");
   }
 
@@ -578,7 +642,7 @@ export class ServerService {
 
     // 1. Containers: recreate any that vanished; sync status for the rest.
     for (const r of this.d.db.select().from(schema.servers).all()) {
-      if (r.status === "deploying" || r.status === "error") continue;
+      if (r.status === "deploying" || r.status === "updating" || r.status === "error") continue;
       if (r.containerId && (await this.d.docker.state(r.containerId).catch(() => "exited" as const)) === "missing") {
         actions.push(`recreated missing container for ${r.slug}`);
         this.event(r.id, "warn", "Container was missing; recreating");
@@ -659,10 +723,23 @@ export class ServerService {
   async refreshStatuses() {
     const rows = this.d.db.select().from(schema.servers).all();
     for (const r of rows) {
-      if (!r.containerId || r.status === "deploying" || r.status === "error") continue;
+      if (!r.containerId || r.status === "deploying" || r.status === "updating" || r.status === "error") continue;
       const state: ContainerState = await this.d.docker.state(r.containerId).catch(() => "missing");
       const next = state === "running" ? "online" : state === "paused" ? "paused" : state === "exited" ? "offline" : "error";
       if (next !== r.status) this.setStatus(r.id, next, state === "missing" ? "The container is missing from Docker" : null);
+      await this.watchRestarts(r, state);
+    }
+  }
+
+  /** Docker restarts a crashed game on its own, so it never looks "down"; a changed start time is what gives it away. */
+  private async watchRestarts(r: typeof schema.servers.$inferSelect, state: ContainerState) {
+    if (state !== "running") return void this.lastStart.delete(r.id);
+    const started = await this.d.docker.startedAt(r.containerId!).catch(() => null);
+    if (!started) return;
+    const before = this.lastStart.get(r.id);
+    this.lastStart.set(r.id, started);
+    if (before && before !== started && r.status === "online" && !this.expected.has(r.id)) {
+      this.notify({ kind: "down", server: r.name, detail: "It stopped on its own and Docker started it again. Open its logs in the panel to see why." });
     }
   }
 
@@ -720,6 +797,7 @@ export class ServerService {
         templateName: tpl?.name ?? r.templateId,
         status: r.status,
         starting: starting.has(r.id),
+        limits: { cpus: r.cpus, memoryMb: r.memoryMb, warnings: tpl ? limitWarnings(tpl, { cpus: r.cpus, memoryMb: r.memoryMb }) : [] },
         access: r.access,
         lastError: r.lastError,
         ports: sp.map((p) => ({ name: p.name, port: p.port, protocol: p.protocol })),
@@ -736,27 +814,63 @@ export class ServerService {
     });
   }
 
+  /** The player count a running server reports through its query port, or null when the game has none or does not answer. */
+  private async queryServerPlayers(r: typeof schema.servers.$inferSelect, ports: (typeof schema.serverPorts.$inferSelect)[]): Promise<PlayerCount | null> {
+    const queryPlayers = this.d.queryPlayers ?? ((host: string, port: number, kind: "a2s" | "minecraft") => (kind === "minecraft" ? queryMinecraft(host, port) : queryA2s(host, port)));
+    const tpl = this.d.templates.find((x) => x.id === r.templateId);
+    const q = tpl?.ports.find((p) => p.query !== "none");
+    const mine = q && ports.find((p) => p.serverId === r.id && p.name === q.name);
+    return mine ? queryPlayers("127.0.0.1", mine.port, q!.query as "a2s" | "minecraft").catch(() => null) : null;
+  }
+
   /** CPU, memory and player count for each running server, keyed by server id. Anything that fails is left out. */
   async usage(): Promise<Record<string, { cpuPercent: number | null; memBytes: number; players: PlayerCount | null }>> {
     const rows = this.d.db.select().from(schema.servers).all().filter((r) => r.containerId && r.status === "online");
     const ports = this.d.db.select().from(schema.serverPorts).all();
-    const queryPlayers = this.d.queryPlayers ?? ((host: string, port: number, kind: "a2s" | "minecraft") => (kind === "minecraft" ? queryMinecraft(host, port) : queryA2s(host, port)));
     const out: Record<string, { cpuPercent: number | null; memBytes: number; players: PlayerCount | null }> = {};
     await Promise.all(
       rows.map(async (r) => {
         try {
           const u = await this.d.docker.usage(r.containerId!);
-          const tpl = this.d.templates.find((x) => x.id === r.templateId);
-          const q = tpl?.ports.find((p) => p.query !== "none");
-          const mine = q && ports.find((p) => p.serverId === r.id && p.name === q.name);
-          const players = mine ? await queryPlayers("127.0.0.1", mine.port, q!.query as "a2s" | "minecraft").catch(() => null) : null;
-          out[r.id] = { ...u, players };
+          out[r.id] = { ...u, players: await this.queryServerPlayers(r, ports) };
         } catch {
           /* container gone or Docker busy: show nothing rather than a wrong number */
         }
       }),
     );
     return out;
+  }
+
+  /**
+   * Compare each running server's player count with the last reading and report joins and leaves. The first reading of a
+   * server (or the first after it was stopped or stopped answering) only sets the baseline, so players already there are not "joining".
+   */
+  async pollPlayers(): Promise<void> {
+    const n = this.d.notifier;
+    if (!n || !(n.wants("playerJoin") || n.wants("playerLeave"))) {
+      this.lastPlayers.clear();
+      return;
+    }
+    const rows = this.d.db.select().from(schema.servers).all();
+    const ports = this.d.db.select().from(schema.serverPorts).all();
+    await Promise.all(
+      rows.map(async (r) => {
+        const players = r.status === "online" && r.containerId ? await this.queryServerPlayers(r, ports) : null;
+        if (!players) return void this.lastPlayers.delete(r.id);
+        const before = this.lastPlayers.get(r.id);
+        this.lastPlayers.set(r.id, players.online);
+        if (before === undefined || before === players.online) return;
+        const change = players.online - before;
+        this.notify({ kind: change > 0 ? "playerJoin" : "playerLeave", server: r.name, players: { ...players, change } });
+      }),
+    );
+    for (const id of [...this.lastPlayers.keys()]) if (!rows.some((r) => r.id === id)) this.lastPlayers.delete(id);
+  }
+
+  /** What the background timer runs: notice status changes and player changes even when nobody has the page open. */
+  async watch(): Promise<void> {
+    await this.refreshStatuses();
+    await this.pollPlayers();
   }
 
   // ---------------------------------------------------------- detail page
@@ -779,6 +893,7 @@ export class ServerService {
         value: def.secret ? null : (row.env[key] ?? ""),
         isSet: Boolean(row.env[key]),
       })),
+      minMemoryMb: tpl.resources.minMemoryMb ?? null,
       console: tpl.console ? { examples: tpl.console.examples } : null,
       care: this.careInfo(id),
       events: this.events(id, 30).reverse(),
@@ -790,7 +905,7 @@ export class ServerService {
    * container (the world data folder is kept) and the server restarts. A name-only change is instant.
    * For each setting: left out = unchanged; empty = cleared (or a new random value for a generated password).
    */
-  async updateSettings(id: string, input: { name?: string; env?: Record<string, string> }): Promise<{ restarting: boolean }> {
+  async updateSettings(id: string, input: { name?: string; env?: Record<string, string>; cpus?: number | null; memoryMb?: number | null }): Promise<{ restarting: boolean }> {
     const row = this.row(id);
     const tpl = this.template(row.templateId);
     if (row.status === "deploying" || row.status === "updating") throw new UserError("Wait for the server to finish starting before changing its settings", 409);
@@ -810,13 +925,17 @@ export class ServerService {
       else delete env[key];
     }
     const envChanged = JSON.stringify(Object.entries(env).sort()) !== JSON.stringify(Object.entries(row.env).sort());
+    // A limit that is left out stays as it is; null (or empty) removes it.
+    const limits = this.checkLimits(input.cpus === undefined ? row.cpus : input.cpus, input.memoryMb === undefined ? row.memoryMb : input.memoryMb);
+    const limitsChanged = limits.cpus !== row.cpus || limits.memoryMb !== row.memoryMb;
 
-    this.d.db.update(schema.servers).set({ name, env }).where(eq(schema.servers.id, id)).run();
-    if (!envChanged) {
+    this.d.db.update(schema.servers).set({ name, env, cpus: limits.cpus, memoryMb: limits.memoryMb }).where(eq(schema.servers.id, id)).run();
+    if (!envChanged && !limitsChanged) {
       if (name !== row.name) this.event(id, "info", "Renamed");
       return { restarting: false };
     }
-    this.event(id, "info", "Settings changed; recreating the container to apply them (world data is kept)");
+    this.event(id, "info", `${limitsChanged ? "Limits" : "Settings"} changed; recreating the container to apply them (world data is kept)`);
+    if (limitsChanged) for (const w of limitWarnings(tpl, limits)) this.event(id, "warn", w);
     if (row.containerId) {
       this.setStatus(id, "updating");
       try {
@@ -1234,7 +1353,13 @@ export class ServerService {
   async backup(id: string): Promise<BackupInfo> {
     const row = this.row(id);
     return this.exclusive(row.slug, async () => {
-      const info = await this.store().create(row.slug);
+      let info: BackupInfo;
+      try {
+        info = await this.store().create(row.slug);
+      } catch (e) {
+        this.notify({ kind: "backupFailed", server: row.name, detail: e instanceof Error ? e.message : String(e) });
+        throw e;
+      }
       this.saveBackupMeta(row);
       this.event(id, "info", `Backup ${info.name} created`);
       return info;

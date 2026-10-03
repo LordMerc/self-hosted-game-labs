@@ -8,6 +8,7 @@ import { loadTemplates } from "../src/server/templates/loader.js";
 import { ServerService } from "../src/server/servers/service.js";
 import { FakeConnectivity, FakeDocker } from "./helpers/fakes.js";
 import { DnsSettings } from "../src/server/dns/settings.js";
+import { Notifier } from "../src/server/notifications/notifier.js";
 
 const config = loadConfig({ SESSION_SECRET: "x".repeat(32), DATA_DIR: "/tmp/unused" });
 let app: FastifyInstance;
@@ -18,7 +19,7 @@ beforeEach(() => {
   const templates = loadTemplates(path.resolve("templates"));
   const docker = (fakeDocker = new FakeDocker());
   const service = new ServerService({ config, db, templates, docker, connectivity: new FakeConnectivity(), hostPorts: () => new Set(), background: false, stableMs: 0 });
-  app = buildApp({ config, db, templates, service, docker, dnsSettings: new DnsSettings(db, config) });
+  app = buildApp({ config, db, templates, service, docker, dnsSettings: new DnsSettings(db, config), notifier: new Notifier(db, config) });
 });
 
 const cookieOf = (res: { headers: Record<string, unknown> }) => String(([] as string[]).concat(res.headers["set-cookie"] as string)[0]).split(";")[0];
@@ -68,7 +69,7 @@ describe("api", () => {
     const codes: number[] = [];
     for (let i = 0; i < 7; i++) codes.push((await app.inject({ method: "POST", url: "/api/auth/login", payload: { password: "bad" } })).statusCode);
     expect(codes.slice(0, 5)).toEqual([401, 401, 401, 401, 401]);
-    expect(codes[6]).toBe(429);
+    expect(codes.slice(5)).toEqual([429, 429]);
   });
 
   it("rejects a forged session cookie", async () => {
@@ -136,6 +137,24 @@ describe("server page routes", () => {
     expect((await app.inject({ method: "POST", url: "/api/servers/nope/console", headers, payload: {} })).statusCode).toBe(400);
   });
 
+  it("takes resource limits on deploy and on the settings route, and lists the template's memory minimum", async () => {
+    const setup = await app.inject({ method: "POST", url: "/api/auth/setup", payload: { password: "correct horse battery" } });
+    const headers = { cookie: cookieOf(setup) };
+    const catalog = (await app.inject({ url: "/api/templates", headers })).json() as { id: string; minMemoryMb: number | null }[];
+    expect(catalog.find((t) => t.id === "satisfactory")!.minMemoryMb).toBe(8192);
+    expect(catalog.find((t) => t.id === "terraria")!.minMemoryMb).toBeNull();
+    const made = await app.inject({ method: "POST", url: "/api/servers", headers, payload: { templateId: "terraria", name: "Terra", cpus: 1, memoryMb: 1024 } });
+    expect(made.statusCode).toBe(202);
+    const id = made.json().id as string;
+    expect((await app.inject({ url: `/api/servers/${id}`, headers })).json().server.limits).toMatchObject({ cpus: 1, memoryMb: 1024 });
+    const bad = await app.inject({ method: "PUT", url: `/api/servers/${id}/settings`, headers, payload: { memoryMb: 10 } });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json()).toMatchObject({ field: "memoryMb" });
+    const cleared = await app.inject({ method: "PUT", url: `/api/servers/${id}/settings`, headers, payload: { cpus: null, memoryMb: null } });
+    expect(cleared.statusCode).toBe(202);
+    expect((await app.inject({ url: `/api/servers/${id}`, headers })).json().server.limits).toMatchObject({ cpus: null, memoryMb: null });
+  });
+
   it("sets up a server from a custom image, keeps it out of the template catalog, and explains bad input", async () => {
     const setup = await app.inject({ method: "POST", url: "/api/auth/setup", payload: { password: "correct horse battery" } });
     const headers = { cookie: cookieOf(setup) };
@@ -150,5 +169,29 @@ describe("server page routes", () => {
     expect(bad.statusCode).toBe(400);
     expect(bad.json().error).toMatch(/Docker image name/);
     expect((await app.inject({ method: "POST", url: "/api/servers/custom", headers, payload: { name: "x" } })).statusCode).toBe(400);
+  });
+});
+
+describe("notification settings", () => {
+  it("need a session, save an address without ever returning it, and explain bad input", async () => {
+    expect((await app.inject("/api/settings/notifications")).statusCode).toBe(401);
+    const setup = await app.inject({ method: "POST", url: "/api/auth/setup", payload: { password: "correct horse battery" } });
+    const headers = { cookie: cookieOf(setup) };
+    expect((await app.inject({ url: "/api/settings/notifications", headers })).json()).toMatchObject({ configured: false });
+
+    const none = await app.inject({ method: "PUT", url: "/api/settings/notifications", headers, payload: { events: { online: false } } });
+    expect(none.statusCode).toBe(400);
+    const bad = await app.inject({ method: "PUT", url: "/api/settings/notifications", headers, payload: { url: "nope" } });
+    expect(bad.statusCode).toBe(400);
+    expect((await app.inject({ method: "POST", url: "/api/settings/notifications/test", headers, payload: { url: "nope" } })).statusCode).toBe(400);
+
+    const url = "https://discord.com/api/webhooks/1/very-secret";
+    const saved = await app.inject({ method: "PUT", url: "/api/settings/notifications", headers, payload: { url, events: { playerLeave: true } } });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.body).not.toContain("very-secret");
+    expect(saved.json()).toMatchObject({ configured: true, kind: "discord", events: { online: true, playerLeave: true } });
+
+    expect((await app.inject({ method: "DELETE", url: "/api/settings/notifications", headers })).statusCode).toBe(200);
+    expect((await app.inject({ url: "/api/settings/notifications", headers })).json()).toMatchObject({ configured: false });
   });
 });
