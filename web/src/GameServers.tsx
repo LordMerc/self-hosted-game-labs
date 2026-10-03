@@ -150,7 +150,7 @@ export function GameServers({ onLogout, onNavigate }: { onLogout: () => void; on
   }
 
   async function remove(s: Server) {
-    if (!confirm(`Delete ${s.name}? The container is removed; world data is kept on disk.`)) return;
+    if (!confirm(`Delete ${s.name}? The container is removed; world data and backups are kept on disk.`)) return;
     await act(api(`/servers/${s.id}`, { method: "DELETE" }));
   }
 

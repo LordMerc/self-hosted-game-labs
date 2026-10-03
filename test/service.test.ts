@@ -269,3 +269,27 @@ describe("backups", () => {
     expect(() => svc.deleteBackup(id, "alpha-20200101-000000.tar.gz")).toThrow(UserError);
   });
 });
+
+describe("deleting a server and its data", () => {
+  it("leaves a final backup behind that outlives the server, and a redeploy with the same name sees it", async () => {
+    const id = await deploy("Alpha");
+    const dataFile = path.join(dir, "games", "alpha", "palworld", "world.sav");
+    mkdirSync(path.dirname(dataFile), { recursive: true });
+    writeFileSync(dataFile, "my world");
+    await svc.remove(id, { deleteData: true, confirmName: "Alpha" });
+    expect(existsSync(path.join(dir, "games", "alpha"))).toBe(false);
+    const again = await deploy("Alpha");
+    const [b] = svc.listBackups(again);
+    expect(b).toBeDefined();
+    await svc.restoreBackup(again, b.name);
+    expect(readFileSync(dataFile, "utf8")).toBe("my world");
+  });
+
+  it("keeps existing backups when a server is deleted without its data", async () => {
+    const id = await deploy("Alpha");
+    mkdirSync(path.join(dir, "games", "alpha"), { recursive: true });
+    await svc.backup(id);
+    await svc.remove(id);
+    expect(svc.listBackups(await deploy("Alpha"))).toHaveLength(1);
+  });
+});

@@ -106,3 +106,7 @@ Only `a2s` is implemented; `query: minecraft` is accepted by the template schema
 | UI in headless Chromium against a fake Docker | Pass: Backups dialog, Back up now, restore, list of backups (screenshots reviewed) |
 
 Not run: a backup or restore of a real game's data on the maintainer's host. Two things to watch there: file ownership after a restore (the panel runs as root, so `tar` should keep the game's user), and backups being hot copies unless the server is stopped first. Backups are kept in `<game data dir>/.backups/<server>/`, so they sit on the same disk as the world; copy them elsewhere for real safety. `BACKUP_KEEP` (default 7) sets how many are kept per server.
+
+### Backup retention (2026-10-03, maintainer's requirement)
+
+A backup is kept at least 7 days, and deleting a server never removes its backups: `BACKUP_KEEP` only lets a backup go once it is beyond the newest N *and* at least 7 days old, and backups of a deleted server are never pruned. "Delete server and its world data" first takes a final backup, and stops if that fails. To restore after a deletion, create a new server with the same name (same slug) and open its Backups. Tests (110): age and count pruning with back-dated files, final backup on delete, redeploy and restore.

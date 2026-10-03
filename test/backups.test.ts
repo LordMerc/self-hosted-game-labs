@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { BackupStore, isBackupName } from "../src/server/backups.js";
@@ -29,11 +29,26 @@ describe("BackupStore", () => {
     expect(s.list("other")).toEqual([]);
   });
 
-  it("keeps only the newest N", async () => {
+  it("never prunes a backup younger than 7 days, even beyond the newest N", async () => {
     const s = new BackupStore(root, 2);
-    for (const h of [1, 2, 3]) await s.create("pal", { now: new Date(`2026-10-03T0${h}:00:00Z`) });
-    expect(s.list("pal")).toHaveLength(2);
-    expect(s.list("pal").some((b) => b.name.includes("-010000"))).toBe(false);
+    for (const h of [1, 2, 3, 4]) await s.create("pal", { now: new Date(`2026-10-03T0${h}:00:00Z`) });
+    expect(s.list("pal")).toHaveLength(4);
+  });
+
+  it("prunes only backups beyond the newest N that are at least 7 days old", async () => {
+    const s = new BackupStore(root, 2);
+    const old = await s.create("pal", { now: new Date("2026-10-03T01:00:00Z") });
+    const mid = await s.create("pal", { now: new Date("2026-10-03T02:00:00Z") });
+    const kept = await s.create("pal", { now: new Date("2026-10-03T03:00:00Z") });
+    const dir = path.join(root, ".backups/pal");
+    const ago = (days: number) => new Date(Date.now() - days * 86_400_000);
+    utimesSync(path.join(dir, old.name), ago(9), ago(9));
+    utimesSync(path.join(dir, mid.name), ago(3), ago(3)); // beyond N=2 but only 3 days old
+    await s.create("pal", { now: new Date() });
+    const names = s.list("pal").map((b) => b.name);
+    expect(names).not.toContain(old.name);
+    expect(names).toContain(mid.name);
+    expect(names).toContain(kept.name);
   });
 
   it("does not prune when asked not to", async () => {

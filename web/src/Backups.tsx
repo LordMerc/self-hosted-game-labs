@@ -46,7 +46,7 @@ export function Backups({ id, name, running, onClose, onChange }: { id: string; 
           </button>
         </div>
         <p className="muted note">
-          A backup is a compressed copy of this server&apos;s world and settings. The server keeps running while it is made; for a perfectly clean copy, stop it first. The newest few are kept.
+          A backup is a compressed copy of this server&apos;s world and settings. The server keeps running while it is made; for a perfectly clean copy, stop it first. Backups are kept for at least 7 days, and deleting the server does not delete them: to get one back later, create a new server with the same name and open its Backups.
         </p>
         <div>
           <button className="primary" disabled={busy !== null} onClick={() => run("backup", () => api(`/servers/${id}/backups`, { method: "POST" }))}>
