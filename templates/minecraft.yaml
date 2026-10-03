@@ -3,6 +3,7 @@
 id: minecraft
 name: Minecraft (Java)
 image: itzg/minecraft-server:latest
+accent: "#2dd4bf"
 maxPlayers: 20
 notes: The first start downloads the game and makes the world, which can take a few minutes. It shows Starting until it is ready.
 join:

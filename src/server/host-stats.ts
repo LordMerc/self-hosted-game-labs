@@ -8,6 +8,8 @@ export interface HostSnapshot {
   storage: { usedBytes: number; totalBytes: number } | null;
   /** Bytes per second across physical interfaces. Null until two samples exist. */
   network: { rxPerSec: number; txPerSec: number } | null;
+  /** Seconds since the machine booted (the container sees the host's uptime). */
+  uptimeSec: number | null;
 }
 
 interface Sample {
@@ -51,6 +53,11 @@ export function parseNetDev(text: string): { rx: number; tx: number } {
     tx += f[8] || 0;
   }
   return { rx, tx };
+}
+
+export function parseUptime(text: string): number | null {
+  const m = /^\s*(\d+(?:\.\d+)?)/.exec(text);
+  return m ? Math.round(Number(m[1])) : null;
 }
 
 export class HostStats {
@@ -100,7 +107,13 @@ export class HostStats {
     } catch {
       /* not Linux */
     }
-    return { cpu: { percent: this.cpuPercent, cores: this.cores }, memory, storage: this.storage(), network: this.net };
+    let uptimeSec: number | null = null;
+    try {
+      uptimeSec = parseUptime(this.read("/proc/uptime"));
+    } catch {
+      /* not Linux */
+    }
+    return { cpu: { percent: this.cpuPercent, cores: this.cores }, memory, storage: this.storage(), network: this.net, uptimeSec };
   }
 
   private storage(): HostSnapshot["storage"] {

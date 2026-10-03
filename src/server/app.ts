@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import cookie from "@fastify/cookie";
 import fastifyStatic from "@fastify/static";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { isCustomId } from "./servers/custom.js";
 import { z } from "zod";
@@ -17,8 +17,10 @@ import { hasAdminPassword, setAdminPassword, verifyAdminPassword } from "./auth/
 import { LoginGuard, visitorKey, type LoginGuardOptions } from "./auth/rate-limit.js";
 import { runningVersion, UpdateChecker } from "./updates.js";
 import { HostStats } from "./host-stats.js";
+import { settingsPeakStore, StatsHistory } from "./history.js";
 import { DEFAULT_INSTANCE, names } from "./instance.js";
 
+const ARTWORK_TYPES: Record<string, string> = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
 const SESSION_COOKIE = "gl_session";
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -33,6 +35,8 @@ export interface AppDeps {
   /** Injectable for tests. */
   inspectToken?: typeof CloudflareClient.inspect;
   hostStats?: HostStats;
+  /** The short in-memory record behind the dashboard's charts. index.ts adds a sample every few seconds. */
+  history?: StatsHistory;
   webRoot?: string;
   /** Injectable for tests. */
   updates?: UpdateChecker;
@@ -42,7 +46,7 @@ export interface AppDeps {
 const passwordBody = z.object({ password: z.string().min(1) });
 const newPasswordBody = z.object({ password: z.string().min(10, "Use at least 10 characters") });
 
-export function buildApp({ config, db, templates, service, docker, dnsSettings, notifier, inspectToken = CloudflareClient.inspect, hostStats = new HostStats([config.GAMESERVERS_DIR, config.DATA_DIR]), webRoot, updates = new UpdateChecker(db, { current: runningVersion(config.APP_VERSION), envEnabled: config.UPDATE_CHECK === "on" }), loginGuard }: AppDeps): FastifyInstance {
+export function buildApp({ config, db, templates, service, docker, dnsSettings, notifier, inspectToken = CloudflareClient.inspect, hostStats = new HostStats([config.GAMESERVERS_DIR, config.DATA_DIR]), history = new StatsHistory({ store: settingsPeakStore(db) }), webRoot, updates = new UpdateChecker(db, { current: runningVersion(config.APP_VERSION), envEnabled: config.UPDATE_CHECK === "on" }), loginGuard }: AppDeps): FastifyInstance {
   // Behind a reverse proxy the connection comes from the proxy; TRUST_PROXY says whose word to take for the visitor's address and HTTPS.
   const app = Fastify({ logger: false, trustProxy: parseTrustProxy(config.TRUST_PROXY) });
   const guard = new LoginGuard(loginGuard);
@@ -148,8 +152,10 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
   const idParam = (req: { params: unknown }) => (req.params as { id: string }).id;
 
   app.get("/api/templates", async () =>
-    templates.filter((t) => !isCustomId(t.id)).map(({ id, name, image, maxPlayers, notes, resources, join, ports, env }) => ({
+    templates.filter((t) => !isCustomId(t.id)).map(({ id, name, image, maxPlayers, notes, resources, join, ports, env, accent, artwork }) => ({
       id,
+      accent: accent ?? null,
+      artwork: artwork && existsSync(path.join(config.TEMPLATES_DIR, artwork)) ? `/api/templates/${id}/artwork` : null,
       name,
       image,
       maxPlayers,
@@ -161,6 +167,16 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
     })),
   );
 
+  /** Optional picture a template ships for its card. Only files inside the templates folder, with an image extension, are served. */
+  app.get("/api/templates/:id/artwork", async (req, reply) => {
+    const t = templates.find((x) => x.id === idParam(req));
+    const root = path.resolve(config.TEMPLATES_DIR);
+    const file = t?.artwork ? path.resolve(root, t.artwork) : null;
+    const type = file ? ARTWORK_TYPES[path.extname(file).toLowerCase()] : undefined;
+    if (!file || !type || !file.startsWith(root + path.sep) || !existsSync(file)) return reply.code(404).send({ error: "no artwork" });
+    return reply.header("cache-control", "public, max-age=3600").type(type).send(readFileSync(file));
+  });
+
   app.get("/api/templates/:id/plan", async (req) => ({ ports: service.planPorts(idParam(req)) }));
 
   app.get("/api/servers", async () => service.list());
@@ -169,7 +185,15 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
   app.get("/api/other-panels", async () => docker.listOtherPanels().catch(() => []));
 
   /** Host figures and per-server usage for the dashboard. Players are not reported yet. */
-  app.get("/api/stats", async () => ({ host: hostStats.snapshot(), servers: await service.usage() }));
+  app.get("/api/stats", async () => ({
+    host: hostStats.snapshot(),
+    servers: await service.usage(),
+    history: history.view(),
+    docker: (await docker.info?.().catch(() => null)) ?? null,
+  }));
+
+  /** The latest things that happened across all servers, for the dashboard's activity list. */
+  app.get("/api/activity", async () => service.recentActivity(6));
 
   const deployBody = z.object({
     templateId: z.string(),

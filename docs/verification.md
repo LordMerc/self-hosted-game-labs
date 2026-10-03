@@ -179,7 +179,7 @@ The browser smoke test (`npm run test:e2e`, runs in CI) drives the built web app
 
 Built against fakes (a fake checker in the service and browser tests, and a fake HTTP server for the check-host.net calls). Not run against the real provider: the build sandbox cannot reach it.
 
-- **What it does:** press Run in the Network panel. For every running public server, each TCP port is sent to check-host.net (`/check-tcp`, then `/check-result`), asking 3 locations to connect to `<public IP>:<port>`. Any location connecting means open; all failing means closed, with the reasons; no usable answer means unknown, with the reason. UDP ports are not tested (a UDP game gives no reply to a bare probe); the panel shows "Router forwards the port" when the router's mapping list (or a rule you confirmed) has it, and "not forwarded" when it does not.
+- **What it does:** press **Test** on a server's row, or **Run check** in the Network health panel. For every running public server, each TCP port is sent to check-host.net (`/check-tcp`, then `/check-result`), asking 3 locations to connect to `<public IP>:<port>`. Any location connecting means open; all failing means closed, with the reasons; no usable answer means unknown, with the reason. UDP ports are not tested (a UDP game gives no reply to a bare probe); the panel shows "Router forwards the port" when the router's mapping list (or a rule you confirmed) has it, and "not forwarded" when it does not.
 - **Privacy:** nothing is sent unless Run is pressed. What is sent is the public IP and the port number. `PORT_CHECK=off` removes the button's backend.
 - **To check on the homelab:** Run on a public Minecraft or Terraria server returns "open" with "Connected from N of 3 locations"; with the server stopped or the rule removed it should say closed. If it says unknown, the detail line names what went wrong (send a screenshot); the provider's response format is the part most likely to need adjusting.
 
@@ -215,3 +215,11 @@ Built against fakes (fake Docker, fake Docker Hub list, fake clock) and the brow
 - **Updates:** a tag check downloads nothing. For an image without version tags the panel pulls it and compares image ids. Applying makes a backup (and stops if that fails), removes the container, and starts a new one from the new image with the same data folder. The long download is covered by a test that holds the pull and checks that the server stays "Restarting" and is not rebuilt twice.
 - **Ports:** every port of the game moves by the same amount, so Valheim's query port stays one above the game port and Satisfactory's shared port stays shared. On a public server the old router rules are closed and the new ones opened by the same code that makes a server public. **To check on the homelab:** change a public server's port, confirm the router lists the new port, and join on it.
 - **Not covered:** going back to an older version has no button; restore the backup from before the update.
+
+## Dashboard charts and header (not yet seen on the real host)
+
+- The small charts (CPU, network, players) come from a sample the panel takes every 20 seconds and keeps in memory for 15 minutes. After a restart they start empty and fill in; nothing is drawn for time the panel was not running.
+- "peak N today" for players is saved in the panel's settings table (key `players-peak-today`), so it survives a restart. It resets at midnight in the panel's time zone (set `TZ`).
+- The header line (host name, Docker version, uptime) comes from Docker's `info` call and `/proc/uptime`. Check that the host name is your machine's, not a container id.
+- The "..." row menu is drawn on the page rather than inside the table. Check it on a phone and with the keyboard (Enter opens it, arrows move, Escape closes).
+

@@ -3,7 +3,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import path from "node:path";
 import net from "node:net";
 import os from "node:os";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import type { Config } from "../config.js";
 import type { Db } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -1436,6 +1436,21 @@ export class ServerService {
 
   events(id: string, limit = 50) {
     return this.d.db.select().from(schema.events).where(eq(schema.events.serverId, id)).all().slice(-limit);
+  }
+
+  /** The newest notable events across all servers. Console commands, schedule edits and reconcile chatter are left out. */
+  recentActivity(limit: number) {
+    const names = new Map(this.d.db.select({ id: schema.servers.id, name: schema.servers.name }).from(schema.servers).all().map((r) => [r.id, r.name]));
+    const quiet = /^(Console:|Upkeep schedule changed|Reconcile|Update check:|Pulling |Container started|Deploy started)/;
+    return this.d.db
+      .select()
+      .from(schema.events)
+      .orderBy(desc(schema.events.id))
+      .limit(80)
+      .all()
+      .filter((e) => !quiet.test(e.message))
+      .slice(0, limit)
+      .map((e) => ({ id: e.id, level: e.level, message: e.message, at: e.at.toISOString(), server: (e.serverId && names.get(e.serverId)) || null }));
   }
 
   getRow(id: string) {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type Backup, type BackupGroup, type Template } from "./api";
+import { api, loadTemplates, type Backup, type BackupGroup, type Template } from "./api";
 import { Backups, size } from "./Backups";
 import { GameIcon } from "./GameServers";
 import { Nav, type Page } from "./Nav";
@@ -20,7 +20,7 @@ export function BackupsPage({ onLogout, onNavigate }: { onLogout: () => void; on
   const load = useCallback(() => api<BackupGroup[]>("/backups").then(setGroups).catch((e) => setError(e.message)), []);
   useEffect(() => {
     void load();
-    api<Template[]>("/templates").then(setTemplates).catch(() => undefined);
+    loadTemplates().then(setTemplates).catch(() => undefined);
   }, [load]);
 
   async function run(label: string, call: () => Promise<unknown>) {

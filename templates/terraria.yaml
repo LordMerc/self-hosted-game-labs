@@ -3,6 +3,7 @@
 id: terraria
 name: Terraria
 image: beardedio/terraria:vanilla-latest
+accent: "#a78bfa"
 maxPlayers: 8
 notes: A new world is made the first time the server starts, which takes a minute or two. The same world is loaded on every start after that.
 join:

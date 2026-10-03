@@ -80,6 +80,9 @@ export class FakeDocker implements ContainerDriver {
   async listOtherPanels() {
     return this.others;
   }
+  async info() {
+    return { name: "homelab-01", version: "27.3.1" };
+  }
   usageById = new Map<string, { cpuPercent: number | null; memBytes: number }>();
   async usage(id: string) {
     return this.usageById.get(id) ?? { cpuPercent: 1.5, memBytes: 512 * 1024 * 1024 };

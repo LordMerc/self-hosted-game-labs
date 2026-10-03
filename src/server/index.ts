@@ -13,6 +13,7 @@ import { DockerodeDriver } from "./docker/driver.js";
 import { ServerService } from "./servers/service.js";
 import { detectLanIp } from "./lan-ip.js";
 import { HostStats } from "./host-stats.js";
+import { settingsPeakStore, StatsHistory } from "./history.js";
 import { CheckHostProbe } from "./reachability.js";
 import { loadTemplates } from "./templates/loader.js";
 import { runningVersion, UpdateChecker } from "./updates.js";
@@ -42,7 +43,8 @@ const service = new ServerService({ config, db, templates, docker, connectivity,
 const hostStats = new HostStats([config.GAMESERVERS_DIR, config.DATA_DIR]);
 hostStats.snapshot(); // first sample, so CPU and network rates exist by the time the page asks
 const updates = new UpdateChecker(db, { current: runningVersion(config.APP_VERSION), envEnabled: config.UPDATE_CHECK === "on" });
-const app = buildApp({ config, db, templates, service, docker, dnsSettings, notifier, hostStats, updates, webRoot: "dist/web" });
+const history = new StatsHistory({ store: settingsPeakStore(db) });
+const app = buildApp({ config, db, templates, service, docker, dnsSettings, notifier, hostStats, history, updates, webRoot: "dist/web" });
 
 const RECONCILE_MS = 5 * 60 * 1000;
 let reconciling = false;
@@ -101,7 +103,23 @@ const watch = async () => {
   }
 };
 
+// A point for the dashboard's small charts every 20 seconds, whether or not anyone has the page open.
+let sampling = false;
+const sample = async () => {
+  if (sampling) return;
+  sampling = true;
+  try {
+    history.record(hostStats.snapshot(), await service.usage());
+  } catch (e) {
+    console.error("stats sample failed:", e);
+  } finally {
+    sampling = false;
+  }
+};
+
 setTimeout(reconcile, 3000);
+setTimeout(sample, 5000).unref();
+setInterval(sample, 20_000).unref();
 setInterval(watch, 30_000).unref();
 setTimeout(scheduledBackups, 60_000).unref();
 setInterval(scheduledBackups, 10 * 60 * 1000).unref();
