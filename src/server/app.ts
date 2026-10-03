@@ -134,6 +134,9 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
 
   app.get("/api/servers", async () => service.list());
 
+  /** Game servers run by a different panel instance on this host: listed so you can see them, never changed from here. */
+  app.get("/api/other-panels", async () => docker.listOtherPanels().catch(() => []));
+
   /** Host figures and per-server usage for the dashboard. Players are not reported yet. */
   app.get("/api/stats", async () => ({ host: hostStats.snapshot(), servers: await service.usage() }));
 

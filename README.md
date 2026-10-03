@@ -55,7 +55,7 @@ If you would rather test the prebuilt preview image, pushes to the `beta` branch
 
 Things to know:
 
-- The beta panel's containers are named `gl-beta-<name>`; the real panel keeps `gl-<name>`. The real panel ignores everything tagged `beta`, and the reverse.
+- The beta panel's containers are named `gl-beta-<name>`; the real panel keeps `gl-<name>`. Each panel only ever starts, stops, changes, backs up or deletes its own. The beta panel does list the real panel's servers under "Run by another panel" (name, status, image, ports) so you can see them, but that list is read-only, with no buttons.
 - Game ports are shared by the whole machine. To test deploying Palworld in the beta panel, stop the real Palworld server first (or test a game you are not running), otherwise the port is already taken.
 - Leave router automation and Cloudflare off in the beta panel (`CONNECTIVITY` defaults to `manual`), and use different server names, so it cannot change your real DNS or router rules.
 - Promote a tested change the normal way: open a pull request into `main`, merge it, and (optionally) tag a release.
