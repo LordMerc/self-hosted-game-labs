@@ -90,6 +90,19 @@ describe("api", () => {
   });
 });
 
+describe("backups tab", () => {
+  it("requires a session, lists backups, and redeploys a deleted server from one", async () => {
+    expect((await app.inject("/api/backups")).statusCode).toBe(401);
+    const setup = await app.inject({ method: "POST", url: "/api/auth/setup", payload: { password: "correct horse battery" } });
+    const headers = { cookie: cookieOf(setup) };
+    expect((await app.inject({ url: "/api/backups", headers })).json()).toEqual([]);
+    const bad = await app.inject({ method: "POST", url: "/api/backups/nothing/x-20200101-000000.tar.gz/redeploy", headers, payload: {} });
+    expect(bad.statusCode).toBe(404);
+    const del = await app.inject({ method: "DELETE", url: "/api/backups/nothing/x-20200101-000000.tar.gz", headers });
+    expect(del.statusCode).toBe(404);
+  });
+});
+
 describe("stats", () => {
   it("requires a session and returns host figures and per-server usage", async () => {
     expect((await app.inject("/api/stats")).statusCode).toBe(401);

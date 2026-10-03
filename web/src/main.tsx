@@ -2,6 +2,7 @@ import { Component, StrictMode, useEffect, useState, type ReactNode } from "reac
 import { createRoot } from "react-dom/client";
 import { api, type AuthStatus } from "./api";
 import { Login } from "./Login";
+import { BackupsPage } from "./BackupsPage";
 import { GameServers } from "./GameServers";
 import { ServerDetail } from "./ServerDetail";
 import type { Page } from "./Nav";
@@ -10,7 +11,7 @@ import "./styles.css";
 
 function App() {
   const [status, setStatus] = useState<AuthStatus | null>(null);
-  const [page, setPage] = useState<Page>(() => (location.hash === "#settings" ? "settings" : "servers"));
+  const [page, setPage] = useState<Page>(() => (location.hash === "#settings" ? "settings" : location.hash === "#backups" ? "backups" : "servers"));
   const [serverId, setServerId] = useState<string | null>(() => location.hash.match(/^#server\/(.+)$/)?.[1] ?? null);
   const navigate = (p: Page) => (setServerId(null), setPage(p), history.replaceState(null, "", `#${p}`));
   const openServer = (id: string | null) => (setServerId(id), history.replaceState(null, "", id ? `#server/${id}` : "#servers"));
@@ -21,6 +22,7 @@ function App() {
   if (!status.authenticated) return <Login setup={status.setupRequired} onDone={refresh} />;
   const logout = () => api("/auth/logout", { method: "POST" }).then(refresh);
   if (page === "settings") return <Settings onLogout={logout} onNavigate={navigate} />;
+  if (page === "backups") return <BackupsPage onLogout={logout} onNavigate={navigate} />;
   if (serverId) return <ServerDetail id={serverId} onBack={() => openServer(null)} onLogout={logout} onNavigate={navigate} />;
   return <GameServers onLogout={logout} onNavigate={navigate} onOpenServer={openServer} />;
 }

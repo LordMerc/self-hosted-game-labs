@@ -104,6 +104,19 @@ export interface BackupSettings {
   everyHours: number;
 }
 
+export interface BackupGroup {
+  slug: string;
+  name: string;
+  deleted: boolean;
+  serverId: string | null;
+  status: Server["status"] | null;
+  templateId: string | null;
+  templateName: string | null;
+  backups: Backup[];
+  totalBytes: number;
+  saved: { name: string; templateId: string | null; env: Record<string, string>; savedSecrets: string[]; access: "private" | "public" } | null;
+}
+
 export interface ServerDetail {
   server: Server;
   env: { key: string; label: string; help: string | null; required: boolean; secret: boolean; generate: boolean; value: string | null; isSet: boolean }[];

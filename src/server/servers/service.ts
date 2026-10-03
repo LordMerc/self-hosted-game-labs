@@ -34,6 +34,23 @@ export interface DeployRequest {
   /** Optional manual port choices keyed by template port name. */
   ports?: Record<string, number>;
   access?: "private" | "public";
+  /** Set the new server up from this backup: its world is put in place before the server first starts. */
+  restoreFrom?: { slug: string; name: string };
+}
+
+/** One server's backups for the Backups page. `deleted` means no server with this name exists any more. */
+export interface BackupGroup {
+  slug: string;
+  name: string;
+  deleted: boolean;
+  serverId: string | null;
+  status: (typeof schema.servers.$inferSelect)["status"] | null;
+  templateId: string | null;
+  templateName: string | null;
+  backups: BackupInfo[];
+  totalBytes: number;
+  /** What was saved about the server, for setting it up again. Passwords are listed by name only. */
+  saved: { name: string; templateId: string | null; env: Record<string, string>; savedSecrets: string[]; access: "private" | "public" } | null;
 }
 
 export interface ServiceDeps {
@@ -176,11 +193,20 @@ export class ServerService {
     const slug = uniqueSlug(slugify(name), existingSlugs);
     const id = randomUUID();
 
+    if (req.restoreFrom) {
+      const from = req.restoreFrom;
+      await this.exclusive(slug, async () => {
+        // A data folder left behind by the deleted server is replaced, after a copy of it is kept.
+        if (existsSync(path.join(this.d.config.GAMESERVERS_DIR, slug))) await this.store().create(slug, { prune: false });
+        await this.store().restore(from.slug, from.name, Date.now(), slug);
+      });
+    }
+
     this.d.db.transaction((tx) => {
       tx.insert(schema.servers).values({ id, slug, name, templateId: t.id, status: "deploying", access: "private", env, createdAt: new Date() }).run();
       for (const a of allocation) tx.insert(schema.serverPorts).values({ serverId: id, name: a.name, port: a.port, protocol: a.protocol }).run();
     });
-    this.event(id, "info", `Deploy started from template ${t.id}`);
+    this.event(id, "info", `Deploy started from template ${t.id}${req.restoreFrom ? `, with the world from backup ${req.restoreFrom.name}` : ""}`);
 
     const job = this.runDeploy(id, req.access ?? "private");
     if (this.d.background === false) await job;
@@ -324,6 +350,7 @@ export class ServerService {
         throw new UserError(`Could not make a final backup, so nothing was deleted: ${(e as Error).message}`, 500);
       }
     }
+    this.saveBackupMeta(row);
     await this.closeAccess(row, errors);
     if (row.containerId) await this.d.docker.remove(row.containerId);
     if (opts.deleteData) rmSync(path.join(this.d.config.GAMESERVERS_DIR, row.slug), { recursive: true, force: true });
@@ -493,6 +520,9 @@ export class ServerService {
       });
     }
 
+    await attempt("backup records", async () => {
+      for (const r of servers) this.saveBackupMeta(r);
+    });
     if (routerMissing) {
       this.routerMissStreak++;
       if (this.routerMissStreak >= 2) problems.push(routerMissing);
@@ -723,6 +753,83 @@ export class ServerService {
     }
   }
 
+  /** Keep what is needed to set a server up again beside its backups, so it survives the server being deleted. Only for servers that have backups. */
+  private saveBackupMeta(row: typeof schema.servers.$inferSelect) {
+    try {
+      if (this.store().list(row.slug).length === 0) return;
+      this.store().setMeta(row.slug, { name: row.name, templateId: row.templateId, env: row.env, access: row.access });
+    } catch (e) {
+      this.event(row.id, "warn", `Could not save the server's settings next to its backups: ${(e as Error).message}`);
+    }
+  }
+
+  /** Every server's backups, including those of servers that have since been deleted. */
+  allBackups(): BackupGroup[] {
+    const store = this.store();
+    const rows = this.d.db.select().from(schema.servers).all();
+    const bySlug = new Map(rows.map((r) => [r.slug, r]));
+    const slugs = [...new Set([...rows.map((r) => r.slug), ...store.slugs()])];
+    const groups: BackupGroup[] = [];
+    for (const slug of slugs) {
+      const row = bySlug.get(slug);
+      const backups = store.list(slug);
+      if (!row && backups.length === 0) continue;
+      const meta = store.meta(slug);
+      const tpl = this.d.templates.find((x) => x.id === (row?.templateId ?? meta?.templateId));
+      const secretKeys = new Set(tpl ? Object.entries(tpl.env).filter(([, v]) => v.secret).map(([k]) => k) : []);
+      groups.push({
+        slug,
+        name: row?.name ?? meta?.name ?? slug,
+        deleted: !row,
+        serverId: row?.id ?? null,
+        status: row?.status ?? null,
+        templateId: tpl?.id ?? null,
+        templateName: tpl?.name ?? null,
+        backups,
+        totalBytes: backups.reduce((n, b) => n + b.sizeBytes, 0),
+        saved: meta
+          ? {
+              name: meta.name,
+              templateId: this.d.templates.some((x) => x.id === meta.templateId) ? meta.templateId : null,
+              env: Object.fromEntries(Object.entries(meta.env).filter(([k]) => !secretKeys.has(k))),
+              savedSecrets: Object.keys(meta.env).filter((k) => secretKeys.has(k) && meta.env[k]),
+              access: meta.access,
+            }
+          : null,
+      });
+    }
+    return groups.sort((a, b) => Number(a.deleted) - Number(b.deleted) || (b.backups[0]?.createdAt ?? "").localeCompare(a.backups[0]?.createdAt ?? "") || a.name.localeCompare(b.name));
+  }
+
+  /** Delete one backup by server name, for servers that no longer exist as well as current ones. */
+  deleteBackupBySlug(slug: string, name: string) {
+    try {
+      this.store().remove(slug, name);
+    } catch (e) {
+      throw new UserError((e as Error).message, 404);
+    }
+  }
+
+  /**
+   * Set a deleted server up again from one of its backups: same game, the saved settings (passwords included unless
+   * replaced), and its world put in place before the first start. Settings that were not saved come from the request or the template's defaults.
+   */
+  async redeployFromBackup(slug: string, backupName: string, req: { name?: string; templateId?: string; env?: Record<string, string>; access?: "private" | "public" } = {}): Promise<string> {
+    if (this.d.db.select().from(schema.servers).where(eq(schema.servers.slug, slug)).get()) throw new UserError("That server still exists. Use Restore on it instead.", 409);
+    if (!this.store().list(slug).some((b) => b.name === backupName)) throw new UserError("Backup not found", 404);
+    const meta = this.store().meta(slug);
+    const templateId = req.templateId || meta?.templateId;
+    const tpl = templateId ? this.d.templates.find((x) => x.id === templateId) : undefined;
+    if (!tpl) throw new UserError("Choose which game this backup belongs to", 400, { field: "templateId" });
+    const saved = meta?.templateId === tpl.id ? meta.env : {};
+    const env: Record<string, string> = {};
+    for (const key of Object.keys(tpl.env)) {
+      const v = req.env?.[key]?.trim() || saved[key];
+      if (v) env[key] = v;
+    }
+    return this.deploy({ templateId: tpl.id, name: req.name?.trim() || meta?.name || slug, env, access: req.access ?? "private", restoreFrom: { slug, name: backupName } });
+  }
+
   listBackups(id: string): BackupInfo[] {
     return this.store().list(this.row(id).slug);
   }
@@ -732,6 +839,7 @@ export class ServerService {
     const row = this.row(id);
     return this.exclusive(row.slug, async () => {
       const info = await this.store().create(row.slug);
+      this.saveBackupMeta(row);
       this.event(id, "info", `Backup ${info.name} created`);
       return info;
     });

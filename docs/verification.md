@@ -109,7 +109,7 @@ Not run: a backup or restore of a real game's data on the maintainer's host. Two
 
 ### Backup retention (2026-10-03, maintainer's requirement)
 
-A backup is kept at least 7 days, and deleting a server never removes its backups: `BACKUP_KEEP` only lets a backup go once it is beyond the newest N *and* at least 7 days old, and backups of a deleted server are never pruned. "Delete server and its world data" first takes a final backup, and stops if that fails. To restore after a deletion, create a new server with the same name (same slug) and open its Backups. Tests (110): age and count pruning with back-dated files, final backup on delete, redeploy and restore.
+A backup is kept at least 7 days, and deleting a server never removes its backups: `BACKUP_KEEP` only lets a backup go once it is beyond the newest N *and* at least 7 days old, and backups of a deleted server are never pruned. "Delete server and its world data" first takes a final backup, and stops if that fails. To restore after a deletion, use the Backups page (see below). Tests (110): age and count pruning with back-dated files, final backup on delete, redeploy and restore.
 
 ### Per-server backup settings (2026-10-03, maintainer's request)
 
@@ -118,6 +118,10 @@ Each server has "keep up to N backups" and "never delete one younger than D days
 ### Scheduled backups (2026-10-03)
 
 Per-server "back up automatically every N hours" (default 24, 0 = off), checked every 10 minutes and once a minute after startup. A server with no backup yet is backed up on the next check; one that is stopped and already has a backup is skipped. Servers still deploying, in error, or without a data folder are skipped. Same keep rules as manual backups. Tests (116): due, not due, off, stopped, no data folder. Not run for a real day on the maintainer's host; the timer wiring in `src/server/index.ts` is only covered by the service tests, not by a running process.
+
+### Backups page and setting a deleted server up again (2026-10-03, maintainer's request)
+
+A Backups entry in the navigation lists every server's backups, including servers that were deleted (shown under "Deleted servers"). For a deleted server each backup has "Set up again": the panel creates the server again with the same game and the settings it had (passwords included unless replaced), and puts the world from that backup in place before the first start. The settings are kept in `.backups/<slug>/server.json` (readable by the panel only, since it holds passwords), written whenever a backup is made, when the server is deleted, and on every reconcile; backups made before this existed get their file at the next reconcile, and if a server was deleted before that, the dialog asks which game it was and uses the template's defaults. If a data folder is still on disk from the deleted server it is replaced, after a copy is kept as a new backup. The new server starts private unless "Make it public" is ticked. Tests: listing, redeploy with and without saved settings, rename, leftover data, validation. UI checked in headless Chromium against a fake Docker. Not run: a real redeploy on the maintainer's host.
 
 ## Starting status and folder owner (2026-10-03)
 

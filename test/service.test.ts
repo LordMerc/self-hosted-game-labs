@@ -335,6 +335,81 @@ describe("deleting a server and its data", () => {
   });
 });
 
+describe("backups of deleted servers", () => {
+  const dataFile = () => path.join(dir, "games", "alpha", "palworld", "world.sav");
+  async function deletedWithWorld() {
+    const id = await deploy("Alpha", { env: { SERVER_PASSWORD: "letmein" } });
+    mkdirSync(path.dirname(dataFile()), { recursive: true });
+    writeFileSync(dataFile(), "my world");
+    await svc.backup(id);
+    await svc.remove(id, { deleteData: true, confirmName: "Alpha" });
+    return svc.allBackups().find((g) => g.slug === "alpha")!;
+  }
+
+  it("lists current and deleted servers together, marks the deleted ones, and never lists passwords", async () => {
+    const live = await deploy("Beta");
+    mkdirSync(path.join(dir, "games", "beta"), { recursive: true });
+    await svc.backup(live);
+    const gone = await deletedWithWorld();
+    expect(gone).toMatchObject({ deleted: true, serverId: null, name: "Alpha", templateId: "palworld" });
+    expect(gone.backups.length).toBeGreaterThanOrEqual(2); // the manual one and the final one
+    expect(gone.saved!.savedSecrets).toEqual(expect.arrayContaining(["SERVER_PASSWORD", "ADMIN_PASSWORD"]));
+    expect(JSON.stringify(gone)).not.toContain("letmein");
+    const groups = svc.allBackups();
+    expect(groups.map((g) => [g.slug, g.deleted])).toEqual([["beta", false], ["alpha", true]]);
+  });
+
+  it("sets a deleted server up again with the same game and passwords, and its world in place before it starts", async () => {
+    const gone = await deletedWithWorld();
+    const id = await svc.redeployFromBackup("alpha", gone.backups[0].name);
+    expect(readFileSync(dataFile(), "utf8")).toBe("my world");
+    const [s] = await svc.list();
+    expect(s).toMatchObject({ id, slug: "alpha", name: "Alpha", templateId: "palworld", status: "online", access: "private" });
+    expect(svc.secret(id, "SERVER_PASSWORD")).toBe("letmein");
+    expect(svc.allBackups().find((g) => g.slug === "alpha")).toMatchObject({ deleted: false, serverId: id });
+  });
+
+  it("lets the user rename it and replace a password, restoring into the new name", async () => {
+    const gone = await deletedWithWorld();
+    const id = await svc.redeployFromBackup("alpha", gone.backups[0].name, { name: "Gamma", env: { SERVER_PASSWORD: "new" } });
+    expect(readFileSync(path.join(dir, "games", "gamma", "palworld", "world.sav"), "utf8")).toBe("my world");
+    expect(svc.secret(id, "SERVER_PASSWORD")).toBe("new");
+    expect(svc.allBackups().find((g) => g.slug === "alpha")!.deleted).toBe(true); // the old backups stay where they were
+  });
+
+  it("works without saved settings: asks for the game, then uses the template defaults", async () => {
+    const gone = await deletedWithWorld();
+    rmSync(path.join(dir, "games", ".backups", "alpha", "server.json"));
+    const g = svc.allBackups().find((x) => x.slug === "alpha")!;
+    expect(g).toMatchObject({ name: "alpha", saved: null, templateId: null });
+    await expect(svc.redeployFromBackup("alpha", gone.backups[0].name)).rejects.toMatchObject({ status: 400 });
+    const id = await svc.redeployFromBackup("alpha", gone.backups[0].name, { templateId: "palworld", name: "Alpha" });
+    expect(readFileSync(dataFile(), "utf8")).toBe("my world");
+    expect((await svc.list()).find((s) => s.id === id)!.status).toBe("online");
+  });
+
+  it("replaces data left on disk after keeping a copy of it, and refuses when the server still exists or the backup is unknown", async () => {
+    const gone = await deletedWithWorld();
+    mkdirSync(path.dirname(dataFile()), { recursive: true });
+    writeFileSync(dataFile(), "newer leftovers");
+    const before = svc.allBackups().find((g) => g.slug === "alpha")!.backups.length;
+    const id = await svc.redeployFromBackup("alpha", gone.backups[0].name);
+    expect(readFileSync(dataFile(), "utf8")).toBe("my world");
+    expect(svc.allBackups().find((g) => g.slug === "alpha")!.backups).toHaveLength(before + 1);
+    await expect(svc.redeployFromBackup("alpha", gone.backups[0].name)).rejects.toMatchObject({ status: 409 });
+    await svc.remove(id);
+    await expect(svc.redeployFromBackup("alpha", "alpha-20200101-000000.tar.gz")).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("deletes a backup of a deleted server by name, and rejects names that are not backups", async () => {
+    const gone = await deletedWithWorld();
+    svc.deleteBackupBySlug("alpha", gone.backups[0].name);
+    expect(svc.allBackups().find((g) => g.slug === "alpha")!.backups).toHaveLength(gone.backups.length - 1);
+    expect(() => svc.deleteBackupBySlug("alpha", "../../x")).toThrow(UserError);
+    expect(() => svc.deleteBackupBySlug("../..", "alpha-20200101-000000.tar.gz")).toThrow(UserError);
+  });
+});
+
 describe("backup settings", () => {
   it("are per server, validated, and survive deleting the server", async () => {
     const id = await deploy("Alpha");
