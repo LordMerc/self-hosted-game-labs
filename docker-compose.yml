@@ -1,0 +1,13 @@
+services:
+  gamelabs:
+    build: .
+    container_name: gamelabs
+    # Host networking is required: UPnP discovery (SSDP) does not cross the Docker bridge,
+    # and game servers are exposed on the host's own ports.
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/data
+      - /srv/gameservers:/srv/gameservers
+    env_file: .env
