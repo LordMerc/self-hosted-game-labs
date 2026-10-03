@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { loadConfig } from "../src/server/config.js";
 import { openDb } from "../src/server/db/index.js";
-import { ServerService, UserError } from "../src/server/servers/service.js";
+import { parseListeningUdp, ServerService, UserError } from "../src/server/servers/service.js";
 import { loadTemplates } from "../src/server/templates/loader.js";
 import { FakeConnectivity, FakeDns, FakeDocker } from "./helpers/fakes.js";
 
@@ -374,5 +374,61 @@ describe("scheduled backups", () => {
     await deploy("Alpha");
     rmSync(path.join(dir, "games", "alpha"), { recursive: true, force: true });
     expect(await svc.runScheduledBackups()).toEqual([]);
+  });
+});
+
+describe("starting", () => {
+  const status = async (id: string) => (await svc.list()).find((s) => s.id === id)!;
+
+  it("says starting until the game opens its port, then ready, and starting again after a restart", async () => {
+    const id = await deploy();
+    docker.gameListening = false;
+    expect((await status(id)).starting).toBe(true);
+    expect((await status(id)).status).toBe("online");
+    docker.gameListening = true;
+    expect((await status(id)).starting).toBe(false);
+    docker.gameListening = false;
+    expect((await status(id)).starting).toBe(false); // ready runs are remembered, not re-probed
+    await svc.restart(id);
+    expect((await status(id)).starting).toBe(true); // a restart is a new run
+  });
+
+  it("does not claim starting for a stopped server, or when the container cannot be inspected", async () => {
+    const id = await deploy();
+    docker.gameListening = false;
+    docker.execFails = true;
+    expect((await status(id)).starting).toBe(false);
+    docker.execFails = false;
+    await svc.stop(id);
+    expect((await status(id)).starting).toBe(false);
+  });
+
+  it("reads bound UDP ports from /proc/net/udp, v4 and v6", () => {
+    const text = `  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops
+  12: 00000000:1E61 00000000:0000 07 00000000:00000000 00:00000000 00000000  1000        0 5 2 0
+   3: 00000000000000000000000000000000:20FB 00000000000000000000000000000000:0000 07 00000000:00000000 00:00000000 00000000  1000        0 6 2 0`;
+    expect([...parseListeningUdp(text)].sort()).toEqual([7777, 8443]);
+  });
+});
+
+describe("data folder owner", () => {
+  it("sets the folder owner a template asks for, and carries on with a warning if that fails", async () => {
+    const calls: [string, number, number][] = [];
+    (svc as unknown as { d: { chown: unknown } }).d.chown = (d: string, u: number, g: number) => calls.push([d, u, g]);
+    await svc.deploy({ templateId: "dragonwilds", name: "Dragon", env: { RSDW_OWNER_ID: "abc" } });
+    expect(calls).toEqual([[path.join(dir, "games", "dragon"), 1000, 1000]]);
+    (svc as unknown as { d: { chown: unknown } }).d.chown = () => {
+      throw new Error("operation not permitted");
+    };
+    const id = await svc.deploy({ templateId: "dragonwilds", name: "Dragon Two", env: { RSDW_OWNER_ID: "abc" } });
+    expect((await svc.list()).find((s) => s.id === id)!.status).toBe("online");
+    expect(svc.events(id).some((e) => e.level === "warn" && /operation not permitted/.test(e.message))).toBe(true);
+  });
+
+  it("does not touch ownership for templates that do not ask", async () => {
+    let called = false;
+    (svc as unknown as { d: { chown: unknown } }).d.chown = () => (called = true);
+    await deploy();
+    expect(called).toBe(false);
   });
 });

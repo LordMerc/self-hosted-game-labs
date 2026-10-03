@@ -38,7 +38,7 @@ These need real infrastructure and are **unproven**; the matching Milestone 1 ac
 - Real Cloudflare zone and real UPnP router.
 - The Palworld image's env var names and ports, taken from the template as written; verify against the image's current docs.
 - A friend connecting from outside the LAN.
-- The Dragonwilds template (`ghcr.io/runescape/rsdw-dedicated`): env names, ports (7777/udp game, 8888/udp beacon) and data path come from the image's README and compose file, and the image is public on GHCR. Not yet verified: that the container user can write to the bind-mounted data folder the panel creates (if the log shows permission errors, `chown -R 1000:1000` the server's folder), that moving the game port off 7777 keeps the beacon working, and a real join from the game client.
+- The Dragonwilds template (`ghcr.io/runescape/rsdw-dedicated`): env names, ports (7777/udp game, 8888/udp beacon) and data path come from the image's README and compose file, and the image is public on GHCR. Found on the maintainer's host: the container user (`steam`, uid 1000) could not write to the root-owned folder the panel creates, so the template now declares `owner: { uid: 1000, gid: 1000 }` and the panel sets it when it creates the folder (see "Starting status and folder owner" below). Not yet verified: that moving the game port off 7777 keeps the beacon working, and a real join from the game client.
 
 ## Compose file (2026-10-03)
 
@@ -118,3 +118,17 @@ Each server has "keep up to N backups" and "never delete one younger than D days
 ### Scheduled backups (2026-10-03)
 
 Per-server "back up automatically every N hours" (default 24, 0 = off), checked every 10 minutes and once a minute after startup. A server with no backup yet is backed up on the next check; one that is stopped and already has a backup is skipped. Servers still deploying, in error, or without a data folder are skipped. Same keep rules as manual backups. Tests (116): due, not due, off, stopped, no data folder. Not run for a real day on the maintainer's host; the timer wiring in `src/server/index.ts` is only covered by the service tests, not by a running process.
+
+## Starting status and folder owner (2026-10-03)
+
+Found on the maintainer's host during the Dragonwilds setup: (1) the panel said "Running" while the game was still downloading about 5 GB, because UDP-only games cannot be probed from outside and the panel only waited 8 seconds; (2) the game could not write to its data folder, which the panel created as root.
+
+- **Starting:** a running server now shows "Starting" until its game port is open. A TCP game port is probed from the host. For UDP the panel runs `cat /proc/net/udp` (and `udp6`) inside the container through Docker exec and looks for a bound socket on the main game port (the first port in the template). Once seen, that run is remembered (a restart counts as a new run). If it cannot tell (no `cat` in the image, exec fails) it assumes ready, so a server is never stuck on "Starting". The deploy itself is not held up, so a long first download cannot time out into an error. The template's `readiness: log-regex` option is still unimplemented.
+- **Folder owner:** a template data entry can set `owner: { uid, gid }`; the panel sets the folder's owner right after creating it (non-recursive, the folder is new) and logs a warning event instead of failing if that is not allowed, for instance on a filesystem that does not support owners. Dragonwilds declares 1000:1000. Palworld's image fixes ownership itself and does not need it.
+- **Router warning:** a router that does not answer discovery is asked up to three times; reconcile only reports "No UPnP router found" once it has been missing on two reconcile rounds in a row (about 10 minutes), says it once instead of once per port, and skips stopped servers (their ports are re-checked when the server starts). Discovery prefers a router on this machine's own subnet if another device (for example one at 192.168.1.1) answers first.
+
+| Check | Result |
+|---|---|
+| Tests | 126 pass: discovery retry, own-subnet preference, router-missing streak, stopped servers, Starting after restart, owner set and owner failure |
+| Docker exec against a real daemon (throwaway dockerd, busybox image) | Pass: output demuxed, exit codes, stderr captured, `/proc/net/udp` format matches the parser, missing binary reports exit 127 |
+| Real Dragonwilds server | Not run: needs the maintainer's host |
