@@ -4,6 +4,7 @@ import { ago as shortAgo } from "./format";
 import { HiddenIp } from "./HiddenIp";
 import { Icon } from "./Icons";
 import { checkedAgo } from "./ServersTable";
+import { NetworkSkeleton } from "./Skeleton";
 
 function ago(iso: string | null) {
   if (!iso) return null;
@@ -92,7 +93,7 @@ export function NetworkPanel({ network, servers, activity, onChange }: { network
   const [probing, setProbing] = useState(false);
   const [probeError, setProbeError] = useState("");
   const [probe, setProbe] = useState<{ via: string; results: ReachItem[] } | null>(null);
-  if (!network) return null;
+  if (!network) return <NetworkSkeleton />;
 
   const upnp = network.provider === "upnp";
   const confirm = (id: number, confirmed: boolean) => api(`/network/rules/${id}`, { method: "PUT", body: { confirmed } }).then(onChange);
