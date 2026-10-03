@@ -68,3 +68,13 @@ export async function api<T>(path: string, init?: { method?: string; body?: unkn
   if (!res.ok) throw new ApiError((data as { error?: string }).error ?? res.statusText, data as Record<string, unknown>);
   return data as T;
 }
+
+export interface DnsStatus {
+  configured: boolean;
+  source: "env" | "app" | null;
+  zone: string | null;
+  host: string | null;
+  tokenSet: boolean;
+}
+
+export type TokenCheck = { valid: false; error: string } | { valid: true; zones: string[]; zonesError: string | null };
