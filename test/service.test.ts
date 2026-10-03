@@ -228,6 +228,47 @@ describe("reconcile", () => {
   });
 });
 
+describe("reconcile and the router", () => {
+  it("does not complain about a router that was missing once, only when it stays missing", async () => {
+    const id = await deploy();
+    await svc.setAccess(id, "public");
+    net.missing = true;
+    await svc.reconcile();
+    expect((await svc.network()).reconcile.problems).toEqual([]);
+    await svc.reconcile();
+    expect((await svc.network()).reconcile.problems).toEqual(["No UPnP router found."]); // once, not once per port
+    net.missing = false;
+    await svc.reconcile();
+    expect((await svc.network()).reconcile.problems).toEqual([]);
+    net.missing = true;
+    await svc.reconcile();
+    expect((await svc.network()).reconcile.problems).toEqual([]); // the streak starts over
+  });
+
+  it("leaves the router alone for a stopped public server, and re-opens its ports when it starts", async () => {
+    const id = await deploy();
+    await svc.setAccess(id, "public");
+    await svc.stop(id);
+    net.open.clear();
+    net.fail = "router exploded";
+    await svc.reconcile();
+    expect((await svc.network()).reconcile.problems.join(" ")).not.toMatch(/router exploded/);
+    expect(net.open.size).toBe(0);
+    net.fail = null;
+    await svc.start(id);
+    expect([...net.open.keys()].sort()).toEqual(["27015/udp", "8211/udp"]);
+  });
+
+  it("starting still works when the router cannot be reached", async () => {
+    const id = await deploy();
+    await svc.setAccess(id, "public");
+    await svc.stop(id);
+    net.missing = true;
+    await svc.start(id);
+    expect((await svc.list()).find((s) => s.id === id)!.status).toBe("online");
+  });
+});
+
 describe("usage", () => {
   it("reports CPU and memory for running servers only, and skips one whose stats fail", async () => {
     const a = await deploy("Alpha");

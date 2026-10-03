@@ -31,6 +31,9 @@ export const describeMapping = (slug: string) => `${OWNER_PREFIX}${slug}`;
 
 export class ConnectivityError extends Error {}
 
+/** No router answered discovery. Often a one-off (a dropped multicast packet), so callers retry before complaining. */
+export class RouterNotFoundError extends ConnectivityError {}
+
 export async function echoPublicIp(url: string, fetchFn: typeof fetch = fetch): Promise<string> {
   const res = await fetchFn(url, { signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new ConnectivityError(`IP lookup failed (${res.status})`);

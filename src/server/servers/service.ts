@@ -9,7 +9,7 @@ import { schema } from "../db/index.js";
 import type { GameTemplate } from "../../shared/template.js";
 import type { ContainerDriver, ContainerState } from "../docker/driver.js";
 import { LABEL_ID, LABEL_MANAGED, LABEL_SLUG } from "../docker/driver.js";
-import type { ConnectivityProvider } from "../connectivity/provider.js";
+import { RouterNotFoundError, type ConnectivityProvider } from "../connectivity/provider.js";
 import type { DnsClient } from "../dns/cloudflare.js";
 import { allocatePorts, checkPorts, portKey, type Allocation, type PortKey } from "../ports/allocator.js";
 import { listHostPorts } from "../ports/host.js";
@@ -259,6 +259,19 @@ export class ServerService {
     await this.d.docker.start(row.containerId);
     this.setStatus(id, "online");
     this.event(id, "info", "Started");
+    await this.reopenIfPublic(id);
+  }
+
+  /** A public server that was stopped may have lost its router mappings (reboot) while it was off; put them back. */
+  private async reopenIfPublic(id: string) {
+    const row = this.row(id);
+    const lan = this.d.config.HOST_LAN_IP;
+    if (row.access !== "public" || !lan) return;
+    try {
+      for (const p of this.ports(id)) await this.d.connectivity.ensureOpen(id, row.slug, p.port, p.protocol, lan);
+    } catch (e) {
+      this.event(id, "warn", `Could not check the router ports after starting: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   async stop(id: string) {
@@ -383,14 +396,21 @@ export class ServerService {
    * mappings on reboot, DNS records get deleted, public IPs change, containers get removed by hand.
    * Only ever touches containers/mappings/records that carry the gamelabs tag. Returns what it did.
    */
+  private routerMissStreak = 0;
+
   async reconcile(): Promise<string[]> {
     const actions: string[] = [];
     const problems: string[] = [];
+    // A router that does not answer discovery is usually a one-off. Note it, skip the rest of the router work
+    // this round, and only complain once it has been missing on two rounds in a row.
+    let routerMissing: string | null = null;
     const attempt = async (what: string, fn: () => Promise<void>) => {
+      if (routerMissing) return;
       try {
         await fn();
       } catch (e) {
-        problems.push(`${what}: ${e instanceof Error ? e.message : String(e)}`);
+        if (e instanceof RouterNotFoundError) routerMissing = e.message;
+        else problems.push(`${what}: ${e instanceof Error ? e.message : String(e)}`);
       }
     };
 
@@ -412,7 +432,8 @@ export class ServerService {
     // 2. Router mappings for public servers (a router reboot wipes them).
     const lan = this.d.config.HOST_LAN_IP;
     if (lan) {
-      for (const s of publicServers) {
+      // A stopped server has nothing listening, so its ports are left alone until it is started again.
+      for (const s of publicServers.filter((x) => x.status !== "offline")) {
         for (const p of this.ports(s.id)) {
           await attempt(`${s.slug} ${p.port}/${p.protocol}`, async () => {
             const owned = await this.d.connectivity.list();
@@ -449,6 +470,13 @@ export class ServerService {
           }
         }
       });
+    }
+
+    if (routerMissing) {
+      this.routerMissStreak++;
+      if (this.routerMissStreak >= 2) problems.push(routerMissing);
+    } else {
+      this.routerMissStreak = 0;
     }
 
     for (const a of actions) this.event(null, "info", `Reconcile: ${a}`);
