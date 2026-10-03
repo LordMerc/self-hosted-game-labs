@@ -122,7 +122,28 @@ describe("stats", () => {
     const setup = await app.inject({ method: "POST", url: "/api/auth/setup", payload: { password: "correct horse battery" } });
     const res = await app.inject({ url: "/api/stats", headers: { cookie: cookieOf(setup) } });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ host: { cpu: { cores: expect.any(Number) } }, servers: {} });
+    expect(res.json()).toMatchObject({ host: { cpu: { cores: expect.any(Number) } }, servers: {}, history: { intervalSec: 20, host: { cpu: [] } }, docker: { name: "homelab-01" } });
+  });
+
+  it("lists recent activity across servers, without console and schedule chatter", async () => {
+    const setup = await app.inject({ method: "POST", url: "/api/auth/setup", payload: { password: "correct horse battery" } });
+    const headers = { cookie: cookieOf(setup) };
+    expect((await app.inject("/api/activity")).statusCode).toBe(401);
+    const made = await app.inject({ method: "POST", url: "/api/servers", headers, payload: { templateId: "valheim", name: "Vikings", env: { SERVER_PASS: "abcdef" } } });
+    expect(made.statusCode).toBeLessThan(300);
+    const res = await app.inject({ url: "/api/activity", headers });
+    const items = res.json() as { server: string | null; message: string }[];
+    expect(items.length).toBeGreaterThan(0);
+    expect(items.every((i) => !/^Deploy started|^Pulling /.test(i.message))).toBe(true);
+    expect(items[0]).toMatchObject({ server: "Vikings", message: "Server is online" });
+  });
+
+  it("offers a template's artwork only when the file is there, and never outside the templates folder", async () => {
+    const setup = await app.inject({ method: "POST", url: "/api/auth/setup", payload: { password: "correct horse battery" } });
+    const headers = { cookie: cookieOf(setup) };
+    const list = (await app.inject({ url: "/api/templates", headers })).json() as { id: string; accent: string | null; artwork: string | null }[];
+    expect(list.find((t) => t.id === "palworld")).toMatchObject({ accent: "#4ade80", artwork: null });
+    expect((await app.inject({ url: "/api/templates/palworld/artwork", headers })).statusCode).toBe(404);
   });
 });
 

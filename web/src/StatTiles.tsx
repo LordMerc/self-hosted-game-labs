@@ -1,0 +1,64 @@
+import type { CSSProperties } from "react";
+import type { Stats } from "./api";
+import { bytes, rate } from "./format";
+import { Spark } from "./Spark";
+
+const pct = (used: number, total: number) => (total > 0 ? Math.min(100, (used / total) * 100) : 0);
+
+function Meter({ fill, tone, label }: { fill: number; tone: string; label: string }) {
+  return <div className="meter" role="img" aria-label={label} style={{ "--tone": tone, "--fill": `${fill}%` } as CSSProperties} />;
+}
+
+function Tile({ label, value, children, sub }: { label: string; value: string | null; children?: React.ReactNode; sub: string }) {
+  return (
+    <div className="stat">
+      <span className="stat-label">{label}</span>
+      <span className={`stat-value${value === null ? " pending" : ""}`}>{value ?? "—"}</span>
+      {children}
+      <span className="stat-sub">{sub}</span>
+    </div>
+  );
+}
+
+/**
+ * The five figures along the top. Anything the host cannot report stays an empty tile rather than an invented number, and the
+ * small charts and peaks come only from what the panel has actually measured (the last few minutes, or today for players).
+ */
+export function StatTiles({ stats }: { stats: Stats | null }) {
+  const host = stats?.host;
+  const hist = stats?.history;
+  const none = "Not reported yet";
+  const minutes = hist?.peaks.windowMinutes ?? 15;
+  const cpu = host?.cpu.percent;
+  const cpuPeak = hist?.peaks.cpuPercent;
+
+  const counts = Object.entries(stats?.servers ?? {}).flatMap(([, u]) => (u.players ? [u.players] : []));
+  const online = counts.reduce((a, b) => a + b.online, 0);
+  const slots = counts.every((c) => c.max > 0) ? counts.reduce((a, b) => a + b.max, 0) : 0; // a server that does not report its limit makes the total unknowable
+  const peakToday = hist?.peaks.playersToday;
+
+  return (
+    <section className="stats" aria-label="Host">
+      <Tile label="CPU" value={cpu == null ? null : `${Math.round(cpu)}%`} sub={cpu == null ? none : `${host!.cpu.cores} cores${cpuPeak != null ? ` · peak ${Math.round(cpuPeak)}% (${minutes} min)` : ""}`}>
+        {hist && hist.host.cpu.length > 0 && <Spark values={hist.host.cpu} floor={20} tone="#6684ff" label={`CPU over the last ${minutes} minutes`} />}
+        {(!hist || hist.host.cpu.length === 0) && cpu != null && <Meter fill={cpu} tone="#6684ff" label="CPU in use" />}
+      </Tile>
+      <Tile label="Memory" value={host?.memory ? bytes(host.memory.usedBytes) : null} sub={host?.memory ? `of ${bytes(host.memory.totalBytes)} · ${Math.round(pct(host.memory.usedBytes, host.memory.totalBytes))}%` : none}>
+        {host?.memory && <Meter fill={pct(host.memory.usedBytes, host.memory.totalBytes)} tone="#a78bfa" label="Memory in use" />}
+      </Tile>
+      <Tile label="Storage" value={host?.storage ? bytes(host.storage.usedBytes) : null} sub={host?.storage ? `of ${bytes(host.storage.totalBytes)} · ${Math.round(pct(host.storage.usedBytes, host.storage.totalBytes))}% used` : none}>
+        {host?.storage && <Meter fill={pct(host.storage.usedBytes, host.storage.totalBytes)} tone="#22d3ee" label="Storage in use" />}
+      </Tile>
+      <Tile label="Network" value={host?.network ? `↓ ${rate(host.network.rxPerSec)}` : null} sub={host?.network ? `↑ ${rate(host.network.txPerSec)}` : none}>
+        {hist && hist.host.rx.some((v) => v !== null) && <Spark values={hist.host.rx} floor={10_000} tone="#4ade80" label={`Download over the last ${minutes} minutes`} />}
+      </Tile>
+      <Tile
+        label="Players online"
+        value={counts.length === 0 ? null : String(online)}
+        sub={counts.length === 0 ? none : `${slots > 0 ? `of ${slots} slots` : `across ${counts.length} server${counts.length === 1 ? "" : "s"}`}${peakToday != null ? ` · peak ${peakToday} today` : ""}`}
+      >
+        {hist && hist.host.players.some((v) => v !== null) && <Spark values={hist.host.players} floor={4} tone="#fbbf24" label={`Players over the last ${minutes} minutes`} />}
+      </Tile>
+    </section>
+  );
+}

@@ -3,6 +3,7 @@
 id: satisfactory
 name: Satisfactory
 image: wolveix/satisfactory-server:latest
+accent: "#fbbf24"
 maxPlayers: 4
 notes: Needs about 8 GB of free memory, and the first start downloads about 8 GB of game files, which can take a long time. It shows Starting until it is ready. When it is, open Satisfactory, go to Server Manager and add this server to claim it and set the admin password.
 resources:
