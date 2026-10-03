@@ -6,7 +6,7 @@ An open-source, self-hosted control panel for running game servers on your own h
 
 ## What it does (target)
 
-- One-click Docker templates for popular games (Palworld first; Minecraft, Valheim, Satisfactory, Terraria, Dragonwilds, and a custom image option to follow).
+- One-click Docker templates for popular games (Palworld and RuneScape: Dragonwilds so far; Minecraft, Valheim, Satisfactory, Terraria, and a custom image option to follow).
 - Start, stop, restart, delete and stream logs for every server from one page.
 - Per-server **Private / Public** switch. Public opens the game ports on your router (UPnP, or a manual checklist) and creates a DNS name for the server.
 - Dynamic DNS and an honest reachability check that says "Untested" rather than guessing.

@@ -14,6 +14,19 @@ describe("template validation", () => {
   it("loads every shipped template", () => {
     const all = loadTemplates(path.resolve("templates"));
     expect(all.map((t) => t.id)).toContain("palworld");
+    expect(all.map((t) => t.id)).toContain("dragonwilds");
+  });
+
+  it("gives the Dragonwilds server stable credentials and both UDP ports", () => {
+    const t = loadTemplates(path.resolve("templates")).find((x) => x.id === "dragonwilds")!;
+    expect(t.ports.map((p) => [p.default, p.protocol, p.env])).toEqual([
+      [7777, "udp", "RSDW_PORT"],
+      [8888, "udp", "RSDW_BEACON_PORT"],
+    ]);
+    expect(t.env.RSDW_OWNER_ID.required).toBe(true);
+    // The image regenerates an unset password on every start, so the panel must always pass one.
+    expect(t.env.RSDW_PASSWORD.generate).toBe(true);
+    expect(t.env.RSDW_ADMIN_PASSWORD.generate).toBe(true);
   });
 
   it("applies defaults", () => {
