@@ -1,0 +1,30 @@
+# Runs the published image from ghcr.io instead of building from source:
+#   docker compose -f compose.image.yaml up -d
+# Same settings as compose.yaml (a .env file next to this file, or the stack's environment variables).
+# Pin IMAGE_TAG to a release (for example 1.0.0) if you do not want to follow :latest.
+services:
+  gamelabs:
+    image: ghcr.io/lordmerc/self-hosted-game-labs:${IMAGE_TAG:-latest}
+    pull_policy: always
+    container_name: gamelabs
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - gamelabs-data:/data
+      # The host path must equal the container path (see compose.yaml).
+      - ${GAME_DATA_DIR:-/srv/gameservers}:${GAME_DATA_DIR:-/srv/gameservers}
+    environment:
+      PANEL_PORT: ${PANEL_PORT:-8090}
+      GAMESERVERS_DIR: ${GAME_DATA_DIR:-/srv/gameservers}
+      HOST_LAN_IP: ${HOST_LAN_IP:-}
+      PUBLIC_HOST: ${PUBLIC_HOST:-}
+      CONNECTIVITY: ${CONNECTIVITY:-manual}
+      CF_API_TOKEN: ${CF_API_TOKEN:-}
+      CF_ZONE: ${CF_ZONE:-}
+      BACKUP_KEEP: ${BACKUP_KEEP:-7}
+      PORT_CHECK: ${PORT_CHECK:-on}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+
+volumes:
+  gamelabs-data:
