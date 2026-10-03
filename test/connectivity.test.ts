@@ -74,6 +74,14 @@ describe("UpnpProvider", () => {
     await expect(new UpnpProvider(run).externalIp()).rejects.toBeInstanceOf(ConnectivityError);
   });
 
+  it("falls back to the IP echo when the router does not report its external IP", async () => {
+    const noIp: UpnpcRunner = async () => "Found valid IGD : http://192.168.50.1:5000/ctl/IPConn\n";
+    expect(await new UpnpProvider(noIp, async () => "198.51.100.4").externalIp()).toBe("198.51.100.4");
+    await expect(new UpnpProvider(noIp).externalIp()).rejects.toThrow(/did not report/);
+    const zero: UpnpcRunner = async () => "ExternalIPAddress = 0.0.0.0\n";
+    expect(await new UpnpProvider(zero, async () => "198.51.100.4").externalIp()).toBe("198.51.100.4");
+  });
+
   it("reads the external IP from the router", async () => {
     expect(await new UpnpProvider(fakeUpnpc().run).externalIp()).toBe("203.0.113.7");
   });

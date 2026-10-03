@@ -58,7 +58,14 @@ export function parseUpnpList(out: string): { entries: UpnpEntry[]; externalIp?:
 export class UpnpProvider implements ConnectivityProvider {
   readonly kind = "upnp" as const;
 
-  constructor(private readonly run: UpnpcRunner = runUpnpc) {}
+  /**
+   * `fallbackIp` is asked when the router answers but does not report its external IP (some do not), so the
+   * panel can still show and publish the address. It is not used when no router is found at all.
+   */
+  constructor(
+    private readonly run: UpnpcRunner = runUpnpc,
+    private readonly fallbackIp?: () => Promise<string>,
+  ) {}
 
   private async listAll() {
     const out = await this.run(["-l"]);
@@ -76,7 +83,7 @@ export class UpnpProvider implements ConnectivityProvider {
     const out = await this.run(["-e", describeMapping(slug), "-a", lanIp, String(port), String(port), protocol.toUpperCase()]);
     if (NO_IGD.test(out)) throw new ConnectivityError(UPNP_OFF);
     if (/failed|error/i.test(out) && !/is redirected to/i.test(out)) {
-      throw new ConnectivityError(`The router refused the port mapping for ${protocol.toUpperCase()} ${port}`);
+      throw new ConnectivityError(`The router refused the port mapping for ${protocol.toUpperCase()} ${port}: ${out.trim().split("\n").slice(-2).join(" ").slice(0, 200)}`);
     }
     return { state: "open" };
   }
@@ -95,7 +102,8 @@ export class UpnpProvider implements ConnectivityProvider {
 
   async externalIp(): Promise<string> {
     const { externalIp } = await this.listAll();
-    if (!externalIp) throw new ConnectivityError("The router did not report an external IP");
-    return externalIp;
+    if (externalIp && externalIp !== "0.0.0.0") return externalIp;
+    if (this.fallbackIp) return this.fallbackIp();
+    throw new ConnectivityError("The router did not report an external IP");
   }
 }
