@@ -29,5 +29,9 @@ env:
     secret: true
     generate: true
     help: Used for in-game admin commands and RCON.
+# The image ships `rcon-cli`, which talks to the server's own RCON using ADMIN_PASSWORD.
+console:
+  exec: [rcon-cli]
+  examples: [ShowPlayers, Save, Broadcast Server_restarting_soon, Info]
 data:
   - containerPath: /palworld

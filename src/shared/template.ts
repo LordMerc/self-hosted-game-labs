@@ -43,6 +43,14 @@ export const templateSchema = z
       .default({ method: "direct" }),
     ports: z.array(portSchema).min(1),
     env: z.record(envName, envVarSchema).default({}),
+    /** A command box on the server page: each command is passed as one argument to this program inside the container (no shell). */
+    console: z
+      .object({
+        exec: z.array(z.string().min(1)).min(1),
+        examples: z.array(z.string()).default([]),
+      })
+      .strict()
+      .optional(),
     data: z
       .array(
         z
