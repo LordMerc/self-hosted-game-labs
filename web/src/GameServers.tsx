@@ -1,17 +1,52 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type Network, type Server, type Template } from "./api";
+import { CopyButton } from "./CopyButton";
 import { DeployDialog } from "./DeployDialog";
+import { Icon, type IconName } from "./Icons";
 import { LogViewer } from "./LogViewer";
 import { NetworkPanel } from "./NetworkPanel";
 
 const statusLabel: Record<Server["status"], string> = {
-  online: "Online",
+  online: "Running",
   paused: "Paused",
-  offline: "Offline",
+  offline: "Stopped",
   deploying: "Deploying",
   updating: "Updating",
   error: "Error",
 };
+
+type Tab = "all" | "online" | "paused" | "offline" | "error";
+const tabLabel: Record<Tab, string> = { all: "All", online: "Running", paused: "Paused", offline: "Stopped", error: "Error" };
+
+/** Host figures the backend does not report yet. They render as an empty tile rather than an invented number. */
+const hostTiles = [
+  { label: "CPU", tone: "blue" },
+  { label: "Memory", tone: "violet" },
+  { label: "Storage", tone: "cyan" },
+  { label: "Network", tone: "none" },
+  { label: "Players online", tone: "none" },
+] as const;
+
+const gameTones = ["green", "orange", "teal", "violet", "amber", "red"] as const;
+
+/** Stable colour per game so a server keeps its icon tint between reloads. */
+function gameTone(templateId: string) {
+  let h = 0;
+  for (const c of templateId) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return gameTones[h % gameTones.length];
+}
+
+function GameIcon({ id, name }: { id: string; name: string }) {
+  return <span className={`game-icon tone-${gameTone(id)}`}>{name.charAt(0).toUpperCase()}</span>;
+}
+
+function IconButton({ icon, label, onClick, disabled, danger }: { icon: IconName; label: string; onClick: () => void; disabled?: boolean; danger?: boolean }) {
+  return (
+    <button className={`icon-btn round${danger ? " danger" : ""}`} title={label} aria-label={label} onClick={onClick} disabled={disabled}>
+      <Icon name={icon} size={15} />
+    </button>
+  );
+}
 
 export function GameServers({ onLogout }: { onLogout: () => void }) {
   const [servers, setServers] = useState<Server[]>([]);
@@ -20,6 +55,9 @@ export function GameServers({ onLogout }: { onLogout: () => void }) {
   const [deploying, setDeploying] = useState<Template | null>(null);
   const [logsFor, setLogsFor] = useState<Server | null>(null);
   const [message, setMessage] = useState("");
+  const [tab, setTab] = useState<Tab>("all");
+  const [query, setQuery] = useState("");
+  const templatesRef = useRef<HTMLElement>(null);
 
   const refresh = useCallback(async () => {
     setServers(await api<Server[]>("/servers"));
@@ -57,133 +95,228 @@ export function GameServers({ onLogout }: { onLogout: () => void }) {
     alert(`${key}\n\n${value || "(empty)"}`);
   }
 
+  const counts = useMemo(() => {
+    const c: Record<Tab, number> = { all: servers.length, online: 0, paused: 0, offline: 0, error: 0 };
+    for (const s of servers) if (s.status in c) c[s.status as Tab]++;
+    return c;
+  }, [servers]);
+  const tabs = (["all", "online", "paused", "offline"] as Tab[]).concat(counts.error > 0 ? ["error"] : []);
+
+  const shown = servers.filter((s) => {
+    if (tab !== "all" && s.status !== tab) return false;
+    const q = query.trim().toLowerCase();
+    return !q || [s.name, s.templateName, s.connect.public, s.connect.lan].some((v) => v?.toLowerCase().includes(q));
+  });
+  const maxPlayers = (s: Server) => templates.find((t) => t.id === s.templateId)?.maxPlayers;
+  const problems = network?.reconcile.problems ?? [];
+
   return (
     <div className="shell">
       <aside className="nav">
-        <div className="brand">Game Labs</div>
+        <div className="brand">
+          <span className="brand-mark">
+            <Icon name="server" size={18} />
+          </span>
+          Game Labs
+        </div>
+        <div className="nav-label">Menu</div>
         <nav>
-          <a className="active">Game servers</a>
+          <a className="active">
+            <Icon name="server" size={17} />
+            Game servers
+          </a>
         </nav>
-        <button className="link" onClick={onLogout}>
+        <button className="nav-foot" onClick={onLogout}>
+          <Icon name="signout" size={17} />
           Sign out
         </button>
       </aside>
 
       <main className="content">
-        <header>
-          <h1>Game servers</h1>
+        <header className="page-head">
+          <div>
+            <h1>Game servers</h1>
+          </div>
+          <button className="primary with-icon" onClick={() => templatesRef.current?.scrollIntoView({ behavior: "smooth" })}>
+            <Icon name="plus" size={16} />
+            New server
+          </button>
         </header>
         {message && <p className="error banner">{message}</p>}
 
+        <section className="stats" aria-label="Host">
+          {hostTiles.map((t) => (
+            <div key={t.label} className="stat">
+              <span className="stat-label">{t.label}</span>
+              <span className="stat-value pending">—</span>
+              {t.tone !== "none" && <span className={`stat-bar tone-${t.tone}`} />}
+              <span className="stat-sub">Not reported yet</span>
+            </div>
+          ))}
+        </section>
+
         <div className="layout">
-          <div>
-            <section className="card">
-              {servers.length === 0 ? (
-                <p className="empty">No servers yet. Pick a template below to deploy your first one.</p>
-              ) : (
-                <table>
+          <div className="main-col">
+            <div className="toolbar">
+              <div className="tabs" role="tablist">
+                {tabs.map((t) => (
+                  <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
+                    {tabLabel[t]} <span className="count">{counts[t]}</span>
+                  </button>
+                ))}
+              </div>
+              <label className="search">
+                <Icon name="search" size={15} />
+                <input placeholder="Search servers" value={query} onChange={(e) => setQuery(e.target.value)} />
+              </label>
+            </div>
+
+            {servers.length === 0 ? (
+              <p className="empty">No servers yet. Pick a template below to deploy your first one.</p>
+            ) : shown.length === 0 ? (
+              <p className="empty">No servers match.</p>
+            ) : (
+              <div className="table-wrap">
+                <table className="servers">
                   <thead>
                     <tr>
                       <th>Server</th>
                       <th>Status</th>
-                      <th>Connect</th>
+                      <th>Address</th>
+                      <th>Ports</th>
                       <th>Access</th>
                       <th />
                     </tr>
                   </thead>
                   <tbody>
-                    {servers.map((s) => (
-                      <tr key={s.id}>
-                        <td>
-                          <strong>{s.name}</strong>
-                          <div className="muted">{s.templateName}</div>
-                        </td>
-                        <td>
-                          <span className={`dot ${s.status}`} /> {statusLabel[s.status]}
-                          {s.lastError && <div className="error small-text">{s.lastError}</div>}
-                        </td>
-                        <td className="mono">
-                          {s.connect.public && <div>{s.connect.public}</div>}
-                          {s.connect.instructions && <div className="muted wrap">{s.connect.instructions}</div>}
-                          {s.connect.lan && <div className="muted">LAN {s.connect.lan}</div>}
-                          <div className="muted">{s.ports.map((p) => `${p.port}/${p.protocol}`).join("  ")}</div>
-                          {s.access === "public" && s.pendingRules.length === 0 && (
-                            <div className="muted small-text wrap">Reachability untested. Check from a phone on cellular data.</div>
-                          )}
-                          {s.access === "public" && s.pendingRules.length > 0 && (
-                            <div className="warn small-text">Waiting for router rule(s): confirm in the Network panel</div>
-                          )}
-                        </td>
-                        <td>
-                          <div className="seg">
-                            <button
-                              className={s.access === "private" ? "on" : ""}
-                              disabled={s.status === "deploying" || s.access === "private"}
-                              onClick={() => act(api(`/servers/${s.id}/access`, { method: "PUT", body: { access: "private" } }))}
-                            >
-                              Private
-                            </button>
-                            <button
-                              className={s.access === "public" ? "on" : ""}
-                              disabled={s.status === "deploying" || s.status === "error" || s.access === "public"}
-                              onClick={() => act(api(`/servers/${s.id}/access`, { method: "PUT", body: { access: "public" } }))}
-                            >
-                              Public
-                            </button>
-                          </div>
-                        </td>
-                        <td className="actions">
-                          {s.status === "error" ? (
-                            <button className="ghost small" onClick={() => act(api(`/servers/${s.id}/retry`, { method: "POST" }))}>
-                              Retry
-                            </button>
-                          ) : s.status === "online" ? (
-                            <button className="ghost small" onClick={() => act(api(`/servers/${s.id}/stop`, { method: "POST" }))}>
-                              Stop
-                            </button>
-                          ) : (
-                            <button className="ghost small" disabled={s.status === "deploying"} onClick={() => act(api(`/servers/${s.id}/start`, { method: "POST" }))}>
-                              Start
-                            </button>
-                          )}
-                          <button className="ghost small" disabled={s.status !== "online"} onClick={() => act(api(`/servers/${s.id}/restart`, { method: "POST" }))}>
-                            Restart
-                          </button>
-                          <button className="ghost small" onClick={() => setLogsFor(s)} disabled={s.status === "deploying"}>
-                            Logs
-                          </button>
-                          {s.secrets.length > 0 && (
-                            <details className="menu">
-                              <summary className="ghost small">Passwords</summary>
-                              <div className="menu-items">
-                                {s.secrets.map((k) => (
-                                  <button key={k} className="link" onClick={() => reveal(s, k)}>
-                                    Show {k.toLowerCase().replace(/_/g, " ")}
-                                  </button>
-                                ))}
+                    {shown.map((s) => {
+                      const primary = s.connect.public ?? s.connect.lan;
+                      const max = maxPlayers(s);
+                      const locked = s.status === "deploying" || s.status === "updating";
+                      return (
+                        <tr key={s.id}>
+                          <td>
+                            <div className="server-cell">
+                              <GameIcon id={s.templateId} name={s.templateName} />
+                              <div>
+                                <strong>{s.name}</strong>
+                                <div className="muted">{s.templateName}</div>
                               </div>
-                            </details>
-                          )}
-                          <button className="ghost small danger" onClick={() => remove(s)}>
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                            </div>
+                          </td>
+                          <td>
+                            <span className={`status ${s.status}`}>
+                              <span className={`dot ${s.status}`} /> {statusLabel[s.status]}
+                            </span>
+                            {max !== undefined && (
+                              <div className="muted players" title="Live player counts are not reported yet">
+                                <Icon name="users" size={13} /> up to {max}
+                              </div>
+                            )}
+                            {s.lastError && <div className="error small-text">{s.lastError}</div>}
+                          </td>
+                          <td>
+                            <div className="address">
+                              <div>
+                                <div className={`mono addr-main${s.access === "private" ? " dim" : ""}`}>{primary ?? "—"}</div>
+                                {s.connect.public && s.connect.lan && <div className="mono muted addr-sub">LAN {s.connect.lan}</div>}
+                                {s.connect.instructions && <div className="muted small-text wrap">{s.connect.instructions}</div>}
+                                {s.access === "public" && s.pendingRules.length === 0 && (
+                                  <div className="muted small-text" title="Check from a phone on cellular data.">
+                                    Reachability untested
+                                  </div>
+                                )}
+                                {s.access === "public" && s.pendingRules.length > 0 && (
+                                  <div className="warn small-text">Waiting for router rule(s): confirm in the Network panel</div>
+                                )}
+                              </div>
+                              {primary && <CopyButton text={primary} label="Copy address" />}
+                            </div>
+                          </td>
+                          <td>
+                            <div className="chips">
+                              {s.ports.map((p) => (
+                                <span key={`${p.port}${p.protocol}`} className="chip mono">
+                                  {p.port} <span className="proto">{p.protocol.toUpperCase()}</span>
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td>
+                            <div className="seg">
+                              <button
+                                className={s.access === "private" ? "on" : ""}
+                                disabled={locked || s.access === "private"}
+                                onClick={() => act(api(`/servers/${s.id}/access`, { method: "PUT", body: { access: "private" } }))}
+                              >
+                                <Icon name="lock" size={13} /> Private
+                              </button>
+                              <button
+                                className={s.access === "public" ? "on public" : ""}
+                                disabled={locked || s.status === "error" || s.access === "public"}
+                                onClick={() => act(api(`/servers/${s.id}/access`, { method: "PUT", body: { access: "public" } }))}
+                              >
+                                <Icon name="globe" size={13} /> Public
+                              </button>
+                            </div>
+                          </td>
+                          <td>
+                            <div className="actions">
+                              {s.status === "error" ? (
+                                <IconButton icon="play" label="Retry" onClick={() => act(api(`/servers/${s.id}/retry`, { method: "POST" }))} />
+                              ) : s.status === "online" ? (
+                                <IconButton icon="pause" label="Stop" onClick={() => act(api(`/servers/${s.id}/stop`, { method: "POST" }))} />
+                              ) : (
+                                <IconButton icon="play" label="Start" disabled={locked} onClick={() => act(api(`/servers/${s.id}/start`, { method: "POST" }))} />
+                              )}
+                              <IconButton icon="restart" label="Restart" disabled={s.status !== "online"} onClick={() => act(api(`/servers/${s.id}/restart`, { method: "POST" }))} />
+                              <IconButton icon="terminal" label="Logs" disabled={locked} onClick={() => setLogsFor(s)} />
+                              {s.secrets.length === 0 && <span className="icon-slot" />}
+                              {s.secrets.length > 0 && (
+                                <details className="menu">
+                                  <summary className="icon-btn round" title="Passwords" aria-label="Passwords">
+                                    <Icon name="key" size={15} />
+                                  </summary>
+                                  <div className="menu-items">
+                                    {s.secrets.map((k) => (
+                                      <button key={k} className="link" onClick={() => reveal(s, k)}>
+                                        Show {k.toLowerCase().replace(/_/g, " ")}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </details>
+                              )}
+                              <IconButton icon="trash" label="Delete" danger onClick={() => remove(s)} />
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
-              )}
-            </section>
+              </div>
+            )}
 
-            <h2>Deploy a new server</h2>
-            <div className="templates">
-              {templates.map((t) => (
-                <button key={t.id} className="template" onClick={() => setDeploying(t)}>
-                  <strong>{t.name}</strong>
-                  <span className="muted mono">{t.ports.map((p) => `${p.default}/${p.protocol}`).join(" ")}</span>
-                </button>
-              ))}
-            </div>
+            {problems.length > 0 && (
+              <p className="note warn">
+                <Icon name="shield" size={15} /> {problems.length === 1 ? problems[0] : `${problems.length} things need attention. See the Network panel.`}
+              </p>
+            )}
+
+            <section ref={templatesRef} className="deploy">
+              <div className="deploy-head">
+                <h2>Deploy a new server</h2>
+                <span className="muted">One-click templates · Docker</span>
+              </div>
+              <div className="templates">
+                {templates.map((t) => (
+                  <button key={t.id} className="template" onClick={() => setDeploying(t)}>
+                    <GameIcon id={t.id} name={t.name} />
+                    <strong>{t.name}</strong>
+                  </button>
+                ))}
+              </div>
+            </section>
           </div>
 
           <NetworkPanel network={network} onChange={refresh} />
