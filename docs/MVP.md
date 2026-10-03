@@ -16,6 +16,6 @@ Panel and auth, templates and port allocation, deploy / start / stop / restart /
 
 - Header stats: CPU, memory, storage and network are done, plus per-server CPU and memory. Live player counts work for games that answer the Steam A2S query (Palworld, unverified on a real server); other games need their own query
 - Server page: config editor and console are done (open a server's name); ports editing is not
-- More templates (Minecraft, Valheim, Satisfactory, Terraria, Dragonwilds, Custom): each must be verified against its image before shipping
+- Templates: Palworld, Dragonwilds, Minecraft (Java), Valheim, Satisfactory, Terraria and a Custom Docker image option are in. More games each need verifying against their image first (see verification.md for what was and was not run)
 - Backups: manual backup, restore (with a safety copy) and delete are done. Scheduled (automatic) backups are done too. Scheduled restarts and update checks are not
-- Playwright smoke test in CI once the UI settles
+- Browser smoke test: done (`e2e/`, runs in CI). It uses a fake Docker, so it checks the UI and API together, not the games

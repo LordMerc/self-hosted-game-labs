@@ -6,7 +6,7 @@ An open-source, self-hosted control panel for running game servers on your own h
 
 ## What it does (target)
 
-- One-click Docker templates for popular games (Palworld and RuneScape: Dragonwilds so far; Minecraft, Valheim, Satisfactory, Terraria, and a custom image option to follow).
+- One-click Docker templates for popular games (Palworld, RuneScape: Dragonwilds, Minecraft (Java), Valheim, Satisfactory and Terraria), plus a Custom Docker image option for anything else.
 - Start, stop, restart, delete and stream logs for every server from one page.
 - Per-server **Private / Public** switch. Public opens the game ports on your router (UPnP, or a manual checklist) and creates a DNS name for the server.
 - Dynamic DNS and an honest reachability check that says "Untested" rather than guessing.
@@ -43,6 +43,7 @@ Game servers keep their files (including world saves) under `GAME_DATA_DIR`, `/s
 ```bash
 npm ci
 npm test               # unit and API tests
+npm run build:web && npm run test:e2e   # browser smoke test (needs Chromium: npx playwright install chromium)
 npm run typecheck
 npm run dev:server     # needs SESSION_SECRET (32+ chars) and DATA_DIR, e.g. DATA_DIR=./data
 npm run dev:web        # Vite dev server, proxies /api to :8090

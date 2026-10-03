@@ -62,14 +62,25 @@ export function RedeployDialog({ group, backup, templates, onClose, onDone }: { 
           <label key={v.key}>
             {v.label}
             {v.required && " *"}
-            <input
-              type={v.secret ? "password" : "text"}
-              value={value(v.key, v.default)}
-              placeholder={keptSecret(v.key) ? "Keep the saved password" : v.generate ? "Leave empty to generate one" : ""}
-              autoComplete="off"
-              required={v.required && !keptSecret(v.key)}
-              onChange={(e) => setTyped({ ...typed, [v.key]: e.target.value })}
-            />
+            {v.choices ? (
+              <select value={value(v.key, v.default)} required={v.required} onChange={(e) => setTyped({ ...typed, [v.key]: e.target.value })}>
+                {(!v.default || !v.required) && <option value="">{v.required ? "Choose…" : "Default"}</option>}
+                {v.choices.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type={v.secret ? "password" : "text"}
+                value={value(v.key, v.default)}
+                placeholder={keptSecret(v.key) ? "Keep the saved password" : v.generate ? "Leave empty to generate one" : ""}
+                autoComplete="off"
+                required={v.required && !keptSecret(v.key)}
+                onChange={(e) => setTyped({ ...typed, [v.key]: e.target.value })}
+              />
+            )}
             {v.help && <span className="muted">{v.help}</span>}
           </label>
         ))}
@@ -77,7 +88,7 @@ export function RedeployDialog({ group, backup, templates, onClose, onDone }: { 
           <input type="checkbox" checked={pub} onChange={(e) => setPub(e.target.checked)} />
           Make it public once it is running
         </label>
-        <p className="muted">Ports are picked automatically, so they can differ from before.</p>
+        <p className="muted">Ports are picked automatically, so they can differ from before (a custom image keeps its ports and tells you if one is taken).</p>
         {error && <p className="error">{error}</p>}
         <div className="row end">
           <button type="button" className="ghost" onClick={onClose}>

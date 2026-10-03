@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import type { Config } from "../config.js";
 import type { Db } from "../db/index.js";
 import { schema } from "../db/index.js";
-import type { GameTemplate } from "../../shared/template.js";
+import { templateSchema, type GameTemplate } from "../../shared/template.js";
 import type { ContainerDriver, ContainerState } from "../docker/driver.js";
 import { LABEL_ID, LABEL_MANAGED, LABEL_SLUG } from "../docker/driver.js";
 import { RouterNotFoundError, type ConnectivityProvider } from "../connectivity/provider.js";
@@ -15,6 +15,7 @@ import { allocatePorts, checkPorts, portKey, type Allocation, type PortKey } fro
 import { listHostPorts } from "../ports/host.js";
 import { BackupStore, type BackupInfo } from "../backups.js";
 import { queryA2s, type PlayerCount } from "../players/a2s.js";
+import { buildCustomTemplate, checkCustomInput, isCustomId, type CustomInput } from "./custom.js";
 import { queryMinecraft } from "../players/minecraft.js";
 import { slugify, uniqueSlug } from "../slug.js";
 
@@ -120,8 +121,67 @@ export function expandCommand(command: string[], env: Record<string, string>): s
   return command.map((arg) => arg.replace(/\$\{([A-Z_][A-Z0-9_]*)\}/g, (_, k: string) => env[k] ?? "")).filter((a) => a !== "");
 }
 
+const CUSTOM_KEY = "custom-templates";
+
 export class ServerService {
-  constructor(private readonly d: ServiceDeps) {}
+  constructor(private readonly d: ServiceDeps) {
+    this.loadCustomTemplates();
+  }
+
+  // ------------------------------------------------------- custom images
+
+  /** Custom-image templates are saved in the database and added to the template list at start-up. They are not shown as catalog entries. */
+  private loadCustomTemplates() {
+    const raw = this.d.db.select().from(schema.settings).where(eq(schema.settings.key, CUSTOM_KEY)).get()?.value;
+    if (!raw) return;
+    try {
+      for (const t of JSON.parse(raw) as unknown[]) {
+        const parsed = templateSchema.safeParse(t);
+        if (parsed.success && isCustomId(parsed.data.id) && !this.d.templates.some((x) => x.id === parsed.data.id)) this.d.templates.push(parsed.data);
+      }
+    } catch {
+      /* unreadable: start without them */
+    }
+  }
+
+  private saveCustomTemplates() {
+    const value = JSON.stringify(this.d.templates.filter((t) => isCustomId(t.id)));
+    this.d.db.insert(schema.settings).values({ key: CUSTOM_KEY, value }).onConflictDoUpdate({ target: schema.settings.key, set: { value } }).run();
+  }
+
+  /** Set up a server from any Docker image. Ports are used exactly as given, because the image decides where it listens. */
+  async deployCustom(req: CustomInput & { access?: "private" | "public" }): Promise<string> {
+    const name = req.name.trim();
+    if (!name || name.length > 60) throw new UserError("Give the server a name (up to 60 characters)");
+    const problem = checkCustomInput(req);
+    if (problem) throw new UserError(problem);
+    const t = buildCustomTemplate(req, new Set(this.d.templates.map((x) => x.id)));
+    this.d.templates.push(t);
+    try {
+      const id = await this.deploy({
+        templateId: t.id,
+        name,
+        env: req.env,
+        ports: Object.fromEntries(t.ports.map((p) => [p.name, p.default])),
+        access: req.access,
+      });
+      this.saveCustomTemplates();
+      return id;
+    } catch (e) {
+      this.d.templates.splice(this.d.templates.indexOf(t), 1);
+      throw e;
+    }
+  }
+
+  /** Forget a custom template once nothing uses it and nothing of the server is left to set up again. */
+  private dropCustomTemplate(templateId: string, slug: string) {
+    if (!isCustomId(templateId)) return;
+    if (this.d.db.select().from(schema.servers).where(eq(schema.servers.templateId, templateId)).all().length > 0) return;
+    if (existsSync(path.join(this.d.config.GAMESERVERS_DIR, slug)) || this.store().list(slug).length > 0) return;
+    const i = this.d.templates.findIndex((x) => x.id === templateId);
+    if (i >= 0) this.d.templates.splice(i, 1);
+    this.saveCustomTemplates();
+  }
 
   /** The active DNS setup, or undefined when Cloudflare is not configured. */
   private dnsCtx(): DnsContext | undefined {
@@ -186,8 +246,10 @@ export class ServerService {
     const taken = this.takenPorts();
     const busy = this.busyPorts();
     let allocation: Allocation[];
-    if (req.ports && Object.keys(req.ports).length > 0) {
-      allocation = t.ports.map((p) => ({ name: p.name, port: req.ports![p.name] ?? p.default, protocol: p.protocol, env: p.env }));
+    // A custom image has no setting that moves its ports, so it gets exactly the ports it was given (a clash is an error).
+    const chosen = req.ports && Object.keys(req.ports).length > 0 ? req.ports : isCustomId(t.id) ? Object.fromEntries(t.ports.map((p) => [p.name, p.default])) : undefined;
+    if (chosen) {
+      allocation = t.ports.map((p) => ({ name: p.name, port: chosen[p.name] ?? p.default, protocol: p.protocol, env: p.env }));
       for (const a of allocation) {
         if (!Number.isInteger(a.port) || a.port < 1024 || a.port > 65535) throw new UserError(`Port ${a.port} is not valid (use 1024-65535)`);
       }
@@ -368,6 +430,7 @@ export class ServerService {
     if (row.containerId) await this.d.docker.remove(row.containerId);
     if (opts.deleteData) rmSync(path.join(this.d.config.GAMESERVERS_DIR, row.slug), { recursive: true, force: true });
     this.d.db.delete(schema.servers).where(eq(schema.servers.id, id)).run();
+    this.dropCustomTemplate(row.templateId, row.slug);
     this.event(null, "info", `Deleted ${row.slug}${opts.deleteData ? " and its world data" : " (data kept)"}`);
     return { warnings: errors };
   }

@@ -150,3 +150,27 @@ Click a server's name in the table to open its page: overview (address, ports, a
 | Page in headless Chromium against a fake Docker | Pass: open from the table, edit and save, run a console command (screenshots reviewed) |
 | Palworld `rcon-cli` on the real image | Not run: the `rcon-cli` name, and that it works with the image's default RCON settings, are from the image's documentation |
 | Recreate on a real container with a real data folder | Not run |
+
+## More templates, custom images and the browser test (2026-10-03)
+
+Checked here, in the sandbox, with a throwaway Docker daemon and the real panel code (`DockerodeDriver` + `ServerService`), on the host network because the sandbox has no bridge:
+
+| What | Result |
+| --- | --- |
+| Terraria (`beardedio/terraria:vanilla-latest`) deployed through the panel | Pass: command line filled in from the settings, container given a terminal, world made on first start, reaches online with the TCP port open, a restart loads the same world instead of making a new one. A bare `-password` at the end (no password) starts fine |
+| Satisfactory (`wolveix/satisfactory-server`) deployed through the panel | Starts and begins its SteamCMD download; shows Starting (the UDP check inside the container works); data folder gets `backups`, `gamefiles`, `logs`, `saved`. The 8 GB download and a real game session were not run |
+| Valheim, with the Docker Hub copy `lloesche/valheim-server` (older name of the same project) | Starts, both data folders are created, SteamCMD starts. The `ghcr.io/community-valheim-tools/valheim-server` image named in the template could not be pulled from the sandbox (registry blocked), so the new image name is from its README only |
+| Minecraft (`itzg/minecraft-server`) | Image pulled and started with the template's settings; the sandbox cannot reach Mojang's download servers, so no world was made. The server list ping is tested against a fake server only |
+
+Not run anywhere: a friend joining any of these; Valheim and Minecraft on the real image names; A2S player counts on Valheim; the Minecraft ping on a real server; Minecraft's `rcon-cli` console; a custom image on real hardware.
+
+Things to check on the homelab:
+
+- Satisfactory shares port 7777 with Dragonwilds. The panel moves Satisfactory (and its other ports) up by one, so players must use the port shown. It needs about 8 GB of free memory.
+- Terraria: change the world name later and you get a new world (the old file is kept).
+- Backups of Satisfactory and Valheim leave out the downloaded game files; after a restore they stay as they were (or download again if the server was deleted).
+- Deploy now finishes once the container has been up for a few seconds. A game that is still downloading or loading shows Starting until its port opens, instead of ending in an error after two minutes.
+- Custom Docker image: ports are used exactly as typed (an image cannot be told to move), and a clash is an error.
+
+The browser smoke test (`npm run test:e2e`, runs in CI) drives the built web app with Chromium against the API with a fake Docker: first-run password, deploy a template, choices and required fields, a custom image and a port clash, the server page and console, rename, backup, delete, and set up again from the Backups page, with no browser errors.
+

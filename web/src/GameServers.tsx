@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type Network, type Server, type Stats, type Template } from "./api";
 import { Backups } from "./Backups";
 import { CopyButton } from "./CopyButton";
+import { CustomDialog } from "./CustomDialog";
 import { DeployDialog } from "./DeployDialog";
 import { HiddenIp, isIpAddress } from "./HiddenIp";
 import { Icon, type IconName } from "./Icons";
@@ -95,6 +96,7 @@ export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: 
   const [templates, setTemplates] = useState<Template[]>([]);
   const [network, setNetwork] = useState<Network | null>(null);
   const [deploying, setDeploying] = useState<Template | null>(null);
+  const [customOpen, setCustomOpen] = useState(false);
   const [logsFor, setLogsFor] = useState<Server | null>(null);
   const [backupsFor, setBackupsFor] = useState<Server | null>(null);
   const [message, setMessage] = useState("");
@@ -370,6 +372,10 @@ export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: 
                     <strong>{t.name}</strong>
                   </button>
                 ))}
+                <button className="template custom" onClick={() => setCustomOpen(true)}>
+                  <span className="game-icon tone-custom">+</span>
+                  <strong>Custom Docker image</strong>
+                </button>
               </div>
             </section>
           </div>
@@ -384,6 +390,15 @@ export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: 
           onClose={() => setDeploying(null)}
           onDeployed={() => {
             setDeploying(null);
+            void refresh();
+          }}
+        />
+      )}
+      {customOpen && (
+        <CustomDialog
+          onClose={() => setCustomOpen(false)}
+          onDeployed={() => {
+            setCustomOpen(false);
             void refresh();
           }}
         />

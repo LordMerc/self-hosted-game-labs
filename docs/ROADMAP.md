@@ -32,6 +32,6 @@ Still open for Milestone 1:
 
 2. **Stays working on its own**: honest reachability check (reconcile loop is done)
 3. **UI to spec**: Network panel, server detail page, deploy wizard, conflict UX, Dragonwilds template
-4. **Templates and care**: Minecraft, Valheim, Satisfactory, Terraria; backups and restore; scheduled restarts; update checks
+4. **Templates and care**: Minecraft, Valheim, Satisfactory, Terraria and a custom image option (done); backups and restore (done); scheduled restarts; update checks
 
 Ideas outside the current scope (not committed): extra navigation sections from the concept art (Overview, Network, Backups, Logs) once there is a clear reason to split them from Game servers.

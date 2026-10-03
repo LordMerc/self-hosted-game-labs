@@ -123,4 +123,20 @@ describe("server page routes", () => {
     expect((await app.inject({ method: "PUT", url: "/api/servers/nope/settings", headers, payload: { name: 5 } })).statusCode).toBe(400);
     expect((await app.inject({ method: "POST", url: "/api/servers/nope/console", headers, payload: {} })).statusCode).toBe(400);
   });
+
+  it("sets up a server from a custom image, keeps it out of the template catalog, and explains bad input", async () => {
+    const setup = await app.inject({ method: "POST", url: "/api/auth/setup", payload: { password: "correct horse battery" } });
+    const headers = { cookie: cookieOf(setup) };
+    const ok = await app.inject({ method: "POST", url: "/api/servers/custom", headers, payload: { name: "Mine", image: "x/y:1", ports: [{ port: 3000, protocol: "tcp" }], env: { A: "b" }, dataPath: "/data" } });
+    expect(ok.statusCode).toBe(202);
+    const list = (await app.inject({ url: "/api/servers", headers })).json();
+    expect(list[0]).toMatchObject({ name: "Mine", templateName: "Custom image", status: "online" });
+    const catalog = (await app.inject({ url: "/api/templates", headers })).json() as { id: string }[];
+    expect(catalog.some((t) => t.id.startsWith("custom-"))).toBe(false);
+    expect(catalog.map((t) => t.id)).toEqual(expect.arrayContaining(["minecraft", "valheim", "satisfactory", "terraria"]));
+    const bad = await app.inject({ method: "POST", url: "/api/servers/custom", headers, payload: { name: "Mine 2", image: "no good", ports: [{ port: 3001, protocol: "tcp" }] } });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json().error).toMatch(/Docker image name/);
+    expect((await app.inject({ method: "POST", url: "/api/servers/custom", headers, payload: { name: "x" } })).statusCode).toBe(400);
+  });
 });
