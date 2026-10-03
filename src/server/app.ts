@@ -165,6 +165,17 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
     return service.remove(idParam(req), { deleteData: q.deleteData === "true", confirmName: q.confirmName });
   });
 
+  app.get("/api/servers/:id/backups", async (req) => service.listBackups(idParam(req)));
+  app.post("/api/servers/:id/backups", async (req) => service.backup(idParam(req)));
+  app.post("/api/servers/:id/backups/:name/restore", async (req) => {
+    await service.restoreBackup(idParam(req), (req.params as { name: string }).name);
+    return { ok: true };
+  });
+  app.delete("/api/servers/:id/backups/:name", async (req) => {
+    service.deleteBackup(idParam(req), (req.params as { name: string }).name);
+    return { ok: true };
+  });
+
   app.get("/api/servers/:id/secrets/:key", async (req) => {
     const { id, key } = req.params as { id: string; key: string };
     return { value: service.secret(id, key) };

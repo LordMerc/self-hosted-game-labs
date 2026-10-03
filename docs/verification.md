@@ -97,3 +97,12 @@ Not run: per-server CPU and memory against a real container (the Docker stats ca
 | Palworld on the real server | Not run. The Palworld template now sets `query: a2s` on its query port (27015/udp) and the panel asks `127.0.0.1:<port>`. Whether the Palworld image answers A2S_INFO with an accurate player count is unverified; if the count stays at "up to 32" or shows 0 while someone is online, that is the thing to check |
 
 Only `a2s` is implemented; `query: minecraft` is accepted by the template schema but not queried yet.
+
+## Backups (2026-10-03)
+
+| Check | Result |
+|---|---|
+| Typecheck and tests | Pass, 107 tests: real `tar` round trips (create, newest-N retention, restore removes files added later, unsafe names refused, a corrupt archive leaves live data untouched), service restore stops and restarts the game and keeps a safety copy, one job at a time per server |
+| UI in headless Chromium against a fake Docker | Pass: Backups dialog, Back up now, restore, list of backups (screenshots reviewed) |
+
+Not run: a backup or restore of a real game's data on the maintainer's host. Two things to watch there: file ownership after a restore (the panel runs as root, so `tar` should keep the game's user), and backups being hot copies unless the server is stopped first. Backups are kept in `<game data dir>/.backups/<server>/`, so they sit on the same disk as the world; copy them elsewhere for real safety. `BACKUP_KEEP` (default 7) sets how many are kept per server.

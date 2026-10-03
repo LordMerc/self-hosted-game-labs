@@ -89,3 +89,9 @@ export interface Stats {
   };
   servers: Record<string, { cpuPercent: number | null; memBytes: number; players: { online: number; max: number } | null }>;
 }
+
+export interface Backup {
+  name: string;
+  sizeBytes: number;
+  createdAt: string;
+}

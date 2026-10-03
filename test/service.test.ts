@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, existsSync } from "node:fs";
+import { mkdtempSync, existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { loadConfig } from "../src/server/config.js";
@@ -242,5 +242,30 @@ describe("usage", () => {
       throw new Error("docker busy");
     };
     expect(await svc.usage()).toEqual({});
+  });
+});
+
+describe("backups", () => {
+  it("backs up, restores while stopping and restarting the game, and keeps a safety copy", async () => {
+    const id = await deploy("Alpha");
+    const dataFile = path.join(dir, "games", "alpha", "palworld", "world.sav");
+    mkdirSync(path.dirname(dataFile), { recursive: true });
+    writeFileSync(dataFile, "before");
+    const b = await svc.backup(id);
+    writeFileSync(dataFile, "after");
+    await svc.restoreBackup(id, b.name);
+    expect(readFileSync(dataFile, "utf8")).toBe("before");
+    expect(docker.containers.get("c1")!.state).toBe("running");
+    expect(svc.listBackups(id)).toHaveLength(2); // the one asked for plus the safety copy of "after"
+  });
+
+  it("refuses an unknown backup and a second job on the same server", async () => {
+    const id = await deploy("Alpha");
+    mkdirSync(path.join(dir, "games", "alpha"), { recursive: true });
+    await expect(svc.restoreBackup(id, "alpha-20200101-000000.tar.gz")).rejects.toMatchObject({ status: 404 });
+    const first = svc.backup(id);
+    await expect(svc.backup(id)).rejects.toMatchObject({ status: 409 });
+    await first;
+    expect(() => svc.deleteBackup(id, "alpha-20200101-000000.tar.gz")).toThrow(UserError);
   });
 });
