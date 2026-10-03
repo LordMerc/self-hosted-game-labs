@@ -76,7 +76,7 @@ Host: Ubuntu desktop, Docker 29.6.0, deployed as a Dockhand "From Git" stack. Ro
 | Live logs | Pass after the viewer hardening; the earlier blank screen was a stale image, not a code bug |
 | UPnP on the Deco | Pass after a fix: `upnpc -l` finds the router at `http://192.168.68.1:1900/pwpmr/rootDesc.xml` but prints "Found a (not connected?) IGD" and stops, so the panel now retries with `-u <that URL>`. Then `GetExternalIPAddress`, adding and listing mappings all work. `GetStatusInfo failed` in the output is harmless on this router. Mappings appear as `gamelabs: palworld` for 8211/udp and 27015/udp |
 | Cloudflare DDNS and per-server name | Pass: A record and `palworld.<domain>` created, DNS only |
-| Friend connecting from the internet | Not yet confirmed |
+| Friend connecting from the internet | Pass (2026-10-03): a friend joined Palworld from outside the LAN at `palworld.<domain>:8211` |
 
 Also found on the way: `upnpc` prints its useful lines on stderr, so the panel keeps stderr too; the router's own address is also reachable when `-m <LAN IP>` pins discovery to the right interface.
 
