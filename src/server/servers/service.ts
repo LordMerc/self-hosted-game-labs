@@ -412,7 +412,7 @@ export class ServerService {
     const image = this.imageFor(row);
     try {
       // Env: template ports are injected as env so the server listens where we mapped it.
-      const env: Record<string, string> = { ...row.env };
+      const env: Record<string, string> = { ...t.fixedEnv, ...row.env };
       for (const tp of t.ports) {
         const p = ports.find((x) => x.name === tp.name)!;
         if (tp.env) env[tp.env] = String(p.port);
@@ -914,7 +914,7 @@ export class ServerService {
         isSet: Boolean(row.env[key]),
       })),
       minMemoryMb: tpl.resources.minMemoryMb ?? null,
-      console: tpl.console ? { examples: tpl.console.examples } : null,
+      console: tpl.console ? { examples: tpl.console.examples, offNotice: (await this.consoleOff(row)) ?? null } : null,
       care: this.careInfo(id),
       events: this.events(id, 30).reverse(),
     };
@@ -925,7 +925,7 @@ export class ServerService {
    * container (the world data folder is kept) and the server restarts. A name-only change is instant.
    * For each setting: left out = unchanged; empty = cleared (or a new random value for a generated password).
    */
-  async updateSettings(id: string, input: { name?: string; env?: Record<string, string>; cpus?: number | null; memoryMb?: number | null }): Promise<{ restarting: boolean }> {
+  async updateSettings(id: string, input: { name?: string; env?: Record<string, string>; cpus?: number | null; memoryMb?: number | null }, opts: { recreate?: boolean } = {}): Promise<{ restarting: boolean }> {
     const row = this.row(id);
     const tpl = this.template(row.templateId);
     if (row.status === "deploying" || row.status === "updating") throw new UserError("Wait for the server to finish starting before changing its settings", 409);
@@ -950,11 +950,11 @@ export class ServerService {
     const limitsChanged = limits.cpus !== row.cpus || limits.memoryMb !== row.memoryMb;
 
     this.d.db.update(schema.servers).set({ name, env, cpus: limits.cpus, memoryMb: limits.memoryMb }).where(eq(schema.servers.id, id)).run();
-    if (!envChanged && !limitsChanged) {
+    if (!envChanged && !limitsChanged && !opts.recreate) {
       if (name !== row.name) this.event(id, "info", "Renamed");
       return { restarting: false };
     }
-    this.event(id, "info", `${limitsChanged ? "Limits" : "Settings"} changed; recreating the container to apply them (world data is kept)`);
+    this.event(id, "info", envChanged || limitsChanged ? `${limitsChanged ? "Limits" : "Settings"} changed; recreating the container to apply them (world data is kept)` : "Recreating the container to apply the panel's current settings (world data is kept)");
     if (limitsChanged) for (const w of limitWarnings(tpl, limits)) this.event(id, "warn", w);
     if (row.containerId) {
       this.setStatus(id, "updating");
@@ -973,6 +973,22 @@ export class ServerService {
     return { restarting: true };
   }
 
+  /** Recreate the container with the panel's current settings and nothing else changed (world data is kept). */
+  applySettings(id: string): Promise<{ restarting: boolean }> {
+    return this.updateSettings(id, {}, { recreate: true });
+  }
+
+  /** The template's notice when the running container lacks what the console needs (an older server made before the panel set it), otherwise undefined. */
+  private async consoleOff(row: typeof schema.servers.$inferSelect): Promise<string | undefined> {
+    const tpl = this.template(row.templateId);
+    const notice = tpl.console?.offNotice;
+    const fixed = Object.entries(tpl.fixedEnv);
+    if (!notice || fixed.length === 0 || !row.containerId || !this.d.docker.containerEnv) return undefined;
+    const actual = await this.d.docker.containerEnv(row.containerId);
+    if (!actual) return undefined;
+    return fixed.some(([k, v]) => actual[k] !== v) ? notice : undefined;
+  }
+
   /** Run one console command inside the game's container (for example RCON). The command is a single argument, never shell text. */
   async runConsole(id: string, command: string): Promise<{ output: string; exitCode: number | null }> {
     const row = this.row(id);
@@ -981,6 +997,8 @@ export class ServerService {
     const cmd = command.trim();
     if (!cmd || cmd.length > 500 || /[\u0000-\u001f]/.test(cmd)) throw new UserError("Type a command (up to 500 characters, one line)");
     if (!row.containerId || (await this.d.docker.state(row.containerId)) !== "running") throw new UserError("Start the server first", 409);
+    const off = await this.consoleOff(row);
+    if (off) throw new UserError(off, 409);
     try {
       const r = await this.d.docker.exec(row.containerId, [...tpl.console.exec, cmd], { timeoutMs: 15_000 });
       this.event(id, "info", `Console: ${cmd.slice(0, 80)}`);

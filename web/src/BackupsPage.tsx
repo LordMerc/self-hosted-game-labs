@@ -1,38 +1,37 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, loadTemplates, type Backup, type BackupGroup, type Template } from "./api";
+import { useState } from "react";
+import { api, type Backup, type BackupGroup, type Template } from "./api";
 import { Backups, size } from "./Backups";
 import { GameIcon } from "./GameServers";
 import { Nav, type Page } from "./Nav";
 import { RedeployDialog } from "./RedeployDialog";
+import { BackupsSkeleton } from "./Skeleton";
+import { useApi } from "./store";
 
 const statusLabel = { deploying: "Deploying", online: "Running", paused: "Paused", offline: "Stopped", updating: "Updating", error: "Error" } as const;
 
 const when = (iso: string) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
 export function BackupsPage({ onLogout, onNavigate }: { onLogout: () => void; onNavigate: (p: Page) => void }) {
-  const [groups, setGroups] = useState<BackupGroup[] | null>(null);
-  const [templates, setTemplates] = useState<Template[]>([]);
+  // The last answer from an earlier visit shows at once and is refreshed in the background.
+  const { data, error: loadError, reload } = useApi<BackupGroup[]>("/backups");
+  const groups = data ?? null;
+  const templates = useApi<Template[]>("/templates").data ?? [];
   const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const error = actionError || (groups === null ? (loadError ?? "") : "");
   const [settingsFor, setSettingsFor] = useState<BackupGroup | null>(null);
   const [redeploy, setRedeploy] = useState<{ group: BackupGroup; backup: Backup } | null>(null);
 
-  const load = useCallback(() => api<BackupGroup[]>("/backups").then(setGroups).catch((e) => setError(e.message)), []);
-  useEffect(() => {
-    void load();
-    loadTemplates().then(setTemplates).catch(() => undefined);
-  }, [load]);
-
   async function run(label: string, call: () => Promise<unknown>) {
     setBusy(label);
-    setError("");
+    setActionError("");
     try {
       await call();
     } catch (e) {
-      setError((e as Error).message);
+      setActionError((e as Error).message);
     }
     setBusy(null);
-    await load();
+    await reload();
   }
 
   const restore = (g: BackupGroup, b: Backup) => {
@@ -127,7 +126,7 @@ export function BackupsPage({ onLogout, onNavigate }: { onLogout: () => void; on
         </header>
         {error && <p className="error banner">{error}</p>}
         {groups === null ? (
-          <p className="muted">Loading…</p>
+          loadError ? null : <BackupsSkeleton />
         ) : groups.length === 0 ? (
           <p className="empty">No servers yet. Backups of your servers show up here, and stay here if you delete a server.</p>
         ) : (
@@ -139,7 +138,7 @@ export function BackupsPage({ onLogout, onNavigate }: { onLogout: () => void; on
         )}
       </main>
 
-      {settingsFor && <Backups id={settingsFor.serverId!} name={settingsFor.name} running={settingsFor.status === "online"} onClose={() => setSettingsFor(null)} onChange={() => void load()} />}
+      {settingsFor && <Backups id={settingsFor.serverId!} name={settingsFor.name} running={settingsFor.status === "online"} onClose={() => setSettingsFor(null)} onChange={() => void reload()} />}
       {redeploy && <RedeployDialog group={redeploy.group} backup={redeploy.backup} templates={templates} onClose={() => setRedeploy(null)} onDone={() => onNavigate("servers")} />}
     </div>
   );

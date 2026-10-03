@@ -38,9 +38,14 @@ env:
 playerCount:
   exec: [sh, -c, 'curl -fsS -m 3 -u "admin:$ADMIN_PASSWORD" "http://127.0.0.1:${REST_API_PORT:-8212}/v1/api/metrics"']
   format: palworld-rest
+# The image ships with RCON off, so the panel turns it on. RCON_PORT is the image's default; it is not in `ports`, so it is never published to the host.
+fixedEnv:
+  RCON_ENABLED: "true"
+  RCON_PORT: "25575"
 # The image ships `rcon-cli`, which talks to the server's own RCON using ADMIN_PASSWORD.
 console:
   exec: [rcon-cli]
+  offNotice: This server was made before the panel turned on RCON, so the console cannot reach the game yet. Apply settings recreates the container with RCON on; your world is kept.
   examples: [ShowPlayers, Save, Broadcast Server_restarting_soon, Info]
   broadcast:
     command: "Broadcast ${MESSAGE}"

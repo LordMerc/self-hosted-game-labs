@@ -1,20 +1,18 @@
-import { useEffect, useState } from "react";
-import { api, type AuthStatus, type UpdateState } from "./api";
+import type { AuthStatus, UpdateState } from "./api";
 import { Icon } from "./Icons";
+import { pageData, prefetch, useApi } from "./store";
 
 export type Page = "servers" | "backups" | "settings";
 
 export function Nav({ page, onNavigate, onLogout }: { page: Page; onNavigate: (p: Page) => void; onLogout: () => void }) {
   const item = (p: Page, icon: "server" | "archive" | "settings", label: string) => (
-    <a className={page === p ? "active" : ""} href={`#${p}`} onClick={(e) => (e.preventDefault(), onNavigate(p))}>
+    <a className={page === p ? "active" : ""} href={`#${p}`} onClick={(e) => (e.preventDefault(), onNavigate(p))} onPointerEnter={() => prefetch(pageData[p])} onPointerDown={() => prefetch(pageData[p])} onFocus={() => prefetch(pageData[p])}>
       <Icon name={icon} size={17} />
       {label}
     </a>
   );
-  const [instance, setInstance] = useState<string | null>(null);
-  const [version, setVersion] = useState<UpdateState | null>(null);
-  useEffect(() => void api<AuthStatus>("/auth/status").then((s) => setInstance(s.instance), () => {}), []);
-  useEffect(() => void api<UpdateState>("/updates").then(setVersion, () => {}), []);
+  const instance = useApi<AuthStatus>("/auth/status").data?.instance ?? null;
+  const version = useApi<UpdateState>("/updates").data ?? null;
   return (
     <aside className="nav">
       <div className="brand">

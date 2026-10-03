@@ -277,6 +277,7 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
     const r = await service.updateSettings(idParam(req), body.data);
     return reply.code(r.restarting ? 202 : 200).send(r);
   });
+  app.post("/api/servers/:id/apply", async (req, reply) => reply.code(202).send(await service.applySettings(idParam(req))));
   app.put("/api/servers/:id/care", async (req) => service.setCare(idParam(req), req.body));
   app.post("/api/servers/:id/update/check", async (req) => service.checkUpdate(idParam(req)));
   app.post("/api/servers/:id/update/apply", async (req, reply) => reply.code(202).send(await service.applyUpdate(idParam(req))));
