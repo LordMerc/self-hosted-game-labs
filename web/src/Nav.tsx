@@ -36,14 +36,15 @@ export function Nav({ page, onNavigate, onLogout }: { page: Page; onNavigate: (p
             <span className="mono">{/^\d/.test(version.current) ? `v${version.current}` : version.current.startsWith("dev-") ? "dev build" : version.current}</span>
             {version.updateAvailable && version.latest && (
               <a className="new-version" href={version.latest.url} target="_blank" rel="noreferrer" title={`Version ${version.latest.version} is available`}>
+                <Icon name="arrowup" size={12} />
                 {version.latest.version} available
               </a>
             )}
           </div>
         )}
         <a className="nav-plain" href="https://github.com/LordMerc/self-hosted-game-labs" target="_blank" rel="noreferrer">
-          <Icon name="external" size={17} />
-          GitHub
+          <Icon name="github" size={17} />
+          Star on GitHub
         </a>
         <button className="nav-plain" onClick={onLogout}>
           <Icon name="signout" size={17} />

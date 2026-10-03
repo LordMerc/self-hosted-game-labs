@@ -54,8 +54,8 @@ button.small { padding: 0.25rem 0.75rem; font-size: 0.8rem; justify-self: start;
 .nav a:hover:not(.active), .nav-plain:hover { color: var(--text); background: var(--hover-bg); }
 .nav-foot { display: grid; gap: 0.15rem; }
 .nav-plain { display: flex; align-items: center; gap: 0.75rem; background: none; border: 0; color: var(--muted); padding: 0.55rem 0.75rem; border-radius: 10px; text-align: left; width: 100%; }
-.version { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; padding: 0 0.75rem 0.5rem; color: var(--faint); }
-.nav .new-version { display: inline-flex; padding: 0.1rem 0.55rem; font-size: 0.75rem; border-radius: var(--radius-pill); background: var(--accent-soft); color: var(--accent); }
+.version { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; padding: 0 0.75rem 0.35rem; color: var(--faint); font-size: 0.82rem; }
+.nav .new-version { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.1rem 0.55rem; font-size: 0.75rem; border-radius: var(--radius-pill); background: var(--accent-soft); color: var(--accent); }
 .content { --pad-x: 3rem; padding: 2.4rem var(--pad-x) 3rem; width: 100%; min-width: 0; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 2rem; }
 .host-line { display: flex; align-items: center; gap: 0.5rem; margin: 0 0 0.45rem; color: var(--muted); font-size: 0.875rem; }
@@ -393,11 +393,25 @@ pre.mono { margin: 0; background: var(--bg); border-radius: 10px; padding: 1rem;
 .hint-pop { display: none; position: absolute; z-index: 5; top: calc(100% + 8px); left: -0.5rem; width: 260px; padding: 0.7rem 0.85rem; border-radius: var(--radius-sm); background: var(--float-menu-bg); border: 1px solid var(--float-border-color); color: var(--text); font-size: 0.8rem; line-height: 1.45; font-weight: 400; box-shadow: var(--shadow-hint); white-space: normal; }
 .hint:hover .hint-pop, .hint:focus .hint-pop, .hint:focus-within .hint-pop { display: block; }
 
-/* Server page */
+/* Server page: a narrow column for the facts and a wide one for settings, so nothing important is a long scroll away */
 .detail { display: grid; gap: 1.25rem; align-content: start; }
-.detail .settings-card { max-width: 900px; }
-.detail .page-head { margin-bottom: 0.5rem; max-width: 900px; }
-.detail .banner { max-width: 900px; }
+.detail .settings-card { max-width: none; padding: 0; }
+.detail .page-head { margin-bottom: 0.5rem; }
+.detail-grid { display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); gap: 2.5rem; align-items: start; }
+.detail-side, .detail-main { display: grid; gap: 2rem; align-content: start; min-width: 0; }
+.detail .settings-card + .settings-card { margin-top: 0; }
+.detail-side .facts { grid-template-columns: 5.5rem minmax(0, 1fr); }
+.form-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.group { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: 0.8rem; }
+.group legend { padding: 0; margin-bottom: 0.6rem; font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); font-weight: 600; }
+.field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.8rem 1rem; align-items: start; }
+.schedule { display: grid; gap: 0.6rem; }
+.inline-field { display: inline-flex; align-items: center; gap: 0.5rem; }
+.tabs-bar { display: flex; gap: 1.25rem; }
+.tabs-bar button { background: none; border: 0; padding: 0 0 0.35rem; color: var(--muted); font-weight: 500; border-bottom: 2px solid transparent; border-radius: 0; }
+.tabs-bar button.on { color: var(--text); border-bottom-color: var(--accent); }
+.console { display: grid; gap: 0.7rem; }
+@media (max-width: 1000px) { .detail-grid { grid-template-columns: minmax(0, 1fr); gap: 2rem; } }
 button.back { justify-self: start; padding-left: 0; }
 .facts { display: grid; grid-template-columns: 7rem 1fr; gap: 0.7rem 1rem; margin: 0; align-items: start; }
 .facts dt { color: var(--muted); }
@@ -407,7 +421,7 @@ button.back { justify-self: start; padding-left: 0; }
 .field { display: grid; gap: 0.35rem; }
 .field > span { display: flex; align-items: center; gap: 0.5rem; color: var(--muted); font-size: 0.9rem; }
 .row .grow, .field .row input { flex: 1; min-width: 0; }
-.console-out { max-height: 280px; overflow: auto; padding: 0.7rem 0.9rem; border-radius: 10px; background: var(--bg-2); border: 1px solid var(--border-soft); font-size: 0.82rem; }
+.console-out { max-height: 220px; overflow: auto; padding: 0.7rem 0.9rem; border-radius: 10px; background: var(--bg-2); border: 1px solid var(--border-soft); font-size: 0.82rem; }
 .console-out pre { margin: 0.15rem 0 0.7rem; white-space: pre-wrap; word-break: break-word; }
 .console-cmd { color: var(--accent); }
 .events { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; font-size: 0.88rem; }
@@ -425,3 +439,14 @@ button.ghost.danger { color: var(--bad); }
 .update-note { color: var(--warn); margin: 0; }
 .update-chip { margin-left: 0.5rem; padding: 0.05rem 0.5rem; font-size: 0.75rem; cursor: pointer; color: var(--warn); }
 .settings-card select, .settings-card input[type="time"], .settings-card input[type="number"] { font: inherit; }
+.detail .danger-zone { padding: 1rem 1.25rem; }
+.detail .settings-form input, .detail .settings-form select { padding: 0.42rem 0.7rem; }
+.detail .settings-form button.small { padding: 0.2rem 0.65rem; }
+.detail .settings-form { gap: 0.9rem; }
+.detail .settings-form .group { gap: 0.5rem; }
+.detail .settings-form .group legend { margin-bottom: 0.35rem; }
+.detail .settings-form .field { gap: 0.25rem; }
+.detail .settings-form .field > .seg { justify-self: start; }
+.detail-main, .detail-side { gap: 1.5rem; }
+.field-grid .field .row { flex-wrap: wrap; }
+.field-grid .field .row input { min-width: 8rem; }

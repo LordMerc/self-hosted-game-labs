@@ -177,10 +177,9 @@ describe("the panel in a browser", () => {
 
   it("sets a daily restart, finds and applies an update, and moves the game port", async () => {
     await page.getByRole("button", { name: "Palworld Prime", exact: true }).first().click();
-    await page.getByRole("heading", { name: "Restarts and updates" }).waitFor();
     await page.getByLabel("Restart every day at").check();
     await page.getByLabel("Restart time").fill("03:30");
-    await page.getByRole("button", { name: "Save schedule" }).click();
+    await page.locator("form.settings-card").getByRole("button", { name: "Save", exact: true }).click();
     await page.getByText("Saved.").first().waitFor();
     await page.getByRole("button", { name: "Check for update" }).click();
     await page.locator("p.update-note", { hasText: /Version v2\.9\.0 is out/ }).waitFor();

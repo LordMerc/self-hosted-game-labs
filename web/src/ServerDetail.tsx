@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { api, type ServerDetail as Detail, type Stats } from "./api";
 import { Backups } from "./Backups";
-import { PortsCard, Upkeep } from "./Care";
+import { PortField, ScheduleFields, useUpkeep } from "./Care";
 import { CopyButton } from "./CopyButton";
 import { Hint } from "./Hint";
 import { HiddenIp, isIpAddress } from "./HiddenIp";
@@ -25,6 +25,7 @@ export function ServerDetail({ id, onBack, onLogout, onNavigate }: { id: string;
   const [error, setError] = useState("");
   const [logs, setLogs] = useState(false);
   const [backups, setBackups] = useState(false);
+  const [tab, setTab] = useState<"console" | "activity">("console");
 
   const load = useCallback(async () => {
     try {
@@ -96,6 +97,7 @@ export function ServerDetail({ id, onBack, onLogout, onNavigate }: { id: string;
 
   const s = detail?.server;
   const locked = s?.status === "deploying" || s?.status === "updating";
+  const activeTab = detail?.console ? tab : "activity";
   const primary = s ? (s.connect.public ?? s.connect.lan) : null;
 
   return (
@@ -143,97 +145,102 @@ export function ServerDetail({ id, onBack, onLogout, onNavigate }: { id: string;
             </header>
             {s.lastError && <p className="error banner">{s.lastError}</p>}
 
-            <section className="settings-card">
-              <h2>Overview</h2>
-              <dl className="facts">
-                <dt>Address</dt>
-                <dd className="mono">
-                  {primary && isIpAddress(primary) && primary === s.connect.public ? <HiddenIp value={primary} /> : (primary ?? "—")}
-                  {primary && <CopyButton text={primary} label="Copy address" />}
-                  {s.connect.public && s.connect.lan && <div className="muted small-text">On your home network: {s.connect.lan}</div>}
-                  {s.connect.instructions && <div className="muted small-text wrap">{s.connect.instructions}</div>}
-                </dd>
-                <dt>Ports</dt>
-                <dd>
-                  <div className="chips">
-                    {s.ports.map((p) => (
-                      <span key={`${p.port}${p.protocol}`} className="chip mono" title={p.name}>
-                        {p.port} <span className="proto">{p.protocol.toUpperCase()}</span>
-                      </span>
-                    ))}
-                  </div>
-                </dd>
-                <dt>Access</dt>
-                <dd>
-                  <div className="seg">
-                    <button className={s.access === "private" ? "on" : ""} disabled={locked || s.access === "private"} onClick={() => act(`/servers/${id}/access`, "PUT", { access: "private" })}>
-                      <Icon name="lock" size={13} /> Private
-                    </button>
-                    <button
-                      className={s.access === "public" ? "on public" : ""}
-                      disabled={locked || s.status === "error" || s.access === "public"}
-                      onClick={() => act(`/servers/${id}/access`, "PUT", { access: "public" })}
-                    >
-                      <Icon name="globe" size={13} /> Public
-                    </button>
-                  </div>
-                </dd>
-                <dt>Limit</dt>
-                <dd>
-                  {limitText(s.limits) ?? <span className="muted">None (can use the whole machine)</span>}
-                  {s.limits.warnings.map((w) => (
-                    <div key={w} className="warn small-text wrap">{w}</div>
-                  ))}
-                </dd>
-                {stats && (
-                  <>
-                    <dt>Using</dt>
-                    <dd>
-                      CPU {stats.cpuPercent == null ? "—" : `${stats.cpuPercent.toFixed(stats.cpuPercent < 10 ? 1 : 0)}%`} · {bytes(stats.memBytes)} memory
-                      {stats.players && <> · {stats.players.online} / {stats.players.max} players</>}
+            <div className="detail-grid">
+              <div className="detail-side">
+                <section className="settings-card">
+                  <h2>Overview</h2>
+                  <dl className="facts">
+                    <dt>Address</dt>
+                    <dd className="mono">
+                      {primary && isIpAddress(primary) && primary === s.connect.public ? <HiddenIp value={primary} /> : (primary ?? "—")}
+                      {primary && <CopyButton text={primary} label="Copy address" />}
+                      {s.connect.public && s.connect.lan && <div className="muted small-text">On your home network: {s.connect.lan}</div>}
+                      {s.connect.instructions && <div className="muted small-text wrap">{s.connect.instructions}</div>}
                     </dd>
-                  </>
-                )}
-              </dl>
-            </section>
+                    <dt>Ports</dt>
+                    <dd>
+                      <div className="chips">
+                        {s.ports.map((p) => (
+                          <span key={`${p.port}${p.protocol}`} className="chip mono" title={p.name}>
+                            {p.port} <span className="proto">{p.protocol.toUpperCase()}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </dd>
+                    <dt>Access</dt>
+                    <dd>{s.access === "public" ? "Public" : "Private"}</dd>
+                    <dt>Version</dt>
+                    <dd>
+                      <span className="mono wrap">{detail.care.image.name}</span>
+                      {detail.care.image.pinned && !detail.care.image.moved && <div className="muted small-text">The version this game was tested with.</div>}
+                      {detail.care.image.moved && <div className="muted small-text">Updated from the panel.</div>}
+                      {detail.care.update?.available && <div className="update-note small-text">{detail.care.update.latest ? `${detail.care.update.latest} is available.` : "An update is available."}</div>}
+                    </dd>
+                    <dt>Limit</dt>
+                    <dd>
+                      {limitText(s.limits) ?? <span className="muted">None (can use the whole machine)</span>}
+                      {s.limits.warnings.map((w) => (
+                        <div key={w} className="warn small-text wrap">{w}</div>
+                      ))}
+                    </dd>
+                    {stats && (
+                      <>
+                        <dt>Using</dt>
+                        <dd>
+                          CPU {stats.cpuPercent == null ? "—" : `${stats.cpuPercent.toFixed(stats.cpuPercent < 10 ? 1 : 0)}%`} · {bytes(stats.memBytes)} memory
+                          {stats.players && <> · {stats.players.online} / {stats.players.max} players</>}
+                        </dd>
+                      </>
+                    )}
+                  </dl>
+                </section>
 
-            <SettingsForm key={id} detail={detail} disabled={locked} onSaved={load} />
-
-            <Upkeep key={`upkeep-${id}`} detail={detail} disabled={locked} onChanged={load} />
-
-            <PortsCard key={`ports-${id}`} detail={detail} disabled={locked} onChanged={load} />
-
-            {detail.console && <Console id={id} examples={detail.console.examples} running={s.status === "online"} />}
-
-            <section className="settings-card">
-              <h2>Recent activity</h2>
-              {detail.events.length === 0 ? (
-                <p className="muted">Nothing yet.</p>
-              ) : (
-                <ul className="events">
-                  {detail.events.map((e) => (
-                    <li key={e.id} className={e.level}>
-                      <span className="muted mono">{new Date(e.at).toLocaleString()}</span> {e.message}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            <section className="settings-card danger-zone">
-              <h2>Delete this server</h2>
-              <p className="muted">
-                Deleting removes the container and its router and DNS entries. The world data and backups stay on disk, so you can set it up again later. To delete the world data as well, a final backup is made first.
-              </p>
-              <div className="row">
-                <button className="ghost danger" disabled={locked} onClick={remove}>
-                  Delete server
-                </button>
-                <button className="ghost danger" disabled={locked} onClick={removeWithData}>
-                  Delete server and world data…
-                </button>
+                <section className="settings-card danger-zone">
+                  <h2>Danger zone</h2>
+                  <p className="muted small-text">
+                    Deleting removes the container and its router and DNS entries. The world data and backups stay on disk. Deleting the world data too makes a final backup first.
+                  </p>
+                  <div className="row wrap-row">
+                    <button className="ghost danger" disabled={locked} onClick={remove}>
+                      Delete server
+                    </button>
+                    <button className="ghost danger" disabled={locked} onClick={removeWithData}>
+                      Delete server and world data…
+                    </button>
+                  </div>
+                </section>
               </div>
-            </section>
+
+              <div className="detail-main">
+                <SettingsForm key={id} detail={detail} disabled={locked} onSaved={load} onAccess={(access) => act(`/servers/${id}/access`, "PUT", { access })} />
+
+                <section className="settings-card">
+                  <div className="tabs-bar" role="tablist">
+                    {detail.console && (
+                      <button role="tab" aria-selected={activeTab === "console"} className={activeTab === "console" ? "on" : ""} onClick={() => setTab("console")}>
+                        Console
+                      </button>
+                    )}
+                    <button role="tab" aria-selected={activeTab === "activity"} className={activeTab === "activity" ? "on" : ""} onClick={() => setTab("activity")}>
+                      Recent activity
+                    </button>
+                  </div>
+                  {activeTab === "console" && detail.console ? (
+                    <Console id={id} examples={detail.console.examples} running={s.status === "online"} />
+                  ) : detail.events.length === 0 ? (
+                    <p className="muted">Nothing yet.</p>
+                  ) : (
+                    <ul className="events">
+                      {detail.events.map((e) => (
+                        <li key={e.id} className={e.level}>
+                          <span className="muted mono">{new Date(e.at).toLocaleString()}</span> {e.message}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              </div>
+            </div>
           </>
         )}
       </main>
@@ -243,7 +250,7 @@ export function ServerDetail({ id, onBack, onLogout, onNavigate }: { id: string;
   );
 }
 
-function SettingsForm({ detail, disabled, onSaved }: { detail: Detail; disabled: boolean; onSaved: () => Promise<void> }) {
+function SettingsForm({ detail, disabled, onSaved, onAccess }: { detail: Detail; disabled: boolean; onSaved: () => Promise<void>; onAccess: (access: "private" | "public") => Promise<void> }) {
   const [name, setName] = useState(detail.server.name);
   const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(detail.env.map((e) => [e.key, e.value ?? ""])));
   const [reset, setReset] = useState<Set<string>>(new Set());
@@ -252,6 +259,8 @@ function SettingsForm({ detail, disabled, onSaved }: { detail: Detail; disabled:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
+  const up = useUpkeep(detail, onSaved);
+  const s = detail.server;
 
   const changedEnv: Record<string, string> = {};
   for (const e of detail.env) {
@@ -261,19 +270,21 @@ function SettingsForm({ detail, disabled, onSaved }: { detail: Detail; disabled:
     } else if (values[e.key] !== (e.value ?? "")) changedEnv[e.key] = values[e.key];
   }
   const envDirty = Object.keys(changedEnv).length > 0;
-  const nameDirty = name.trim() !== detail.server.name;
+  const nameDirty = name.trim() !== s.name;
   const typedLimits = limitsFromInput(limits);
-  const limitsDirty = typeof typedLimits !== "string" && (typedLimits.cpus !== detail.server.limits.cpus || typedLimits.memoryMb !== detail.server.limits.memoryMb);
+  const limitsDirty = typeof typedLimits !== "string" && (typedLimits.cpus !== s.limits.cpus || typedLimits.memoryMb !== s.limits.memoryMb);
+  const settingsDirty = envDirty || nameDirty || limitsDirty;
 
   async function reveal(key: string) {
     try {
-      const { value } = await api<{ value: string }>(`/servers/${detail.server.id}/secrets/${key}`);
-      setShown((s) => ({ ...s, [key]: value || "(empty)" }));
+      const { value } = await api<{ value: string }>(`/servers/${s.id}/secrets/${key}`);
+      setShown((x) => ({ ...x, [key]: value || "(empty)" }));
     } catch (e) {
       setError((e as Error).message);
     }
   }
 
+  // One Save for the game settings, the limits and the schedule: each part is sent only when it changed.
   async function save(ev: FormEvent) {
     ev.preventDefault();
     if (typeof typedLimits === "string") return setError(typedLimits);
@@ -281,14 +292,19 @@ function SettingsForm({ detail, disabled, onSaved }: { detail: Detail; disabled:
     setError("");
     setNote("");
     try {
-      const r = await api<{ restarting: boolean }>(`/servers/${detail.server.id}/settings`, {
-        method: "PUT",
-        body: { ...(nameDirty ? { name } : {}), ...(envDirty ? { env: changedEnv } : {}), ...(limitsDirty ? typedLimits : {}) },
-      });
-      setValues((v) => Object.fromEntries(Object.entries(v).map(([k, x]) => [k, detail.env.find((e) => e.key === k)?.secret ? "" : x])));
-      setReset(new Set());
-      setShown({});
-      setNote(r.restarting ? "Saved. The server is restarting to apply the changes; your world is kept." : "Saved.");
+      let restarting = false;
+      if (settingsDirty) {
+        const r = await api<{ restarting: boolean }>(`/servers/${s.id}/settings`, {
+          method: "PUT",
+          body: { ...(nameDirty ? { name } : {}), ...(envDirty ? { env: changedEnv } : {}), ...(limitsDirty ? typedLimits : {}) },
+        });
+        restarting = r.restarting;
+        setValues((v) => Object.fromEntries(Object.entries(v).map(([k, x]) => [k, detail.env.find((e) => e.key === k)?.secret ? "" : x])));
+        setReset(new Set());
+        setShown({});
+      }
+      if (up.dirty) await up.save();
+      setNote(restarting ? "Saved. The server is restarting to apply the changes; your world is kept." : "Saved.");
       await onSaved();
     } catch (e) {
       setError((e as Error).message);
@@ -296,69 +312,126 @@ function SettingsForm({ detail, disabled, onSaved }: { detail: Detail; disabled:
     setBusy(false);
   }
 
+  const field = (e: Detail["env"][number]) => (
+    <label key={e.key} className="field">
+      <span>
+        {e.label}
+        {e.required && " *"}
+        {e.help && <Hint label={`About ${e.label}`}>{e.help}</Hint>}
+      </span>
+      {e.secret ? (
+        <>
+          <div className="row">
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={reset.has(e.key) ? "" : values[e.key]}
+              placeholder={reset.has(e.key) ? (e.generate ? "A new one will be made" : "Will be removed") : e.isSet ? "Unchanged (type to replace)" : "Not set"}
+              disabled={reset.has(e.key)}
+              onChange={(ev) => setValues({ ...values, [e.key]: ev.target.value })}
+            />
+            <button type="button" className="ghost small" onClick={() => void reveal(e.key)}>
+              Show current
+            </button>
+            {!e.required || e.generate ? (
+              <button
+                type="button"
+                className="ghost small"
+                onClick={() => setReset((r) => (r.has(e.key) ? new Set([...r].filter((k) => k !== e.key)) : new Set(r).add(e.key)))}
+              >
+                {reset.has(e.key) ? "Undo" : e.generate ? "Make a new one" : "Remove"}
+              </button>
+            ) : null}
+          </div>
+          {shown[e.key] && <span className="mono small-text">{shown[e.key]}</span>}
+        </>
+      ) : e.choices ? (
+        <select value={values[e.key]} onChange={(ev) => setValues({ ...values, [e.key]: ev.target.value })}>
+          {!e.required && <option value="">Default</option>}
+          {e.choices.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input value={values[e.key]} onChange={(ev) => setValues({ ...values, [e.key]: ev.target.value })} />
+      )}
+    </label>
+  );
+
+  const secrets = detail.env.filter((e) => e.secret);
+  const plain = detail.env.filter((e) => !e.secret);
+  const anyDirty = settingsDirty || up.dirty;
+
   return (
-    <form className="settings-card" onSubmit={save}>
-      <h2>Settings</h2>
-      <label className="field">
-        <span>Name in the panel</span>
-        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
-      </label>
-      {detail.env.map((e) => (
-        <label key={e.key} className="field">
-          <span>
-            {e.label}
-            {e.required && " *"}
-            {e.help && <Hint label={`About ${e.label}`}>{e.help}</Hint>}
-          </span>
-          {e.secret ? (
-            <>
-              <div className="row">
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  value={reset.has(e.key) ? "" : values[e.key]}
-                  placeholder={reset.has(e.key) ? (e.generate ? "A new one will be made" : "Will be removed") : e.isSet ? "Unchanged (type to replace)" : "Not set"}
-                  disabled={reset.has(e.key)}
-                  onChange={(ev) => setValues({ ...values, [e.key]: ev.target.value })}
-                />
-                <button type="button" className="ghost small" onClick={() => void reveal(e.key)}>
-                  Show current
-                </button>
-                {!e.required || e.generate ? (
-                  <button
-                    type="button"
-                    className="ghost small"
-                    onClick={() => setReset((r) => (r.has(e.key) ? new Set([...r].filter((k) => k !== e.key)) : new Set(r).add(e.key)))}
-                  >
-                    {reset.has(e.key) ? "Undo" : e.generate ? "Make a new one" : "Remove"}
-                  </button>
-                ) : null}
-              </div>
-              {shown[e.key] && <span className="mono small-text">{shown[e.key]}</span>}
-            </>
-          ) : e.choices ? (
-            <select value={values[e.key]} onChange={(ev) => setValues({ ...values, [e.key]: ev.target.value })}>
-              {!e.required && <option value="">Default</option>}
-              {e.choices.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input value={values[e.key]} onChange={(ev) => setValues({ ...values, [e.key]: ev.target.value })} />
-          )}
-        </label>
-      ))}
-      <LimitFields fieldClass="field" value={limits} onChange={setLimits} warning={memoryWarning(limits, detail.server.templateName, detail.minMemoryMb)} />
-      <div className="row">
-        <button className="primary" disabled={disabled || busy || (!envDirty && !nameDirty && !limitsDirty)}>
+    <form className="settings-card settings-form" onSubmit={save}>
+      <div className="form-head">
+        <h2>Settings</h2>
+        <button className="primary" disabled={disabled || busy || !anyDirty}>
           {busy ? "Saving…" : envDirty || limitsDirty ? "Save and restart" : "Save"}
         </button>
       </div>
-      <p className="muted note">Changing a game setting or a limit restarts the server so it takes effect. Your world and backups are not touched. Changing only the name does not restart anything.</p>
       {error && <p className="error">{error}</p>}
       {note && <p className="muted">{note}</p>}
+
+      <fieldset className="group">
+        <legend>General</legend>
+        <div className="field-grid">
+          <label className="field">
+            <span>Name in the panel</span>
+            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
+          </label>
+          {plain.map(field)}
+        </div>
+      </fieldset>
+
+      <fieldset className="group">
+        <legend>Access</legend>
+        <div className="field-grid">
+          <div className="field">
+            <span>
+              Who can join
+              <Hint label="About access">Private servers can only be joined from your home network. Public servers are opened on your router. This takes effect straight away, without Save.</Hint>
+            </span>
+            <div className="seg">
+              <button type="button" className={s.access === "private" ? "on" : ""} disabled={disabled || s.access === "private"} onClick={() => void onAccess("private")}>
+                <Icon name="lock" size={13} /> Private
+              </button>
+              <button
+                type="button"
+                className={s.access === "public" ? "on public" : ""}
+                disabled={disabled || s.status === "error" || s.access === "public"}
+                onClick={() => void onAccess("public")}
+              >
+                <Icon name="globe" size={13} /> Public
+              </button>
+            </div>
+          </div>
+          <PortField detail={detail} disabled={disabled} onChanged={onSaved} />
+        </div>
+      </fieldset>
+
+      {secrets.length > 0 && (
+        <fieldset className="group">
+          <legend>Passwords</legend>
+          <div className="field-grid">{secrets.map(field)}</div>
+        </fieldset>
+      )}
+
+      <fieldset className="group">
+        <legend>Limits</legend>
+        <div className="field-grid">
+          <LimitFields fieldClass="field" value={limits} onChange={setLimits} warning={memoryWarning(limits, s.templateName, detail.minMemoryMb)} />
+        </div>
+      </fieldset>
+
+      <fieldset className="group">
+        <legend>Schedule</legend>
+        <ScheduleFields detail={detail} up={up} disabled={disabled} />
+      </fieldset>
+
+      <p className="muted note">Changing a game setting or a limit restarts the server so it takes effect. Your world and backups are not touched. Changing only the name or the schedule does not restart anything.</p>
     </form>
   );
 }
@@ -386,12 +459,11 @@ function Console({ id, examples, running }: { id: string; examples: string[]; ru
   }
 
   return (
-    <section className="settings-card">
-      <h2>
-        Console
-        <Hint label="About the console">Sends a command to the running game server, the same as typing it into the server&apos;s own admin console. Commands are sent as-is, not run in a shell.</Hint>
-      </h2>
-      {!running && <p className="muted">Start the server to use the console.</p>}
+    <div className="console">
+      <p className="muted small-text">
+        {running ? "Sends a command to the running game server, the same as typing it into its own admin console." : "Start the server to use the console."}
+        <Hint label="About the console">Commands are sent as-is, not run in a shell.</Hint>
+      </p>
       {history.length > 0 && (
         <div className="console-out mono">
           {history.map((h, i) => (
@@ -418,6 +490,6 @@ function Console({ id, examples, running }: { id: string; examples: string[]; ru
           ))}
         </div>
       )}
-    </section>
+    </div>
   );
 }
