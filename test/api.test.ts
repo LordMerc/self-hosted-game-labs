@@ -136,6 +136,24 @@ describe("server page routes", () => {
     expect((await app.inject({ method: "POST", url: "/api/servers/nope/console", headers, payload: {} })).statusCode).toBe(400);
   });
 
+  it("takes resource limits on deploy and on the settings route, and lists the template's memory minimum", async () => {
+    const setup = await app.inject({ method: "POST", url: "/api/auth/setup", payload: { password: "correct horse battery" } });
+    const headers = { cookie: cookieOf(setup) };
+    const catalog = (await app.inject({ url: "/api/templates", headers })).json() as { id: string; minMemoryMb: number | null }[];
+    expect(catalog.find((t) => t.id === "satisfactory")!.minMemoryMb).toBe(8192);
+    expect(catalog.find((t) => t.id === "terraria")!.minMemoryMb).toBeNull();
+    const made = await app.inject({ method: "POST", url: "/api/servers", headers, payload: { templateId: "terraria", name: "Terra", cpus: 1, memoryMb: 1024 } });
+    expect(made.statusCode).toBe(202);
+    const id = made.json().id as string;
+    expect((await app.inject({ url: `/api/servers/${id}`, headers })).json().server.limits).toMatchObject({ cpus: 1, memoryMb: 1024 });
+    const bad = await app.inject({ method: "PUT", url: `/api/servers/${id}/settings`, headers, payload: { memoryMb: 10 } });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json()).toMatchObject({ field: "memoryMb" });
+    const cleared = await app.inject({ method: "PUT", url: `/api/servers/${id}/settings`, headers, payload: { cpus: null, memoryMb: null } });
+    expect(cleared.statusCode).toBe(202);
+    expect((await app.inject({ url: `/api/servers/${id}`, headers })).json().server.limits).toMatchObject({ cpus: null, memoryMb: null });
+  });
+
   it("sets up a server from a custom image, keeps it out of the template catalog, and explains bad input", async () => {
     const setup = await app.inject({ method: "POST", url: "/api/auth/setup", payload: { password: "correct horse battery" } });
     const headers = { cookie: cookieOf(setup) };

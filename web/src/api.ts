@@ -15,6 +15,8 @@ export interface Template {
   image: string;
   maxPlayers?: number;
   notes?: string;
+  /** Memory the game needs, in MB; a lower memory limit gets a warning. */
+  minMemoryMb: number | null;
   join: { method: "direct" | "server-browser"; instructions?: string };
   ports: { name: string; default: number; protocol: "tcp" | "udp" }[];
   env: TemplateEnv[];
@@ -29,6 +31,8 @@ export interface Server {
   status: "deploying" | "online" | "paused" | "offline" | "updating" | "error";
   /** Running, but the game has not opened its port yet (still downloading or loading). */
   starting: boolean;
+  /** Caps on what the game may use; null = no limit. */
+  limits: { cpus: number | null; memoryMb: number | null; warnings: string[] };
   access: "private" | "public";
   lastError: string | null;
   ports: { name: string; port: number; protocol: "tcp" | "udp" }[];
@@ -149,6 +153,7 @@ export interface BackupGroup {
 export interface ServerDetail {
   server: Server;
   env: { key: string; label: string; help: string | null; choices: string[] | null; required: boolean; secret: boolean; generate: boolean; value: string | null; isSet: boolean }[];
+  minMemoryMb: number | null;
   console: { examples: string[] } | null;
   events: { id: number; level: "info" | "warn" | "error"; message: string; at: string }[];
 }

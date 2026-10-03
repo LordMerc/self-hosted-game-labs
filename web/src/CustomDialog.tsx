@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { api } from "./api";
+import { LimitFields, limitsFromInput, noLimitInput } from "./Limits";
 
 type PortSpec = { port: number; protocol: "tcp" | "udp" };
 
@@ -33,6 +34,7 @@ export function CustomDialog({ onClose, onDeployed }: { onClose: () => void; onD
   const [env, setEnv] = useState("");
   const [dataPath, setDataPath] = useState("");
   const [owner, setOwner] = useState("");
+  const [limits, setLimits] = useState(noLimitInput);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -43,9 +45,11 @@ export function CustomDialog({ onClose, onDeployed }: { onClose: () => void; onD
     const v = parseEnv(env);
     if (typeof p === "string") return setError(p);
     if (typeof v === "string") return setError(v);
+    const lim = limitsFromInput(limits);
+    if (typeof lim === "string") return setError(lim);
     setBusy(true);
     try {
-      await api("/servers/custom", { method: "POST", body: { name, image, ports: p, env: v, dataPath: dataPath || undefined, dataOwner: owner || undefined } });
+      await api("/servers/custom", { method: "POST", body: { name, image, ports: p, env: v, dataPath: dataPath || undefined, dataOwner: owner || undefined, ...lim } });
       onDeployed();
     } catch (err) {
       setError((err as Error).message);
@@ -88,6 +92,7 @@ export function CustomDialog({ onClose, onDeployed }: { onClose: () => void; onD
             <span className="muted">Only if the game says it cannot write to its folder. The user id and group id the game runs as.</span>
           </label>
         )}
+        <LimitFields value={limits} onChange={setLimits} />
         {error && <p className="error">{error}</p>}
         <div className="row end">
           <button type="button" className="ghost" onClick={onClose}>
