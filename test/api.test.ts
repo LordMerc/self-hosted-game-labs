@@ -112,3 +112,15 @@ describe("stats", () => {
     expect(res.json()).toMatchObject({ host: { cpu: { cores: expect.any(Number) } }, servers: {} });
   });
 });
+
+describe("server page routes", () => {
+  it("require a session, 404 for unknown servers, and validate bodies", async () => {
+    expect((await app.inject("/api/servers/nope")).statusCode).toBe(401);
+    const setup = await app.inject({ method: "POST", url: "/api/auth/setup", payload: { password: "correct horse battery" } });
+    const headers = { cookie: cookieOf(setup) };
+    expect((await app.inject({ url: "/api/servers/nope", headers })).statusCode).toBe(404);
+    expect((await app.inject({ method: "PUT", url: "/api/servers/nope/settings", headers, payload: { name: "x" } })).statusCode).toBe(404);
+    expect((await app.inject({ method: "PUT", url: "/api/servers/nope/settings", headers, payload: { name: 5 } })).statusCode).toBe(400);
+    expect((await app.inject({ method: "POST", url: "/api/servers/nope/console", headers, payload: {} })).statusCode).toBe(400);
+  });
+});

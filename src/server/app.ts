@@ -185,6 +185,19 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
     return reply.code(202).send({ id });
   });
 
+  app.get("/api/servers/:id", async (req) => service.detail(idParam(req)));
+  app.put("/api/servers/:id/settings", async (req, reply) => {
+    const body = z.object({ name: z.string().optional(), env: z.record(z.string(), z.string()).optional() }).safeParse(req.body);
+    if (!body.success) throw new UserError(body.error.issues[0].message);
+    const r = await service.updateSettings(idParam(req), body.data);
+    return reply.code(r.restarting ? 202 : 200).send(r);
+  });
+  app.post("/api/servers/:id/console", async (req) => {
+    const body = z.object({ command: z.string() }).safeParse(req.body);
+    if (!body.success) throw new UserError("command is required");
+    return service.runConsole(idParam(req), body.data.command);
+  });
+
   app.get("/api/servers/:id/backups", async (req) => service.listBackups(idParam(req)));
   app.get("/api/servers/:id/backups/settings", async (req) => service.backupSettings(idParam(req)));
   app.put("/api/servers/:id/backups/settings", async (req) => service.setBackupSettings(idParam(req), req.body));

@@ -136,3 +136,17 @@ Found on the maintainer's host during the Dragonwilds setup: (1) the panel said 
 | Tests | 126 pass: discovery retry, own-subnet preference, router-missing streak, stopped servers, Starting after restart, owner set and owner failure |
 | Docker exec against a real daemon (throwaway dockerd, busybox image) | Pass: output demuxed, exit codes, stderr captured, `/proc/net/udp` format matches the parser, missing binary reports exit 127 |
 | Real Dragonwilds server | Not run: needs the maintainer's host |
+
+## Server page: settings and console (2026-10-03)
+
+Click a server's name in the table to open its page: overview (address, ports, access, CPU/memory/players), editable settings, a console for games that have one, recent activity, logs and backups buttons, and delete (with or without the world data; deleting data takes a final backup first).
+
+- **Settings:** the panel name changes instantly. Game settings (from the template's `env`) are applied by recreating the container with the new values, so the server restarts; the world folder, ports, router mappings and DNS are untouched, and the image is not pulled again. A setting that is left alone stays as it is; clearing an optional one removes it; clearing a generated password makes a new one; required ones cannot be empty. Passwords are never sent to the page: "Show current" fetches one on request.
+- **Console:** a template can declare `console: { exec: [...], examples: [...] }`. A typed command is passed as one argument to that program inside the container through Docker exec (no shell), so text like `; rm -rf /` is just part of the command. Palworld declares `rcon-cli` (the image's own RCON client).
+
+| Check | Result |
+|---|---|
+| Tests | 134 pass: detail without leaking secrets, name-only change, recreate with new value keeping data and ports, unset/clear/regenerate rules, validation, no pull on apply, console argument handling, stopped server, game without console, route auth and validation |
+| Page in headless Chromium against a fake Docker | Pass: open from the table, edit and save, run a console command (screenshots reviewed) |
+| Palworld `rcon-cli` on the real image | Not run: the `rcon-cli` name, and that it works with the image's default RCON settings, are from the image's documentation |
+| Recreate on a real container with a real data folder | Not run |
