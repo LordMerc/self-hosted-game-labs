@@ -1,6 +1,6 @@
 {
   "name": "self-hosted-game-labs",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Self-hosted, one-stop control panel for running game servers on your homelab.",
   "license": "MIT",
   "private": true,
