@@ -5,13 +5,18 @@ import { buildApp } from "../src/server/app.js";
 import { loadConfig } from "../src/server/config.js";
 import { openDb } from "../src/server/db/index.js";
 import { loadTemplates } from "../src/server/templates/loader.js";
+import { ServerService } from "../src/server/servers/service.js";
+import { FakeConnectivity, FakeDocker } from "./helpers/fakes.js";
 
 const config = loadConfig({ SESSION_SECRET: "x".repeat(32), DATA_DIR: "/tmp/unused" });
 let app: FastifyInstance;
 
 beforeEach(() => {
   const { db } = openDb(":memory:");
-  app = buildApp({ config, db, templates: loadTemplates(path.resolve("templates")) });
+  const templates = loadTemplates(path.resolve("templates"));
+  const docker = new FakeDocker();
+  const service = new ServerService({ config, db, templates, docker, connectivity: new FakeConnectivity(), hostPorts: () => new Set(), background: false, stableMs: 0 });
+  app = buildApp({ config, db, templates, service, docker });
 });
 
 const cookieOf = (res: { headers: Record<string, unknown> }) => String(([] as string[]).concat(res.headers["set-cookie"] as string)[0]).split(";")[0];
@@ -56,5 +61,19 @@ describe("api", () => {
   it("rejects a forged session cookie", async () => {
     const res = await app.inject({ url: "/api/servers", headers: { cookie: `gl_session=${Date.now() + 100000}` } });
     expect(res.statusCode).toBe(401);
+  });
+
+  it("deploys through the API and reports a port conflict as 409 with a suggestion", async () => {
+    const setup = await app.inject({ method: "POST", url: "/api/auth/setup", payload: { password: "correct horse battery" } });
+    const headers = { cookie: cookieOf(setup) };
+    const first = await app.inject({ method: "POST", url: "/api/servers", headers, payload: { templateId: "palworld", name: "One" } });
+    expect(first.statusCode).toBe(202);
+    const list = (await app.inject({ url: "/api/servers", headers })).json();
+    expect(list).toHaveLength(1);
+    expect(list[0]).not.toHaveProperty("env");
+    const clash = await app.inject({ method: "POST", url: "/api/servers", headers, payload: { templateId: "palworld", name: "Two", ports: { game: 8211, query: 27050 } } });
+    expect(clash.statusCode).toBe(409);
+    expect(clash.json().suggestion).toBeTruthy();
+    expect((await app.inject({ method: "POST", url: "/api/servers", headers, payload: { templateId: "nope", name: "x" } })).statusCode).toBe(404);
   });
 });

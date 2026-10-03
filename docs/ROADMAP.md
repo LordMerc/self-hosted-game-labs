@@ -20,7 +20,7 @@ Next:
 - [ ] Deploy flow and readiness wait; Error state with Retry / Remove
 - [ ] Log streaming (SSE)
 - [ ] Connectivity providers: `manual` (rules + confirmation), then `upnp` (`upnpc`)
-- [ ] Cloudflare: DDNS A record, per-server CNAME, `gamepanel:` ownership comments
+- [ ] Cloudflare: DDNS A record, per-server CNAME, `gamelabs:` ownership comments
 - [ ] Public / Private toggle
 - [ ] Deploy form generated from the template
 - [ ] Real-world verification: friend connects from outside the LAN

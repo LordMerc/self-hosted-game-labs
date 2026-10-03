@@ -6,6 +6,16 @@ CREATE TABLE `events` (
 	`at` integer NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE `manual_rules` (
+	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	`server_id` text NOT NULL,
+	`port` integer NOT NULL,
+	`protocol` text NOT NULL,
+	`confirmed` integer DEFAULT false NOT NULL,
+	FOREIGN KEY (`server_id`) REFERENCES `servers`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `manual_rules_port_proto` ON `manual_rules` (`port`,`protocol`);--> statement-breakpoint
 CREATE TABLE `server_ports` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`server_id` text NOT NULL,
@@ -25,6 +35,7 @@ CREATE TABLE `servers` (
 	`access` text DEFAULT 'private' NOT NULL,
 	`env` text DEFAULT '{}' NOT NULL,
 	`container_id` text,
+	`last_error` text,
 	`created_at` integer NOT NULL
 );
 --> statement-breakpoint

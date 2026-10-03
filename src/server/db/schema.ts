@@ -20,6 +20,7 @@ export const servers = sqliteTable(
     access: text("access", { enum: ["private", "public"] }).notNull().default("private"),
     env: text("env", { mode: "json" }).$type<Record<string, string>>().notNull().default({}),
     containerId: text("container_id"),
+    lastError: text("last_error"),
     createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   },
 );
@@ -46,3 +47,18 @@ export const events = sqliteTable("events", {
   message: text("message").notNull(),
   at: integer("at", { mode: "timestamp" }).notNull(),
 });
+
+/** Router rules the user must add by hand when CONNECTIVITY=manual. */
+export const manualRules = sqliteTable(
+  "manual_rules",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    serverId: text("server_id")
+      .notNull()
+      .references(() => servers.id, { onDelete: "cascade" }),
+    port: integer("port").notNull(),
+    protocol: text("protocol", { enum: ["tcp", "udp"] }).notNull(),
+    confirmed: integer("confirmed", { mode: "boolean" }).notNull().default(false),
+  },
+  (t) => [uniqueIndex("manual_rules_port_proto").on(t.port, t.protocol)],
+);
