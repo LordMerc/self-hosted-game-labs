@@ -26,7 +26,7 @@ Also done (built against fakes, see verification.md for what is unproven):
 
 Still open for Milestone 1:
 
-- [ ] Real-world verification on a Docker host: image builds, Palworld deploys, UPnP/manual rule works, DNS resolves, a friend connects from outside the LAN (needs the maintainer's hardware)
+- [x] Real-world verification on a Docker host: image builds, Palworld deploys, UPnP rule works, DNS resolves, a friend connected from outside the LAN (2026-10-03, maintainer's homelab)
 
 ## Later
 

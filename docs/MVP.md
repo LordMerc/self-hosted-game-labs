@@ -8,7 +8,7 @@ Panel and auth, templates and port allocation, deploy / start / stop / restart /
 
 ## Blocking the MVP
 
-1. **A friend connecting from outside.** Docker, UPnP on a Deco router and Cloudflare have now run for real on the maintainer's homelab and a LAN join works (see [verification.md](verification.md)). The last step, a join from the internet, is still to be confirmed.
+1. ~~**A friend connecting from outside.**~~ Verified 2026-10-03: a friend joined the maintainer's Palworld from the internet at `palworld.<domain>:8211`, through UPnP and the Cloudflare DNS record the panel made. Docker, UPnP on a Deco router and Cloudflare all ran for real (see [verification.md](verification.md)). The MVP goal is met; the items below are what is left to make it solid.
 2. **Verify the Palworld template** against the image's current docs (env names, ports, data path) and pin an image tag once a version works.
 3. **Honest reachability check.** The UI currently says "Reachability untested, check from a phone on cellular data" for public servers and never claims a port is open. A real check needs an outside vantage point (a third-party service), which is a privacy and dependency choice for the maintainer.
 
