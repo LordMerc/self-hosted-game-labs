@@ -594,6 +594,26 @@ describe("server page: detail, settings, console", () => {
     await expect(svc.runConsole(id, "Save")).rejects.toMatchObject({ status: 409 });
   });
 
+  it("turns RCON on for a new Palworld server without publishing its port", async () => {
+    const id = await deploy("Alpha");
+    const c = [...docker.containers.values()][0].spec;
+    expect(c.env).toMatchObject({ RCON_ENABLED: "true", RCON_PORT: "25575" });
+    expect(c.ports.map((p) => p.port)).not.toContain(25575);
+    expect((await svc.detail(id)).console?.offNotice).toBeNull();
+  });
+
+  it("explains an older server whose container has RCON off, and one Apply settings fixes it", async () => {
+    const id = await deploy("Alpha");
+    const old = [...docker.containers.values()][0].spec;
+    delete old.env.RCON_ENABLED;
+    expect((await svc.detail(id)).console?.offNotice).toMatch(/RCON/);
+    await expect(svc.runConsole(id, "ShowPlayers")).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/Apply settings/) });
+    expect(await svc.applySettings(id)).toEqual({ restarting: true });
+    expect([...docker.containers.values()][0].spec.env.RCON_ENABLED).toBe("true");
+    expect((await svc.detail(id)).console?.offNotice).toBeNull();
+    await expect(svc.runConsole(id, "ShowPlayers")).resolves.toBeTruthy();
+  });
+
   it("has no console for a game without one", async () => {
     const id = await svc.deploy({ templateId: "dragonwilds", name: "Dragon", env: { RSDW_OWNER_ID: "abc" } });
     expect((await svc.detail(id)).console).toBeNull();
