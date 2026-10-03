@@ -115,7 +115,7 @@ await page.waitForTimeout(1500);
 await page.reload();
 await page.getByRole("heading", { name: "Game servers" }).waitFor();
 await page.waitForTimeout(2500);
-await shot("dashboard");
+await shot("dashboard", { fullPage: true });
 
 // The "..." menu, open on the first row.
 await row("Palworld").getByRole("button", { name: /More actions/ }).click();
@@ -123,7 +123,7 @@ await page.getByRole("menu").waitFor();
 await shot("row-menu");
 await page.keyboard.press("Escape");
 
-// A laptop-sized window: the Network health panel moves under the table (on a phone each server becomes a card).
+// A laptop-sized window: the Network health panel stays beside the table, a little narrower (below 1300px it moves under the table, and on a phone each server becomes a card).
 await page.setViewportSize({ width: 1440, height: 900 });
 await page.waitForTimeout(500);
 await shot("dashboard-1440", { fullPage: true });
