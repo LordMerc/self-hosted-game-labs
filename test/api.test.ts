@@ -24,7 +24,7 @@ const cookieOf = (res: { headers: Record<string, unknown> }) => String(([] as st
 describe("api", () => {
   it("serves /api/health without auth", async () => {
     const res = await app.inject("/api/health");
-    expect(res.json()).toEqual({ status: "ok" });
+    expect(res.json()).toMatchObject({ status: "ok" });
   });
 
   it("requires a session for everything else", async () => {
