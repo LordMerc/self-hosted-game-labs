@@ -11,6 +11,8 @@ const schema = z.object({
   PUBLIC_HOST: z.string().optional(),
   HOST_LAN_IP: z.string().optional(),
   CONNECTIVITY: z.enum(["manual", "upnp"]).default("manual"),
+  /** "off" removes the Run button for the outside port check, which sends your public IP and a port to check-host.net. */
+  PORT_CHECK: z.enum(["on", "off"]).default("on"),
   CF_API_TOKEN: z.string().optional(),
   CF_ZONE: z.string().optional(),
   /** Override the "what is my IP" endpoint used when the router cannot tell us. */

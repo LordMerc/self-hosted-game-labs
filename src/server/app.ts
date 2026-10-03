@@ -284,6 +284,12 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
 
   app.get("/api/network", async () => service.network());
 
+  app.post("/api/network/port-check", async (req) => {
+    const body = z.object({ serverId: z.string().optional() }).safeParse(req.body ?? {});
+    if (!body.success) throw new UserError("serverId must be text");
+    return service.checkReachability(body.data.serverId);
+  });
+
   app.put("/api/network/rules/:id", async (req) => {
     const body = z.object({ confirmed: z.boolean() }).safeParse(req.body);
     if (!body.success) throw new UserError("confirmed must be true or false");

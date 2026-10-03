@@ -24,6 +24,8 @@ services:
       CONNECTIVITY: ${CONNECTIVITY:-manual}
       CF_API_TOKEN: ${CF_API_TOKEN:-}
       CF_ZONE: ${CF_ZONE:-}
+      BACKUP_KEEP: ${BACKUP_KEEP:-7}
+      PORT_CHECK: ${PORT_CHECK:-on}
       SESSION_SECRET: ${SESSION_SECRET:-}
 
 volumes:

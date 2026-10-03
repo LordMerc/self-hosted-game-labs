@@ -10,7 +10,7 @@ Panel and auth, templates and port allocation, deploy / start / stop / restart /
 
 1. ~~**A friend connecting from outside.**~~ Verified 2026-10-03: a friend joined the maintainer's Palworld from the internet at `palworld.<domain>:8211`, through UPnP and the Cloudflare DNS record the panel made. Docker, UPnP on a Deco router and Cloudflare all ran for real (see [verification.md](verification.md)). The MVP goal is met; the items below are what is left to make it solid.
 2. **Verify the Palworld template** against the image's current docs (env names, ports, data path) and pin an image tag once a version works.
-3. **Honest reachability check.** The UI currently says "Reachability untested, check from a phone on cellular data" for public servers and never claims a port is open. A real check needs an outside vantage point (a third-party service), which is a privacy and dependency choice for the maintainer.
+3. ~~**Honest reachability check.**~~ Built (the maintainer agreed to a third-party checker on 2026-10-03). **Run** in the Network panel asks check-host.net to connect to each public server's TCP ports from a few locations; UDP ports (Palworld, Dragonwilds, Valheim) cannot be tested from outside, so they show "Router forwards the port" from the router's mapping list. It never says "open" without a real connection. `PORT_CHECK=off` removes it. The provider's API has not been exercised from the build sandbox, see [verification.md](verification.md).
 
 ## Not needed for the MVP, planned next
 

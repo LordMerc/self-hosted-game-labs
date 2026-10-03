@@ -9,7 +9,7 @@ An open-source, self-hosted control panel for running game servers on your own h
 - One-click Docker templates for popular games (Palworld, RuneScape: Dragonwilds, Minecraft (Java), Valheim, Satisfactory and Terraria), plus a Custom Docker image option for anything else.
 - Start, stop, restart, delete and stream logs for every server from one page.
 - Per-server **Private / Public** switch. Public opens the game ports on your router (UPnP, or a manual checklist) and creates a DNS name for the server.
-- Dynamic DNS and an honest reachability check that says "Untested" rather than guessing.
+- Dynamic DNS and an honest reachability check. Press Run in the Network panel to test a public server's TCP ports from outside; UDP games cannot be tested that way, so the panel shows whether the router forwards the port, and never says "open" without a real test. The test sends your public IP and port to a third-party checker (check-host.net) only when you press Run; set `PORT_CHECK=off` to remove it.
 
 The design is in [docs/design.md](docs/design.md). The concept art the UI is based on has a server list, status, ports, access toggles and a network panel. For now the navigation is just **Game servers**.
 

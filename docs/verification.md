@@ -174,3 +174,11 @@ Things to check on the homelab:
 
 The browser smoke test (`npm run test:e2e`, runs in CI) drives the built web app with Chromium against the API with a fake Docker: first-run password, deploy a template, choices and required fields, a custom image and a port clash, the server page and console, rename, backup, delete, and set up again from the Backups page, with no browser errors.
 
+
+## Outside port check
+
+Built against fakes (a fake checker in the service and browser tests, and a fake HTTP server for the check-host.net calls). Not run against the real provider: the build sandbox cannot reach it.
+
+- **What it does:** press Run in the Network panel. For every running public server, each TCP port is sent to check-host.net (`/check-tcp`, then `/check-result`), asking 3 locations to connect to `<public IP>:<port>`. Any location connecting means open; all failing means closed, with the reasons; no usable answer means unknown, with the reason. UDP ports are not tested (a UDP game gives no reply to a bare probe); the panel shows "Router forwards the port" when the router's mapping list (or a rule you confirmed) has it, and "not forwarded" when it does not.
+- **Privacy:** nothing is sent unless Run is pressed. What is sent is the public IP and the port number. `PORT_CHECK=off` removes the button's backend.
+- **To check on the homelab:** Run on a public Minecraft or Terraria server returns "open" with "Connected from N of 3 locations"; with the server stopped or the rule removed it should say closed. If it says unknown, the detail line names what went wrong (send a screenshot); the provider's response format is the part most likely to need adjusting.
