@@ -3,6 +3,8 @@
 services:
   gamelabs:
     build: .
+    # Rebuild on every `up`, so a Git stack redeploy picks up new commits (the layer cache keeps it quick).
+    pull_policy: build
     container_name: gamelabs
     # Host networking is required: UPnP discovery (SSDP) does not cross the Docker bridge,
     # and game servers are exposed on the host's own ports.

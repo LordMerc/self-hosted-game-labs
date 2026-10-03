@@ -15,6 +15,16 @@ function App() {
   return <GameServers onLogout={() => api("/auth/logout", { method: "POST" }).then(refresh)} />;
 }
 
+/** Errors React cannot catch (event handlers, async code): show them instead of failing silently. */
+function showFatal(message: string) {
+  const el = document.createElement("div");
+  el.setAttribute("style", "position:fixed;left:0;right:0;bottom:0;padding:12px 16px;background:#7f1d1d;color:#fff;font:13px monospace;z-index:99;white-space:pre-wrap");
+  el.textContent = `Error: ${message}`;
+  document.body.appendChild(el);
+}
+window.addEventListener("error", (e) => showFatal(e.message));
+window.addEventListener("unhandledrejection", (e) => showFatal(String((e.reason as Error)?.message ?? e.reason)));
+
 /** Show what went wrong instead of a blank page if a component throws. */
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
