@@ -127,7 +127,7 @@ describe("server page routes", () => {
   it("sets up a server from a custom image, keeps it out of the template catalog, and explains bad input", async () => {
     const setup = await app.inject({ method: "POST", url: "/api/auth/setup", payload: { password: "correct horse battery" } });
     const headers = { cookie: cookieOf(setup) };
-    const ok = await app.inject({ method: "POST", url: "/api/servers/custom", headers, payload: { name: "Mine", image: "x/y:1", ports: [{ port: 3000, protocol: "tcp" }], env: { A: "b" }, dataPath: "/data" } });
+    const ok = await app.inject({ method: "POST", url: "/api/servers/custom", headers, payload: { name: "Mine", image: "x/y:1", ports: [{ port: 3000, protocol: "tcp" }], env: { A: "b" } } });
     expect(ok.statusCode).toBe(202);
     const list = (await app.inject({ url: "/api/servers", headers })).json();
     expect(list[0]).toMatchObject({ name: "Mine", templateName: "Custom image", status: "online" });
