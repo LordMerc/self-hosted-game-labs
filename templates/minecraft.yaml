@@ -1,0 +1,61 @@
+# Verify image, ports and env names against the image's current docs before changing.
+# https://docker-minecraft-server.readthedocs.io/  (image: itzg/minecraft-server)
+id: minecraft
+name: Minecraft (Java)
+image: itzg/minecraft-server:latest
+maxPlayers: 20
+notes: The first start downloads the game and makes the world, which can take a few minutes. It shows Starting until it is ready.
+join:
+  method: direct
+ports:
+  - name: game
+    default: 25565
+    protocol: tcp
+    env: SERVER_PORT
+    query: minecraft
+env:
+  EULA:
+    label: Accept the Minecraft EULA
+    required: true
+    choices: ["TRUE"]
+    help: Mojang requires every server owner to accept its EULA (https://aka.ms/MinecraftEULA). Choose TRUE to accept it.
+  MOTD:
+    label: Message in the server list
+    default: A Game Labs Minecraft server
+  VERSION:
+    label: Minecraft version
+    default: LATEST
+    pattern: LATEST|SNAPSHOT|[0-9][0-9A-Za-z._-]*
+    patternMessage: must be LATEST or a version such as 1.21.4
+    help: LATEST, or a version such as 1.21.4. Players need the same version.
+  TYPE:
+    label: Server type
+    default: VANILLA
+    choices: [VANILLA, PAPER, FABRIC]
+    help: VANILLA is the plain game. PAPER is faster and supports plugins. FABRIC supports mods.
+  DIFFICULTY:
+    label: Difficulty
+    default: easy
+    choices: [peaceful, easy, normal, hard]
+  MAX_PLAYERS:
+    label: Most players at once
+    default: "20"
+    pattern: "[0-9]{1,4}"
+    patternMessage: must be a number
+  MEMORY:
+    label: Memory for the game
+    default: 2G
+    pattern: "[0-9]{1,5}[MG]"
+    patternMessage: must look like 2G or 4096M
+    help: How much RAM the game may use. 2G is fine for a few friends; use 4G or more for big worlds or mods.
+  ONLINE_MODE:
+    label: Check players' accounts
+    default: "TRUE"
+    choices: ["TRUE", "FALSE"]
+    help: Leave this TRUE so only players with a real Minecraft account can join. FALSE is only for cracked clients or special setups.
+# The image ships `rcon-cli`, which talks to the server's own RCON from inside the container.
+console:
+  exec: [rcon-cli]
+  examples: [list, say Server restarting soon, save-all, whitelist list]
+data:
+  - containerPath: /data

@@ -9,6 +9,9 @@ export interface ContainerSpec {
   name: string;
   image: string;
   env: Record<string, string>;
+  /** Arguments for the image's own start-up command. */
+  command?: string[];
+  tty?: boolean;
   /** Host port == container port. */
   ports: { port: number; protocol: Protocol }[];
   binds: { host: string; container: string }[];
@@ -108,6 +111,8 @@ export class DockerodeDriver implements ContainerDriver {
       name: spec.name,
       Image: spec.image,
       Env: Object.entries(spec.env).map(([k, v]) => `${k}=${v}`),
+      ...(spec.command ? { Cmd: spec.command } : {}),
+      ...(spec.tty ? { Tty: true, OpenStdin: true } : {}),
       Labels: spec.labels,
       ExposedPorts: exposed,
       HostConfig: {

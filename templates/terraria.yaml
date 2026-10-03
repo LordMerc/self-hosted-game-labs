@@ -1,0 +1,55 @@
+# Verify image, ports and env names against the image's current docs before changing.
+# https://github.com/beardedio/terraria  (image: beardedio/terraria, vanilla server)
+id: terraria
+name: Terraria
+image: beardedio/terraria:vanilla-latest
+maxPlayers: 8
+notes: A new world is made the first time the server starts, which takes a minute or two. The same world is loaded on every start after that.
+join:
+  method: direct
+ports:
+  - name: game
+    default: 7777
+    protocol: tcp
+    env: PORT
+env:
+  WORLD_NAME:
+    label: World name
+    default: Terraria
+    pattern: "[A-Za-z0-9_-]+"
+    patternMessage: can only have letters, numbers, dashes and underscores
+    help: Used for the world's file name too, so no spaces. A new world is made the first time; use the same name to load an existing one. Changing it later starts a new, empty world (the old one is kept).
+  WORLD_SIZE:
+    label: New world size
+    default: "2"
+    choices: ["1", "2", "3"]
+    help: 1 is Small, 2 is Medium and 3 is Large. Only used when the world is first made.
+  MAX_PLAYERS:
+    label: Most players at once
+    default: "8"
+    pattern: "[0-9]{1,3}"
+    patternMessage: must be a number
+  SERVER_PASSWORD:
+    label: Server password
+    secret: true
+    pattern: "[A-Za-z0-9_-]+"
+    patternMessage: can only have letters, numbers, dashes and underscores
+    help: Leave empty for a server anyone can join.
+# The server needs a terminal or it crashes while loading the world. Settings go on its command line.
+tty: true
+# The password goes last: the image drops an empty value, and a bare -password then means no password.
+command:
+  - -autocreate
+  - ${WORLD_SIZE}
+  - -world
+  - /config/${WORLD_NAME}.wld
+  - -worldname
+  - ${WORLD_NAME}
+  - -maxplayers
+  - ${MAX_PLAYERS}
+  - -port
+  - ${PORT}
+  - -password
+  - ${SERVER_PASSWORD}
+data:
+  - containerPath: /config

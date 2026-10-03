@@ -40,7 +40,6 @@ beforeEach(() => {
     hostPorts: () => hostBusy,
     background: false,
     stableMs: 0,
-    readyTimeoutMs: 2000,
     queryPlayers: async () => (playersAnswer ? { online: 4, max: 32 } : null),
   });
 });
@@ -582,5 +581,70 @@ describe("server page: detail, settings, console", () => {
     const id = await svc.deploy({ templateId: "dragonwilds", name: "Dragon", env: { RSDW_OWNER_ID: "abc" } });
     expect((await svc.detail(id)).console).toBeNull();
     await expect(svc.runConsole(id, "Save")).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe("template settings", () => {
+  it("passes a template's command with settings filled in, and a terminal, to the container", async () => {
+    const id = await svc.deploy({ templateId: "terraria", name: "Terra", env: { WORLD_NAME: "Hearth", WORLD_SIZE: "3", SERVER_PASSWORD: "pw-1" } });
+    const c = docker.containers.get(docker.containers.keys().next().value!)!;
+    expect(c.spec.command).toEqual(["-autocreate", "3", "-world", "/config/Hearth.wld", "-worldname", "Hearth", "-maxplayers", "8", "-port", "7777", "-password", "pw-1"]);
+    expect(c.spec.tty).toBe(true);
+    expect((await svc.list()).find((s) => s.id === id)!.status).toBe("online");
+  });
+
+  it("drops an empty argument, so no password leaves a bare flag at the end", async () => {
+    await svc.deploy({ templateId: "terraria", name: "Terra" });
+    expect([...docker.containers.values()][0].spec.command!.slice(-3)).toEqual(["-port", "7777", "-password"]);
+  });
+
+  it("does not give a terminal or a command to a game that does not ask for one", async () => {
+    await svc.deploy({ templateId: "palworld", name: "Pal" });
+    const spec = [...docker.containers.values()][0].spec;
+    expect(spec.command).toBeUndefined();
+    expect(spec.tty).toBeUndefined();
+  });
+
+  it("rejects a value that is not one of the choices or does not fit the pattern, when deploying and when changing settings", async () => {
+    await expect(svc.deploy({ templateId: "minecraft", name: "MC", env: { EULA: "yes" } })).rejects.toThrow(/must be one of: TRUE/);
+    await expect(svc.deploy({ templateId: "minecraft", name: "MC" })).rejects.toThrow(/required/);
+    await expect(svc.deploy({ templateId: "terraria", name: "T", env: { WORLD_NAME: "my world" } })).rejects.toThrow(/can only have letters/);
+    await expect(svc.deploy({ templateId: "valheim", name: "V", env: { SERVER_PASS: "abc" } })).rejects.toThrow(/at least 5 characters/);
+    const id = await svc.deploy({ templateId: "minecraft", name: "MC", env: { EULA: "TRUE" } });
+    await expect(svc.updateSettings(id, { env: { MEMORY: "lots" } })).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/look like 2G/) });
+    await expect(svc.updateSettings(id, { env: { DIFFICULTY: "hard" } })).resolves.toEqual({ restarting: true });
+  });
+
+  it("shows a server's player count using the query kind its template names", async () => {
+    const seen: [number, string][] = [];
+    (svc as unknown as { d: { queryPlayers: unknown } }).d.queryPlayers = async (_h: string, port: number, kind: string) => (seen.push([port, kind]), { online: 2, max: 20 });
+    const id = await svc.deploy({ templateId: "minecraft", name: "MC", env: { EULA: "TRUE" } });
+    await svc.deploy({ templateId: "valheim", name: "Val" });
+    const usage = await svc.usage();
+    expect(usage[id].players).toEqual({ online: 2, max: 20 });
+    expect(seen).toContainEqual([25565, "minecraft"]);
+    expect(seen).toContainEqual([2457, "a2s"]);
+  });
+
+  it("moves Satisfactory's ports together when another server already holds 7777", async () => {
+    await svc.deploy({ templateId: "dragonwilds", name: "Dragon", env: { RSDW_OWNER_ID: "abc" } });
+    await svc.deploy({ templateId: "satisfactory", name: "Factory" });
+    const c = [...docker.containers.values()].find((x) => x.spec.name === "gl-factory")!;
+    expect(c.spec.env).toMatchObject({ SERVERGAMEPORT: "7778", SERVERMESSAGINGPORT: "8889" });
+    expect(c.spec.ports.map((p) => `${p.port}/${p.protocol}`)).toEqual(["7778/udp", "7778/tcp", "8889/tcp"]);
+  });
+
+  it("keeps what a template says to leave out of backups out, and puts it back after a restore", async () => {
+    const id = await svc.deploy({ templateId: "satisfactory", name: "Factory" });
+    const data = path.join(dir, "games", "factory");
+    mkdirSync(path.join(data, "saved"), { recursive: true });
+    mkdirSync(path.join(data, "gamefiles"), { recursive: true });
+    writeFileSync(path.join(data, "saved/world.sav"), "save");
+    writeFileSync(path.join(data, "gamefiles/big.bin"), "x".repeat(20_000));
+    const b = await svc.backup(id);
+    expect(b.sizeBytes).toBeLessThan(3000);
+    await svc.restoreBackup(id, b.name);
+    expect(readFileSync(path.join(data, "gamefiles/big.bin"), "utf8")).toHaveLength(20_000);
+    expect(readFileSync(path.join(data, "saved/world.sav"), "utf8")).toBe("save");
   });
 });

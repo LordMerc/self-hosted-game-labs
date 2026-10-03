@@ -114,11 +114,12 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
   const idParam = (req: { params: unknown }) => (req.params as { id: string }).id;
 
   app.get("/api/templates", async () =>
-    templates.map(({ id, name, image, maxPlayers, join, ports, env }) => ({
+    templates.map(({ id, name, image, maxPlayers, notes, join, ports, env }) => ({
       id,
       name,
       image,
       maxPlayers,
+      notes,
       join,
       ports,
       env: Object.entries(env).map(([key, v]) => ({ key, ...v })),

@@ -41,14 +41,25 @@ export function DeployDialog({ template, onClose, onDeployed }: { template: Temp
           <label key={v.key}>
             {v.label}
             {v.required && " *"}
-            <input
-              type={v.secret ? "password" : "text"}
-              value={env[v.key]}
-              placeholder={v.generate ? "Leave empty to generate one" : ""}
-              autoComplete="off"
-              required={v.required}
-              onChange={(e) => setEnv({ ...env, [v.key]: e.target.value })}
-            />
+            {v.choices ? (
+              <select value={env[v.key]} required={v.required} onChange={(e) => setEnv({ ...env, [v.key]: e.target.value })}>
+                {(!v.default || !v.required) && <option value="">{v.required ? "Choose…" : "Default"}</option>}
+                {v.choices.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type={v.secret ? "password" : "text"}
+                value={env[v.key]}
+                placeholder={v.generate ? "Leave empty to generate one" : ""}
+                autoComplete="off"
+                required={v.required}
+                onChange={(e) => setEnv({ ...env, [v.key]: e.target.value })}
+              />
+            )}
             {v.help && <span className="muted">{v.help}</span>}
           </label>
         ))}
@@ -56,6 +67,7 @@ export function DeployDialog({ template, onClose, onDeployed }: { template: Temp
           <span className="muted">Ports (chosen automatically)</span>
           <div className="mono">{plan.map((p) => `${p.port}/${p.protocol}`).join("   ") || "…"}</div>
         </div>
+        {template.notes && <p className="muted wrap">{template.notes}</p>}
         {template.join.method === "server-browser" && <p className="muted">{template.join.instructions}</p>}
         {error && <p className="error">{error}</p>}
         <div className="row end">
