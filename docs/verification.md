@@ -50,3 +50,16 @@ These need real infrastructure and are **unproven**; the matching Milestone 1 ac
 - Dockhand build failed at `RUN npm ci` (exit 1). Reproduced locally by running `npm ci` with no C toolchain on PATH, like `node:22-bookworm-slim`: `better-sqlite3` has a `binding.gyp` and no install script, so npm runs `node-gyp rebuild`, which needs Python and a compiler.
 - Fix: `npm ci --ignore-scripts` (Dockerfile and CI). Verified with no toolchain on PATH: `better-sqlite3` and `argon2` load from their bundled prebuilds, `npm run build` passes, and all 62 tests pass.
 - The Docker image build itself is still not run end to end (no Docker daemon in the sandbox).
+
+## Real Docker daemon, driver level (2026-10-03)
+
+A throwaway `dockerd` (vfs storage, no bridge networking) was started in the sandbox and the real `DockerodeDriver` and panel were run against it with a small busybox-based test image that logs continuously:
+
+- create (labelled), start, `state`, stop, remove: pass
+- log streaming (stdout and stderr, tail plus follow, abort): pass; the log viewer shows live lines in headless Chromium
+- deploy through the UI to Online, then Logs: pass
+- found and fixed: image pull is attempted every deploy and failed for images that only exist locally; now falls back to a local copy if the pull fails
+
+Not covered: port bindings (no bridge networking in the sandbox), the Palworld image, UPnP, Cloudflare. The maintainer's own homelab run showed Palworld deploying and reporting Online on Docker 29.6.0.
+
+The maintainer then reported that clicking Logs showed a blank screen on their homelab. It did not reproduce here, including with messy and very fast log output. The log viewer is now hardened (batched updates, ANSI/NUL/carriage-return cleanup, connection status) and the app shows an error message instead of a blank page if a component throws.

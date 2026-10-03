@@ -3,7 +3,7 @@ import { z } from "zod";
 const schema = z.object({
   PANEL_PORT: z.coerce.number().int().min(1).max(65535).default(8090),
   DATA_DIR: z.string().default("/data"),
-  GAMESERVERS_DIR: z.string().default("/srv/gameservers"),
+  GAMESERVERS_DIR: z.string().startsWith("/", "GAMESERVERS_DIR must be an absolute path").default("/srv/gameservers"),
   TEMPLATES_DIR: z.string().default("templates"),
   SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters"),
   PUBLIC_HOST: z.string().optional(),

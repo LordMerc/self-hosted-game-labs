@@ -34,7 +34,17 @@ export interface ContainerDriver {
 export class DockerodeDriver implements ContainerDriver {
   constructor(private readonly docker = new Docker({ socketPath: "/var/run/docker.sock" })) {}
 
-  pullImage(image: string, onProgress?: (line: string) => void): Promise<void> {
+  async pullImage(image: string, onProgress?: (line: string) => void): Promise<void> {
+    try {
+      await this.pull(image, onProgress);
+    } catch (e) {
+      // Registry unreachable or a locally built image: carry on if we already have it.
+      const have = await this.docker.getImage(image).inspect().then(() => true, () => false);
+      if (!have) throw e;
+    }
+  }
+
+  private pull(image: string, onProgress?: (line: string) => void): Promise<void> {
     return new Promise((resolve, reject) => {
       this.docker.pull(image, (err: Error | null, stream: NodeJS.ReadableStream) => {
         if (err) return reject(err);
