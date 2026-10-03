@@ -69,7 +69,7 @@ describe("api", () => {
     const codes: number[] = [];
     for (let i = 0; i < 7; i++) codes.push((await app.inject({ method: "POST", url: "/api/auth/login", payload: { password: "bad" } })).statusCode);
     expect(codes.slice(0, 5)).toEqual([401, 401, 401, 401, 401]);
-    expect(codes[6]).toBe(429);
+    expect(codes.slice(5)).toEqual([429, 429]);
   });
 
   it("rejects a forged session cookie", async () => {

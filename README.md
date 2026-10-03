@@ -58,11 +58,13 @@ Everything below is optional. Set variables in a `.env` file next to the compose
 | `HOST_LAN_IP` | Only if the panel guesses your machine's LAN address wrong. |
 | `IMAGE_TAG` | `latest` follows every release; pin a version such as `0.1.0` to stay put. |
 | `BACKUP_KEEP` | Backups kept per server. Default `7`; a backup is never removed before it is 7 days old. |
+| `UPDATE_CHECK=off` | Stops the daily check that asks GitHub whether a newer release exists (it only shows a notice and never updates anything). Also a checkbox in Settings. |
+| `TRUST_PROXY`, `PANEL_HOST` | Only if you put the panel behind a reverse proxy; see the guide below. |
 | `PORT_CHECK=off` | Removes the outside port check, which otherwise sends your public IP and one port to check-host.net when you press Run. |
 
 The full list, with comments, is in [.env.example](.env.example).
 
-**Do this before exposing anything:** the panel has access to the Docker socket, which is root-equivalent control of the host. Keep it on your LAN or behind a VPN such as Tailscale. Never port forward the panel itself. The first-run password screen is open to anyone who can reach the port until you complete it, so do it right after starting the container.
+**Do this before exposing anything:** the panel has access to the Docker socket, which is root-equivalent control of the host. Keep it on your LAN or behind a VPN such as Tailscale. Never port forward the panel itself. The first-run password screen is open to anyone who can reach the port until you complete it, so do it right after starting the container. Repeated wrong passwords lock a visitor out. If you want a web address for the panel, [Exposing the panel safely](docs/exposing-the-panel.md) covers HTTPS with Caddy, Nginx or Cloudflare Tunnel, and what the game ports need.
 
 ### Prefer to build from source?
 
