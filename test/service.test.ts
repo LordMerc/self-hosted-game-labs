@@ -432,3 +432,80 @@ describe("data folder owner", () => {
     expect(called).toBe(false);
   });
 });
+
+describe("server page: detail, settings, console", () => {
+  it("shows editable settings without leaking secrets", async () => {
+    const id = await deploy("Alpha", { env: { SERVER_NAME: "Hello", SERVER_PASSWORD: "hunter2" } });
+    const d = await svc.detail(id);
+    const byKey = Object.fromEntries(d.env.map((e) => [e.key, e]));
+    expect(byKey.SERVER_NAME).toMatchObject({ value: "Hello", secret: false });
+    expect(byKey.SERVER_PASSWORD).toMatchObject({ value: null, secret: true, isSet: true });
+    expect(JSON.stringify(d)).not.toContain("hunter2");
+    expect(d.console?.examples.length).toBeGreaterThan(0);
+    expect(d.server.id).toBe(id);
+  });
+
+  it("a name-only change is instant and does not touch the container", async () => {
+    const id = await deploy("Alpha");
+    const before = docker.containers.size;
+    expect(await svc.updateSettings(id, { name: "Renamed" })).toEqual({ restarting: false });
+    expect((await svc.list()).find((s) => s.id === id)!.name).toBe("Renamed");
+    expect(docker.containers.size).toBe(before);
+    expect(docker.pulled).toHaveLength(1); // only the deploy pulled
+  });
+
+  it("changing a setting recreates the container with the new value, keeps data and ports, and does not pull again", async () => {
+    const id = await deploy("Alpha");
+    const dataFile = path.join(dir, "games", "alpha", "palworld", "keep.txt");
+    mkdirSync(path.dirname(dataFile), { recursive: true });
+    writeFileSync(dataFile, "world");
+    const portsBefore = (await svc.list())[0].ports;
+    expect(await svc.updateSettings(id, { env: { SERVER_NAME: "New name" } })).toEqual({ restarting: true });
+    expect(docker.containers.size).toBe(1);
+    expect([...docker.containers.values()][0].spec.env.SERVER_NAME).toBe("New name");
+    const s = (await svc.list())[0];
+    expect(s.status).toBe("online");
+    expect(s.ports).toEqual(portsBefore);
+    expect(readFileSync(dataFile, "utf8")).toBe("world");
+    expect(docker.pulled).toHaveLength(1);
+  });
+
+  it("leaves a setting alone when it is not sent, clears an optional one when empty, and makes a new generated password when emptied", async () => {
+    const id = await deploy("Alpha", { env: { SERVER_PASSWORD: "hunter2", SERVER_NAME: "Keep me" } });
+    const adminBefore = svc.secret(id, "ADMIN_PASSWORD");
+    await svc.updateSettings(id, { env: { SERVER_PASSWORD: "" } });
+    expect(() => svc.secret(id, "SERVER_PASSWORD")).not.toThrow();
+    expect(svc.secret(id, "SERVER_PASSWORD")).toBe("");
+    expect(svc.secret(id, "ADMIN_PASSWORD")).toBe(adminBefore);
+    await svc.updateSettings(id, { env: { ADMIN_PASSWORD: "" } });
+    expect(svc.secret(id, "ADMIN_PASSWORD")).not.toBe(adminBefore);
+    expect(svc.secret(id, "ADMIN_PASSWORD").length).toBeGreaterThan(8);
+  });
+
+  it("rejects unknown settings, empty required ones, bad names, and changes while starting", async () => {
+    const dragon = await svc.deploy({ templateId: "dragonwilds", name: "Dragon", env: { RSDW_OWNER_ID: "abc" } });
+    await expect(svc.updateSettings(dragon, { env: { RSDW_OWNER_ID: "" } })).rejects.toThrow(/required/);
+    await expect(svc.updateSettings(dragon, { env: { NOPE: "x" } })).rejects.toThrow(/Unknown setting/);
+    await expect(svc.updateSettings(dragon, { name: "  " })).rejects.toThrow(/name/);
+    const id = await deploy("Alpha");
+    (svc as unknown as { setStatus: (i: string, s: string) => void }).setStatus(id, "updating");
+    await expect(svc.updateSettings(id, { name: "x" })).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("runs a console command as one argument inside the container, only while running", async () => {
+    const id = await deploy("Alpha");
+    const r = await svc.runConsole(id, "Broadcast hello there; rm -rf /");
+    expect(docker.execLog.at(-1)).toEqual(["rcon-cli", "Broadcast hello there; rm -rf /"]);
+    expect(r.output).toMatch(/^ran rcon-cli/);
+    await expect(svc.runConsole(id, "   ")).rejects.toThrow(/Type a command/);
+    await expect(svc.runConsole(id, "a\nb")).rejects.toThrow(/one line/);
+    await svc.stop(id);
+    await expect(svc.runConsole(id, "Save")).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("has no console for a game without one", async () => {
+    const id = await svc.deploy({ templateId: "dragonwilds", name: "Dragon", env: { RSDW_OWNER_ID: "abc" } });
+    expect((await svc.detail(id)).console).toBeNull();
+    await expect(svc.runConsole(id, "Save")).rejects.toMatchObject({ status: 404 });
+  });
+});
