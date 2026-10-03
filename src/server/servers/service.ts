@@ -21,6 +21,7 @@ import { buildCustomTemplate, checkCustomInput, isCustomId, type CustomInput } f
 import type { TcpProbe } from "../reachability.js";
 import { CareStore, compareVersions, dayKey, dockerHubTags, dueStatus, isDockerHubImage, newestTag, repoOf, tagOf, type CareSettings, type TagLister, type UpdateCheck } from "../care.js";
 import { queryMinecraft } from "../players/minecraft.js";
+import { parsePalworldMetrics } from "../players/palworld.js";
 import type { NotifyEvent, NotifySink } from "../notifications/notifier.js";
 import { slugify, uniqueSlug } from "../slug.js";
 import { checkCpus, checkMemory, limitWarnings, type Limits } from "./limits.js";
@@ -818,6 +819,11 @@ export class ServerService {
   private async queryServerPlayers(r: typeof schema.servers.$inferSelect, ports: (typeof schema.serverPorts.$inferSelect)[]): Promise<PlayerCount | null> {
     const queryPlayers = this.d.queryPlayers ?? ((host: string, port: number, kind: "a2s" | "minecraft") => (kind === "minecraft" ? queryMinecraft(host, port) : queryA2s(host, port)));
     const tpl = this.d.templates.find((x) => x.id === r.templateId);
+    if (tpl?.playerCount) {
+      // The game has no usable query port: ask it from inside its own container, so nothing extra is published.
+      const res = r.containerId ? await this.d.docker.exec(r.containerId, tpl.playerCount.exec, { timeoutMs: 4000 }).catch(() => null) : null;
+      return res?.exitCode === 0 ? parsePalworldMetrics(res.output) : null;
+    }
     const q = tpl?.ports.find((p) => p.query !== "none");
     const mine = q && ports.find((p) => p.serverId === r.id && p.name === q.name);
     return mine ? queryPlayers("127.0.0.1", mine.port, q!.query as "a2s" | "minecraft").catch(() => null) : null;

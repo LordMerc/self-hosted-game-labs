@@ -14,7 +14,7 @@ Panel and auth, templates and port allocation, deploy / start / stop / restart /
 
 ## Not needed for the MVP, planned next
 
-- Header stats: CPU, memory, storage and network are done, plus per-server CPU and memory. Live player counts work for games that answer the Steam A2S query (Palworld, unverified on a real server); other games need their own query
+- Header stats: CPU, memory, storage and network are done, plus per-server CPU and memory. Live player counts work for Valheim (Steam A2S query), Minecraft and Palworld (the game's REST API, because its A2S port never answers); Dragonwilds, Satisfactory and Terraria have no query and say so
 - Server page: config editor and console are done (open a server's name); ports editing is done too
 - Templates: Palworld, Dragonwilds, Minecraft (Java), Valheim, Satisfactory, Terraria and a Custom Docker image option are in. More games each need verifying against their image first (see verification.md for what was and was not run)
 - Backups: manual backup, restore (with a safety copy) and delete are done. Scheduled (automatic) backups are done too. Daily restarts (with an in-game warning where the game allows), update checks, applying updates after a backup and automatic updates are built, with Palworld pinned to `v2.8.0`; none of them has run on the real homelab yet, see [verification.md](verification.md)

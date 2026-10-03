@@ -289,6 +289,7 @@ describe("usage", () => {
     const a = await deploy("Alpha");
     const b = await deploy("Bravo");
     await svc.stop(b);
+    docker.execReply = () => (playersAnswer ? '{"currentplayernum": 4, "maxplayernum": 32}' : ""); // Palworld answers through its REST API
     const u = await svc.usage();
     expect(Object.keys(u)).toEqual([a]);
     expect(u[a].players).toEqual({ online: 4, max: 32 });
@@ -640,6 +641,15 @@ describe("template settings", () => {
     expect(usage[id].players).toEqual({ online: 2, max: 20 });
     expect(seen).toContainEqual([25565, "minecraft"]);
     expect(seen).toContainEqual([2457, "a2s"]);
+  });
+
+  it("asks Palworld for its player count from inside the container, not over a query port", async () => {
+    docker.execReply = (cmd) => (cmd.join(" ").includes("/v1/api/metrics") ? '{"currentplayernum": 5, "maxplayernum": 32}' : "");
+    const id = await svc.deploy({ templateId: "palworld", name: "Pal" });
+    expect((await svc.usage())[id].players).toEqual({ online: 5, max: 32 });
+    expect(docker.execLog.some((c) => c[0] === "sh" && c.join(" ").includes("/v1/api/metrics"))).toBe(true);
+    docker.execReply = () => "curl: (7) Failed to connect";
+    expect((await svc.usage())[id].players).toBeNull();
   });
 
   it("moves Satisfactory's ports together when another server already holds 7777", async () => {
