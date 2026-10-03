@@ -224,7 +224,7 @@ export class ServerService {
     else void job;
   }
 
-  private async runDeploy(id: string, wantAccess: "private" | "public"): Promise<void> {
+  private async runDeploy(id: string, wantAccess: "private" | "public", opts: { pull?: boolean } = {}): Promise<void> {
     const row = this.row(id);
     const t = this.template(row.templateId);
     const ports = this.ports(id);
@@ -249,8 +249,10 @@ export class ServerService {
         }
         return { host, container: dp.containerPath };
       });
-      this.event(id, "info", `Pulling ${t.image}`);
-      await this.d.docker.pullImage(t.image);
+      if (opts.pull !== false) {
+        this.event(id, "info", `Pulling ${t.image}`);
+        await this.d.docker.pullImage(t.image);
+      }
 
       const containerId = await this.d.docker.create({
         name: `gl-${row.slug}`,
@@ -638,6 +640,95 @@ export class ServerService {
       }),
     );
     return out;
+  }
+
+  // ---------------------------------------------------------- detail page
+
+  /** Everything the server page shows: the list entry, the editable settings (secrets are not sent), and whether there is a console. */
+  async detail(id: string) {
+    const row = this.row(id);
+    const tpl = this.template(row.templateId);
+    const server = (await this.list()).find((s) => s.id === id)!;
+    return {
+      server,
+      env: Object.entries(tpl.env).map(([key, def]) => ({
+        key,
+        label: def.label,
+        help: def.help ?? null,
+        required: def.required,
+        secret: def.secret,
+        generate: def.generate,
+        value: def.secret ? null : (row.env[key] ?? ""),
+        isSet: Boolean(row.env[key]),
+      })),
+      console: tpl.console ? { examples: tpl.console.examples } : null,
+      events: this.events(id, 30).reverse(),
+    };
+  }
+
+  /**
+   * Change the name and/or settings. Settings only take effect in a new container, so a change to them recreates the
+   * container (the world data folder is kept) and the server restarts. A name-only change is instant.
+   * For each setting: left out = unchanged; empty = cleared (or a new random value for a generated password).
+   */
+  async updateSettings(id: string, input: { name?: string; env?: Record<string, string> }): Promise<{ restarting: boolean }> {
+    const row = this.row(id);
+    const tpl = this.template(row.templateId);
+    if (row.status === "deploying" || row.status === "updating") throw new UserError("Wait for the server to finish starting before changing its settings", 409);
+
+    const name = input.name === undefined ? row.name : input.name.trim();
+    if (!name || name.length > 60) throw new UserError("Give the server a name (up to 60 characters)");
+
+    const env = { ...row.env };
+    for (const [key, raw] of Object.entries(input.env ?? {})) {
+      const def = tpl.env[key];
+      if (!def) throw new UserError(`Unknown setting ${key}`, 400, { field: key });
+      let v = String(raw).trim();
+      if (!v && def.generate) v = randomSecret();
+      if (!v && def.required) throw new UserError(`${def.label} is required`, 400, { field: key });
+      if (v) env[key] = v;
+      else delete env[key];
+    }
+    const envChanged = JSON.stringify(Object.entries(env).sort()) !== JSON.stringify(Object.entries(row.env).sort());
+
+    this.d.db.update(schema.servers).set({ name, env }).where(eq(schema.servers.id, id)).run();
+    if (!envChanged) {
+      if (name !== row.name) this.event(id, "info", "Renamed");
+      return { restarting: false };
+    }
+    this.event(id, "info", "Settings changed; recreating the container to apply them (world data is kept)");
+    if (row.containerId) {
+      this.setStatus(id, "updating");
+      try {
+        await this.d.docker.remove(row.containerId);
+      } catch (e) {
+        this.setStatus(id, row.status, null);
+        throw new UserError(`Could not stop the old container: ${e instanceof Error ? e.message : String(e)}`, 502);
+      }
+    } else {
+      this.setStatus(id, "deploying");
+    }
+    const job = this.runDeploy(id, row.access, { pull: false });
+    if (this.d.background === false) await job;
+    else void job;
+    return { restarting: true };
+  }
+
+  /** Run one console command inside the game's container (for example RCON). The command is a single argument, never shell text. */
+  async runConsole(id: string, command: string): Promise<{ output: string; exitCode: number | null }> {
+    const row = this.row(id);
+    const tpl = this.template(row.templateId);
+    if (!tpl.console) throw new UserError("This game has no console", 404);
+    const cmd = command.trim();
+    if (!cmd || cmd.length > 500 || /[\u0000-\u001f]/.test(cmd)) throw new UserError("Type a command (up to 500 characters, one line)");
+    if (!row.containerId || (await this.d.docker.state(row.containerId)) !== "running") throw new UserError("Start the server first", 409);
+    try {
+      const r = await this.d.docker.exec(row.containerId, [...tpl.console.exec, cmd], { timeoutMs: 15_000 });
+      this.event(id, "info", `Console: ${cmd.slice(0, 80)}`);
+      return { output: r.output.replace(/\u001b\[[0-9;]*[A-Za-z]/g, "").trim(), exitCode: r.exitCode };
+    } catch (e) {
+      throw new UserError(`The command did not run: ${e instanceof Error ? e.message : String(e)}`, 502);
+    }
   }
 
   // --------------------------------------------------------------- backups
