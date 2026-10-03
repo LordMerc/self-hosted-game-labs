@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, type DnsStatus, type TokenCheck } from "./api";
 import { Nav, type Page } from "./Nav";
+import { UpdatesSettings } from "./UpdateNotice";
 
 export function Settings({ onLogout, onNavigate }: { onLogout: () => void; onNavigate: (p: Page) => void }) {
   const [status, setStatus] = useState<DnsStatus | null>(null);
@@ -52,6 +53,8 @@ export function Settings({ onLogout, onNavigate }: { onLogout: () => void; onNav
             status && <DnsForm status={status} onSaved={() => (setEditing(false), load())} onCancel={status.configured ? () => setEditing(false) : undefined} />
           )}
         </section>
+
+        <UpdatesSettings />
       </main>
     </div>
   );

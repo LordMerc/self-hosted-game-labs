@@ -5,7 +5,7 @@ import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { isCustomId } from "./servers/custom.js";
 import { z } from "zod";
-import type { Config } from "./config.js";
+import { parseTrustProxy, type Config } from "./config.js";
 import type { Db } from "./db/index.js";
 import type { GameTemplate } from "../shared/template.js";
 import type { ContainerDriver } from "./docker/driver.js";
@@ -13,7 +13,8 @@ import { ServerService, UserError } from "./servers/service.js";
 import { CloudflareClient } from "./dns/cloudflare.js";
 import type { DnsSettings } from "./dns/settings.js";
 import { hasAdminPassword, setAdminPassword, verifyAdminPassword } from "./auth/password.js";
-import { LoginRateLimiter } from "./auth/rate-limit.js";
+import { LoginGuard, visitorKey, type LoginGuardOptions } from "./auth/rate-limit.js";
+import { runningVersion, UpdateChecker } from "./updates.js";
 import { HostStats } from "./host-stats.js";
 import { DEFAULT_INSTANCE, names } from "./instance.js";
 
@@ -31,22 +32,39 @@ export interface AppDeps {
   inspectToken?: typeof CloudflareClient.inspect;
   hostStats?: HostStats;
   webRoot?: string;
+  /** Injectable for tests. */
+  updates?: UpdateChecker;
+  loginGuard?: LoginGuardOptions;
 }
 
 const passwordBody = z.object({ password: z.string().min(1) });
 const newPasswordBody = z.object({ password: z.string().min(10, "Use at least 10 characters") });
 
-export function buildApp({ config, db, templates, service, docker, dnsSettings, inspectToken = CloudflareClient.inspect, hostStats = new HostStats([config.GAMESERVERS_DIR, config.DATA_DIR]), webRoot }: AppDeps): FastifyInstance {
-  const app = Fastify({ logger: false });
-  const limiter = new LoginRateLimiter();
+export function buildApp({ config, db, templates, service, docker, dnsSettings, inspectToken = CloudflareClient.inspect, hostStats = new HostStats([config.GAMESERVERS_DIR, config.DATA_DIR]), webRoot, updates = new UpdateChecker(db, { current: runningVersion(config.APP_VERSION), envEnabled: config.UPDATE_CHECK === "on" }), loginGuard }: AppDeps): FastifyInstance {
+  // Behind a reverse proxy the connection comes from the proxy; TRUST_PROXY says whose word to take for the visitor's address and HTTPS.
+  const app = Fastify({ logger: false, trustProxy: parseTrustProxy(config.TRUST_PROXY) });
+  const guard = new LoginGuard(loginGuard);
 
   app.register(cookie, { secret: config.SESSION_SECRET });
 
+  // Headers that cost nothing and close off framing, sniffing and caching of API answers.
+  app.addHook("onSend", async (req, reply) => {
+    reply.header("x-content-type-options", "nosniff");
+    reply.header("x-frame-options", "DENY");
+    reply.header("referrer-policy", "no-referrer");
+    reply.header("content-security-policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+    if (req.url.startsWith("/api/")) reply.header("cache-control", "no-store");
+    // Only meaningful (and only honoured by browsers) over HTTPS; tells the browser never to try plain HTTP for this name again.
+    if (req.protocol === "https" && config.COOKIE_SECURE !== "never") reply.header("strict-transport-security", "max-age=15552000");
+  });
+
+  const cookieSecure = config.COOKIE_SECURE === "auto" ? ("auto" as const) : config.COOKIE_SECURE === "always";
   const startSession = (reply: import("fastify").FastifyReply) =>
     reply.setCookie(SESSION_COOKIE, String(Date.now() + SESSION_TTL_MS), {
       path: "/",
       httpOnly: true,
       sameSite: "strict",
+      secure: cookieSecure,
       signed: true,
       maxAge: SESSION_TTL_MS / 1000,
     });
@@ -92,12 +110,22 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
   });
 
   app.post("/api/auth/login", async (req, reply) => {
-    if (!limiter.attempt(req.ip)) return reply.code(429).send({ error: "too many attempts, try again in a minute" });
+    const visitor = visitorKey(req.ip);
+    const verdict = guard.check(visitor);
+    if (!verdict.allowed) {
+      const minutes = Math.ceil(verdict.retryAfterSec / 60);
+      const wait = minutes <= 1 ? "a minute" : `${minutes} minutes`;
+      reply.header("retry-after", String(verdict.retryAfterSec));
+      return reply.code(429).send({
+        error: verdict.scope === "visitor" ? `Too many wrong passwords. Try again in ${wait}.` : `Sign-in is paused for ${wait} because of many failed attempts from different places.`,
+      });
+    }
     const body = passwordBody.safeParse(req.body);
     if (!body.success || !(await verifyAdminPassword(db, body.data.password))) {
+      guard.fail(visitor);
       return reply.code(401).send({ error: "incorrect password" });
     }
-    limiter.reset(req.ip);
+    guard.succeed(visitor);
     startSession(reply);
     return { ok: true };
   });
@@ -284,6 +312,21 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
     if (dnsSettings.status().source === "env") throw new UserError("DNS is set by environment variables and can't be removed here", 409);
     dnsSettings.clear();
     return { ok: true };
+  });
+
+  // "New version available" notice. Reading this never touches the network; the daily check runs from index.ts.
+  app.get("/api/updates", async () => updates.state());
+  app.put("/api/updates/settings", async (req) => {
+    const body = z.object({ enabled: z.boolean() }).safeParse(req.body);
+    if (!body.success) throw new UserError("enabled must be true or false");
+    if (config.UPDATE_CHECK === "off") throw new UserError("Update checks are turned off by the UPDATE_CHECK environment variable.", 409);
+    updates.setEnabled(body.data.enabled);
+    if (body.data.enabled) await updates.checkIfDue();
+    return updates.state();
+  });
+  app.post("/api/updates/check", async () => {
+    const ran = await updates.checkNow();
+    return { ran, ...updates.state() };
   });
 
   app.get("/api/network/diagnostics", async () => service.diagnostics());

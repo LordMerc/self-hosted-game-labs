@@ -14,6 +14,7 @@ import { detectLanIp } from "./lan-ip.js";
 import { HostStats } from "./host-stats.js";
 import { CheckHostProbe } from "./reachability.js";
 import { loadTemplates } from "./templates/loader.js";
+import { runningVersion, UpdateChecker } from "./updates.js";
 
 /** Sessions need a stable secret. Use SESSION_SECRET if given, otherwise generate one once and keep it in the data dir. */
 function sessionSecret(): string | undefined {
@@ -38,7 +39,8 @@ const dnsSettings = new DnsSettings(db, config);
 const service = new ServerService({ config, db, templates, docker, connectivity, dnsProvider: () => dnsSettings.current(), portProbe: config.PORT_CHECK === "on" ? new CheckHostProbe() : null });
 const hostStats = new HostStats([config.GAMESERVERS_DIR, config.DATA_DIR]);
 hostStats.snapshot(); // first sample, so CPU and network rates exist by the time the page asks
-const app = buildApp({ config, db, templates, service, docker, dnsSettings, hostStats, webRoot: "dist/web" });
+const updates = new UpdateChecker(db, { current: runningVersion(config.APP_VERSION), envEnabled: config.UPDATE_CHECK === "on" });
+const app = buildApp({ config, db, templates, service, docker, dnsSettings, hostStats, updates, webRoot: "dist/web" });
 
 const RECONCILE_MS = 5 * 60 * 1000;
 let reconciling = false;
@@ -55,9 +57,9 @@ const reconcile = async () => {
   }
 };
 
-await app.listen({ port: config.PANEL_PORT, host: "0.0.0.0" });
+await app.listen({ port: config.PANEL_PORT, host: config.PANEL_HOST });
 console.log(
-  `Self Hosted Game Labs on :${config.PANEL_PORT} | ${templates.length} templates | connectivity=${connectivity.kind} | dns=${dnsSettings.status().configured ? "cloudflare" : "off"}`,
+  `Self Hosted Game Labs on ${config.PANEL_HOST}:${config.PANEL_PORT} | ${templates.length} templates | connectivity=${connectivity.kind} | dns=${dnsSettings.status().configured ? "cloudflare" : "off"}`,
 );
 
 const scheduledBackups = async () => {
@@ -73,3 +75,8 @@ setTimeout(reconcile, 3000);
 setTimeout(scheduledBackups, 60_000).unref();
 setInterval(scheduledBackups, 10 * 60 * 1000).unref();
 setInterval(reconcile, RECONCILE_MS).unref();
+
+// Looks for a newer release at most once a day (the check itself decides whether one is due; this just asks hourly).
+const checkForUpdates = () => updates.checkIfDue().catch(() => undefined);
+setTimeout(checkForUpdates, 30_000).unref();
+setInterval(checkForUpdates, 60 * 60 * 1000).unref();

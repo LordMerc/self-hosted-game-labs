@@ -28,7 +28,9 @@ The compose file is `compose.yaml`, so Git-based stack deploys (Dockhand, Portai
 
 Open `http://<server-lan-ip>:8090` and set the admin password on first run.
 
-**Do this before exposing anything:** the panel has access to the Docker socket, which is root-equivalent control of the host. Keep it on your LAN or behind a VPN such as Tailscale. Never port forward the panel itself. The first-run password screen is open to anyone who can reach the port until you complete it, so do it right after starting the container.
+**Do this before exposing anything:** the panel has access to the Docker socket, which is root-equivalent control of the host. Keep it on your LAN or behind a VPN such as Tailscale. Never port forward the panel itself. The first-run password screen is open to anyone who can reach the port until you complete it, so do it right after starting the container. If you want a web address for the panel, [Exposing the panel safely](docs/exposing-the-panel.md) covers HTTPS with Caddy, Nginx or Cloudflare Tunnel, and what the game ports need.
+
+The panel locks out repeated wrong passwords, and once a day it checks GitHub for a newer release and shows a notice (never installing anything). Both are described in that guide; `UPDATE_CHECK=off` or the Settings page turns the check off.
 
 ### Run the published image instead of building
 

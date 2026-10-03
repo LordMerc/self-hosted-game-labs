@@ -57,4 +57,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # Release builds report their version (v1.2.3); every other build says dev-<commit>, so the in-app
+          # "new version available" notice does not compare a development build with a release.
+          build-args: |
+            APP_VERSION=${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('dev-{0}', github.sha) }}
           provenance: false
