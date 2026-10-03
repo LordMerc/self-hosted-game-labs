@@ -490,7 +490,7 @@ export class ServerService {
           public: r.access === "public" && host && gamePort ? `${host}:${gamePort.port}` : null,
           instructions: r.access === "public" && tpl?.join.method === "server-browser" ? (tpl.join.instructions ?? null) : null,
         },
-        pendingRules: rules.filter((x) => x.serverId === r.id && !x.confirmed).map((x) => ({ id: x.id, port: x.port, protocol: x.protocol })),
+        pendingRules: this.d.connectivity.kind !== "manual" ? [] : rules.filter((x) => x.serverId === r.id && !x.confirmed).map((x) => ({ id: x.id, port: x.port, protocol: x.protocol })),
       };
     });
   }
@@ -524,6 +524,14 @@ export class ServerService {
     } catch (e) {
       ipError = e instanceof Error ? e.message : String(e);
     }
+    const mappings: { list: Awaited<ReturnType<typeof connectivity.list>>; error: string | null } = { list: [], error: null };
+    if (connectivity.kind === "upnp") {
+      try {
+        mappings.list = await connectivity.list();
+      } catch (e) {
+        mappings.error = e instanceof Error ? e.message : String(e);
+      }
+    }
     const dnsNow = this.dnsCtx();
     const setting = (k: string) => db.select().from(schema.settings).where(eq(schema.settings.key, k)).get()?.value ?? null;
     return {
@@ -534,8 +542,14 @@ export class ServerService {
       reconcile: { at: setting("reconcile_at"), problems: JSON.parse(setting("reconcile_problems") ?? "[]") as string[] },
       dns: dnsNow ? { host: dnsNow.host, zone: dnsNow.zone, lastUpdate: setting("ddns_updated_at"), lastIp: setting("public_ip") } : null,
       rules: connectivity.kind === "manual" ? rules : [],
-      mappings: connectivity.kind === "upnp" ? await connectivity.list().catch(() => []) : [],
+      mappings: mappings.list,
+      mappingsError: mappings.error,
     };
+  }
+
+  async diagnostics(): Promise<{ provider: string; output: string | null }> {
+    const c = this.d.connectivity;
+    return { provider: c.kind, output: c.diagnose ? await c.diagnose().catch((e: unknown) => `Error: ${e instanceof Error ? e.message : String(e)}`) : null };
   }
 
   confirmRule(ruleId: number, confirmed: boolean) {

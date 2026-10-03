@@ -100,6 +100,10 @@ export class UpnpProvider implements ConnectivityProvider {
     return entries.filter((e) => e.description.startsWith(OWNER_PREFIX)).map(({ port, protocol, description }) => ({ port, protocol, description }));
   }
 
+  async diagnose(): Promise<string> {
+    return (await this.run(["-l"])).trim().slice(0, 4000);
+  }
+
   async externalIp(): Promise<string> {
     const { externalIp } = await this.listAll();
     if (externalIp && externalIp !== "0.0.0.0") return externalIp;

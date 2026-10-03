@@ -22,6 +22,8 @@ export interface ConnectivityProvider {
   /** Mappings owned by Game Labs. */
   list(): Promise<Mapping[]>;
   externalIp(): Promise<string>;
+  /** Raw router reply, for debugging unusual routers. */
+  diagnose?(): Promise<string>;
 }
 
 export const OWNER_PREFIX = "gamelabs:";

@@ -42,6 +42,7 @@ export interface Network {
   dns: { host: string; zone: string | null; lastUpdate: string | null; lastIp: string | null } | null;
   rules: { id: number; port: number; protocol: "tcp" | "udp"; confirmed: boolean; slug: string }[];
   mappings: { port: number; protocol: "tcp" | "udp"; description: string }[];
+  mappingsError: string | null;
 }
 
 export interface AuthStatus {
