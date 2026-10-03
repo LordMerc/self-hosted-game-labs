@@ -213,6 +213,8 @@ dd { margin: 0; text-align: right; display: flex; justify-content: flex-end; ali
 .backup-list .mono { font-size: 0.85rem; word-break: break-all; }
 .dialog .check { display: flex; align-items: center; gap: 0.6rem; }
 .dialog .check input { width: auto; }
+.settings-card .check { display: flex; align-items: center; gap: 0.6rem; }
+.settings-card .check input { width: auto; }
 
 /* Backups page */
 .page-head p { margin: 0.35rem 0 0; }

@@ -113,6 +113,17 @@ export interface DnsStatus {
   tokenSet: boolean;
 }
 
+export type NotifyKind = "online" | "down" | "playerJoin" | "playerLeave" | "backupFailed";
+
+export interface NotificationStatus {
+  configured: boolean;
+  kind: "discord" | "generic" | null;
+  host: string | null;
+  events: Record<NotifyKind, boolean>;
+  lastSentAt: string | null;
+  lastError: string | null;
+}
+
 export type TokenCheck = { valid: false; error: string } | { valid: true; zones: string[]; zonesError: string | null };
 
 export interface Stats {

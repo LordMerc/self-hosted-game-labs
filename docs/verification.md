@@ -194,3 +194,14 @@ Built against fakes (a fake checker in the service and browser tests, and a fake
 ### Not run (environment)
 
 - A real Docker daemon: that Docker accepts these values and kills a container over its memory cap is Docker's documented behaviour but has not been seen on the maintainer's host.
+
+
+## Notifications
+
+Built against fakes: a recording notifier in the service tests, a fake `fetch` for the webhook calls, and a local HTTP server standing in for the webhook in the browser test. Not sent to a real Discord channel: the build sandbox cannot reach Discord.
+
+- **What it does:** Settings → Notifications stores a webhook address encrypted (same scheme as the Cloudflare token), sends a test message on request, and has one checkbox per event. A `discord.com` or `discordapp.com` `/api/webhooks/` address gets an embed with mentions disabled; any other http(s) address gets a plain JSON body (`content`, `text`, `event`, `server`, `title`, `message`, `instance`, `at`).
+- **Events:** online (deploy finished, started, or seen running again), down (a running server stopped or errored without the panel stopping it, a deploy that failed, or a container whose start time changed because Docker restarted it), player joined/left (a changed count from the game's query port, polled every 30 seconds; the first reading is only a baseline), backup failed.
+- **Quiet on purpose:** stop and restart from the panel are not reported as down; messages carry the server name only, never an address or password.
+- **To check on the homelab:** paste a real webhook, press Send test message (expect a green embed in the channel). Stop a game with `docker stop gl-<name>` and expect "went down" within about 30 seconds; start it again for "is online". For a crash, `docker kill gl-<name>` should say "went down", then Docker restarts it and, within the next poll, it should say "online" or "started it again". Join Palworld from the game and expect "1 player joined" (Palworld's A2S count accuracy is itself unverified, see above).
+
