@@ -93,6 +93,21 @@ describe("UpnpProvider", () => {
     expect(calls.some((c) => c.includes("-d"))).toBe(true);
   });
 
+  it("talks to the router directly with -u when upnpc finds it but flags it not connected", async () => {
+    const calls: string[][] = [];
+    const run: UpnpcRunner = async (args) => {
+      calls.push(args);
+      if (args.includes("-u")) return LIST;
+      return " desc: http://192.168.68.1:1900/pwpmr/rootDesc.xml\nFound a (not connected?) IGD : http://192.168.68.1:1900/pwpmr/ctl/IPConn\n";
+    };
+    const p = new UpnpProvider(run, undefined, "192.168.68.61");
+    expect(await p.externalIp()).toBe("203.0.113.7");
+    expect(calls[1]).toEqual(["-m", "192.168.68.61", "-u", "http://192.168.68.1:1900/pwpmr/rootDesc.xml", "-l"]);
+    calls.length = 0;
+    await p.list(); // learned URL is reused straight away
+    expect(calls).toEqual([["-m", "192.168.68.61", "-u", "http://192.168.68.1:1900/pwpmr/rootDesc.xml", "-l"]]);
+  });
+
   it("reads the external IP from the router", async () => {
     expect(await new UpnpProvider(fakeUpnpc().run).externalIp()).toBe("203.0.113.7");
   });
