@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { api, type ServerDetail as Detail, type Stats } from "./api";
 import { Backups } from "./Backups";
+import { PortsCard, Upkeep } from "./Care";
 import { CopyButton } from "./CopyButton";
 import { Hint } from "./Hint";
 import { HiddenIp, isIpAddress } from "./HiddenIp";
@@ -189,6 +190,10 @@ export function ServerDetail({ id, onBack, onLogout, onNavigate }: { id: string;
             </section>
 
             <SettingsForm key={id} detail={detail} disabled={locked} onSaved={load} />
+
+            <Upkeep key={`upkeep-${id}`} detail={detail} disabled={locked} onChanged={load} />
+
+            <PortsCard key={`ports-${id}`} detail={detail} disabled={locked} onChanged={load} />
 
             {detail.console && <Console id={id} examples={detail.console.examples} running={s.status === "online"} />}
 

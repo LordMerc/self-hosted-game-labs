@@ -69,7 +69,22 @@ const scheduledBackups = async () => {
   }
 };
 
+let caring = false;
+const scheduledCare = async () => {
+  if (caring) return;
+  caring = true;
+  try {
+    const done = await service.runScheduledCare();
+    if (done.length > 0) console.log(`scheduled care: ${done.join("; ")}`);
+  } catch (e) {
+    console.error("scheduled care failed:", e);
+  } finally {
+    caring = false;
+  }
+};
+
 setTimeout(reconcile, 3000);
 setTimeout(scheduledBackups, 60_000).unref();
 setInterval(scheduledBackups, 10 * 60 * 1000).unref();
 setInterval(reconcile, RECONCILE_MS).unref();
+setInterval(scheduledCare, 60 * 1000).unref();

@@ -61,7 +61,12 @@ export interface OtherPanelContainer {
 
 /** The small slice of Docker the panel needs. Swapped for a fake in tests. */
 export interface ContainerDriver {
-  pullImage(image: string, onProgress?: (line: string) => void): Promise<void>;
+  /** Pulls the image. Returns false when the registry could not be reached and the copy already on the host was used. */
+  pullImage(image: string, onProgress?: (line: string) => void): Promise<boolean>;
+  /** The id of the image a tag points at on this host, or null when it has not been pulled. */
+  imageId(image: string): Promise<string | null>;
+  /** The id of the image a container was created from, or null when the container is missing. */
+  containerImageId(id: string): Promise<string | null>;
   /** Returns the container id. Idempotent by name: an existing managed container with that name is reused. */
   create(spec: ContainerSpec): Promise<string>;
   start(id: string): Promise<void>;
@@ -84,14 +89,24 @@ export interface ContainerDriver {
 export class DockerodeDriver implements ContainerDriver {
   constructor(private readonly docker = new Docker({ socketPath: "/var/run/docker.sock" })) {}
 
-  async pullImage(image: string, onProgress?: (line: string) => void): Promise<void> {
+  async pullImage(image: string, onProgress?: (line: string) => void): Promise<boolean> {
     try {
       await this.pull(image, onProgress);
+      return true;
     } catch (e) {
       // Registry unreachable or a locally built image: carry on if we already have it.
       const have = await this.docker.getImage(image).inspect().then(() => true, () => false);
       if (!have) throw e;
+      return false;
     }
+  }
+
+  async imageId(image: string): Promise<string | null> {
+    return this.docker.getImage(image).inspect().then((i) => i.Id, () => null);
+  }
+
+  async containerImageId(id: string): Promise<string | null> {
+    return this.docker.getContainer(id).inspect().then((i) => i.Image, () => null);
   }
 
   private pull(image: string, onProgress?: (line: string) => void): Promise<void> {

@@ -19,9 +19,13 @@ const probeCalls: [string, number][] = [];
 let probeAnswer: { state: "open" | "closed" | "unknown"; detail: string } = { state: "open", detail: "Connected from 3 of 3 locations" };
 const probe: TcpProbe = { name: "fake-checker", check: async (ip, port) => (probeCalls.push([ip, port]), probeAnswer) };
 let hostBusy: Set<`${number}/${"tcp" | "udp"}`>;
+let hubTags: string[] = [];
+let hubFails = false;
 
 beforeEach(() => {
   probeCalls.length = 0;
+  hubTags = ["latest", "v2.8.0", "v2.8", "dev"];
+  hubFails = false;
   probeAnswer = { state: "open", detail: "Connected from 3 of 3 locations" };
   dir = mkdtempSync(path.join(os.tmpdir(), "gl-"));
   const config = loadConfig({
@@ -47,6 +51,10 @@ beforeEach(() => {
     background: false,
     stableMs: 0,
     portProbe: probe,
+    tagLister: async () => {
+      if (hubFails) throw new Error("Docker Hub answered 503");
+      return hubTags;
+    },
     queryPlayers: async () => (playersAnswer ? { online: 4, max: 32 } : null),
   });
 });
@@ -777,5 +785,196 @@ describe("outside port check", () => {
     (svc as unknown as { d: { portProbe: null } }).d.portProbe = null;
     await expect(svc.checkReachability()).rejects.toMatchObject({ status: 409 });
     expect(svc.portCheckInfo()).toEqual({ enabled: false, via: null });
+  });
+});
+
+describe("daily restarts", () => {
+  const at = (h: number, m: number, day = 3) => new Date(2026, 9, day, h, m, 0);
+  const warnings = () => docker.execLog.filter((c) => c[1]?.startsWith("Broadcast")).map((c) => c[1]);
+  const startsOf = (id: string) => docker.starts.get(svc.getRow(id)!.containerId!) ?? 0;
+  const events = (id: string) => svc.events(id).map((e) => e.message);
+
+  it("warns the players in the game, then restarts once at the chosen time, and again the next day", async () => {
+    const id = await deploy();
+    svc.setCare(id, { restart: { enabled: true, time: "04:00", warnMinutes: 5 } });
+    const before = startsOf(id);
+    expect(await svc.runScheduledCare(at(3, 50))).toEqual([]);
+    await svc.runScheduledCare(at(3, 55));
+    await svc.runScheduledCare(at(3, 55)); // the same minute is not announced twice
+    await svc.runScheduledCare(at(3, 59));
+    expect(warnings()).toEqual(["Broadcast Server_restarting_in_5_minutes.", "Broadcast Server_restarting_in_1_minute."]);
+    expect(startsOf(id)).toBe(before);
+    expect(await svc.runScheduledCare(at(4, 0))).toEqual(["our-palworld: restarted"]);
+    expect(startsOf(id)).toBe(before + 1);
+    expect(await svc.runScheduledCare(at(4, 1))).toEqual([]);
+    expect(events(id)).toContain("Scheduled restart (daily at 04:00)");
+    expect(await svc.runScheduledCare(at(4, 0, 4))).toEqual(["our-palworld: restarted"]);
+  });
+
+  it("restarts without a warning for a game that has no way to broadcast, and when no warning is wanted", async () => {
+    const id = await svc.deploy({ templateId: "dragonwilds", name: "Dragons", env: { RSDW_OWNER_ID: "abc" } });
+    svc.setCare(id, { restart: { enabled: true, time: "04:00", warnMinutes: 0 } });
+    await svc.runScheduledCare(at(3, 55));
+    await svc.runScheduledCare(at(3, 59));
+    expect(warnings()).toEqual([]);
+    expect(await svc.runScheduledCare(at(4, 0))).toHaveLength(1);
+  });
+
+  it("does not restart a stopped server, does not catch up after an hour, and leaves a server with no schedule alone", async () => {
+    const stopped = await deploy("Stopped");
+    svc.setCare(stopped, { restart: { enabled: true, time: "04:00", warnMinutes: 5 } });
+    await svc.stop(stopped);
+    expect(await svc.runScheduledCare(at(4, 0))).toEqual([]);
+    expect(await svc.runScheduledCare(at(4, 1))).toEqual([]); // marked for today, so starting it later is not met with a restart
+    const late = await deploy("Late");
+    svc.setCare(late, { restart: { enabled: true, time: "04:00", warnMinutes: 5 } });
+    expect(await svc.runScheduledCare(at(5, 30))).toEqual([]);
+    expect(await svc.runScheduledCare(at(4, 20))).toEqual(["late: restarted"]); // within the hour: still runs
+    const plain = await deploy("Plain");
+    const n = startsOf(plain);
+    await svc.runScheduledCare(at(4, 0));
+    expect(startsOf(plain)).toBe(n);
+  });
+
+  it("checks the settings and keeps them across a read", async () => {
+    const id = await deploy();
+    expect(() => svc.setCare(id, { restart: { enabled: true, time: "25:00" } })).toThrow(UserError);
+    expect(() => svc.setCare(id, { restart: { enabled: true, time: "04:00", warnMinutes: 7 } })).toThrow(/0, 1, 5, 10 or 15/);
+    svc.setCare(id, { restart: { enabled: true, time: "03:30", warnMinutes: 10 }, update: { auto: true, time: "06:15" } });
+    const info = (await svc.detail(id)).care;
+    expect(info.settings).toEqual({ restart: { enabled: true, time: "03:30", warnMinutes: 10 }, update: { auto: true, time: "06:15" } });
+    expect(info.canWarn).toBe(true);
+    await svc.remove(id);
+    await expect(svc.detail(id)).rejects.toBeInstanceOf(UserError);
+  });
+});
+
+describe("updates", () => {
+  const at = (h: number, m: number) => new Date(2026, 9, 3, h, m, 0);
+
+  it("runs the pinned Palworld version and says when a newer version tag exists", async () => {
+    const id = await deploy();
+    expect([...docker.containers.values()][0].spec.image).toBe("thijsvanloef/palworld-server-docker:v2.8.0");
+    const same = await svc.checkUpdate(id);
+    expect(same).toMatchObject({ available: false, via: "tag", current: "v2.8.0" });
+    expect((await svc.list())[0].update).toBeNull();
+    hubTags = ["latest", "v2.8.0", "v2.9.1", "v2.9.0", "v2.9.1-wine", "dev"];
+    const newer = await svc.checkUpdate(id);
+    expect(newer).toMatchObject({ available: true, latest: "v2.9.1", note: "Version v2.9.1 is out. This server runs v2.8.0." });
+    expect((await svc.list())[0].update).toEqual({ to: "v2.9.1" });
+  });
+
+  it("applies a newer version after a backup, recreates the container on it, and keeps the world", async () => {
+    const id = await deploy();
+    writeFileSync(path.join(dir, "games", "our-palworld", "world.sav"), "world");
+    hubTags = ["v2.8.0", "v2.9.0"];
+    await svc.checkUpdate(id);
+    await svc.applyUpdate(id);
+    expect(svc.listBackups(id)).toHaveLength(1);
+    expect(docker.containers.size).toBe(1);
+    const [c] = [...docker.containers.values()];
+    expect(c.spec.image).toBe("thijsvanloef/palworld-server-docker:v2.9.0");
+    expect(docker.pulled).toContain("thijsvanloef/palworld-server-docker:v2.9.0");
+    expect(existsSync(path.join(dir, "games", "our-palworld", "world.sav"))).toBe(true);
+    const [s] = await svc.list();
+    expect(s.status).toBe("online");
+    expect(s.update).toBeNull();
+    expect((await svc.detail(id)).care.image).toMatchObject({ tag: "v2.9.0", moved: true });
+    // a later settings change recreates the container on the same version, not the template's
+    await svc.updateSettings(id, { env: { SERVER_NAME: "Renamed" } });
+    expect([...docker.containers.values()][0].spec.image).toBe("thijsvanloef/palworld-server-docker:v2.9.0");
+  });
+
+  it("refuses to apply when no update was found, and explains a failed version look-up", async () => {
+    const id = await deploy();
+    await expect(svc.applyUpdate(id)).rejects.toMatchObject({ status: 409 });
+    hubFails = true;
+    await expect(svc.checkUpdate(id)).rejects.toMatchObject({ status: 502, message: expect.stringContaining("Docker Hub answered 503") });
+  });
+
+  it("for an image with no version tags, pulls it and compares builds", async () => {
+    const id = await svc.deploy({ templateId: "minecraft", name: "MC", env: { EULA: "TRUE" } });
+    expect(await svc.checkUpdate(id)).toMatchObject({ available: false, via: "image", note: expect.stringContaining("newest build") });
+    docker.remote.set("itzg/minecraft-server:latest", "sha256:b2");
+    expect(await svc.checkUpdate(id)).toMatchObject({ available: true, via: "image" });
+    await svc.applyUpdate(id);
+    expect(docker.containers.size).toBe(1);
+    expect([...docker.containers.values()][0].imageId).toBe("sha256:b2");
+    expect(await svc.checkUpdate(id)).toMatchObject({ available: false });
+    docker.registryDown = true;
+    await expect(svc.checkUpdate(id)).rejects.toMatchObject({ status: 502, message: expect.stringContaining("Could not reach the image registry") });
+  });
+
+  it("updates by itself at the chosen time, once a day, and only when there is something newer", async () => {
+    const id = await svc.deploy({ templateId: "minecraft", name: "MC", env: { EULA: "TRUE" } });
+    svc.setCare(id, { update: { auto: true, time: "05:00" } });
+    expect(await svc.runScheduledCare(at(4, 59))).toEqual([]);
+    expect(await svc.runScheduledCare(at(5, 0))).toEqual([]); // nothing newer
+    docker.remote.set("itzg/minecraft-server:latest", "sha256:b2");
+    expect(await svc.runScheduledCare(at(5, 1))).toEqual([]); // already looked today
+    expect([...docker.containers.values()][0].imageId).toBe("sha256:a1");
+    const next = new Date(2026, 9, 4, 5, 0, 0);
+    expect(await svc.runScheduledCare(next)).toEqual(["mc: updated"]);
+    expect([...docker.containers.values()][0].imageId).toBe("sha256:b2");
+    expect(svc.events(id).map((e) => e.message).some((m) => m.startsWith("Updating to"))).toBe(true);
+  });
+
+  it("looks for a newer version tag by itself every few hours, without downloading anything", async () => {
+    await deploy();
+    const pulls = docker.pulled.length;
+    hubTags = ["v2.8.0", "v2.9.0"];
+    await svc.runScheduledCare(at(10, 0));
+    expect((await svc.list())[0].update).toEqual({ to: "v2.9.0" });
+    expect(docker.pulled.length).toBe(pulls);
+    hubTags = ["v2.8.0", "v3.0.0"];
+    await svc.runScheduledCare(at(10, 30)); // too soon to ask again
+    expect((await svc.list())[0].update).toEqual({ to: "v2.9.0" });
+    await svc.runScheduledCare(at(17, 0));
+    expect((await svc.list())[0].update).toEqual({ to: "v3.0.0" });
+  });
+});
+
+describe("changing a server's ports", () => {
+  it("moves every port by the same amount, recreates the container, and keeps the world", async () => {
+    const id = await deploy();
+    writeFileSync(path.join(dir, "games", "our-palworld", "world.sav"), "world");
+    const r = await svc.changePorts(id, 9000);
+    expect(r).toEqual({ restarting: true });
+    const [s] = await svc.list();
+    expect(s.ports.map((p) => p.port)).toEqual([9000, 27015 + 789]);
+    expect(s.status).toBe("online");
+    const [c] = [...docker.containers.values()];
+    expect(c.spec.env).toMatchObject({ PORT: "9000", QUERY_PORT: String(27015 + 789) });
+    expect(c.spec.ports.map((p) => p.port)).toEqual([9000, 27804]);
+    expect(existsSync(path.join(dir, "games", "our-palworld", "world.sav"))).toBe(true);
+    expect(await svc.changePorts(id, 9000)).toEqual({ restarting: false });
+  });
+
+  it("closes the old router rules and opens the new ones for a public server", async () => {
+    const id = await deploy("Pal", { access: "public" });
+    expect([...net.open.keys()].sort()).toEqual(["27015/udp", "8211/udp"]);
+    await svc.changePorts(id, 8300);
+    expect([...net.open.keys()].sort()).toEqual(["27104/udp", "8300/udp"]);
+    expect((await svc.list())[0].connect.public).toBe("pal.example.com:8300");
+  });
+
+  it("may reuse a port the server itself holds, but not one another server or the host is using", async () => {
+    const id = await deploy("One");
+    hostBusy = new Set(["8211/udp", "27015/udp"]); // the server's own sockets
+    await svc.changePorts(id, 8212);
+    expect((await svc.list())[0].ports.map((p) => p.port)).toEqual([8212, 27016]);
+    const other = await deploy("Two");
+    const kept = (await svc.list()).find((s) => s.id === other)!.ports;
+    await expect(svc.changePorts(other, 8212)).rejects.toMatchObject({ status: 409, extra: { conflicts: ["8212/udp", "27016/udp"] } });
+    hostBusy = new Set(["9100/udp"]);
+    await expect(svc.changePorts(other, 9100)).rejects.toMatchObject({ status: 409 });
+    await expect(svc.changePorts(other, 80)).rejects.toThrow(/not valid/);
+    await expect(svc.changePorts(other, 65500)).rejects.toThrow(/not valid/);
+    expect((await svc.list()).find((s) => s.id === other)!.ports).toEqual(kept);
+  });
+
+  it("refuses a custom image, whose ports the image decides", async () => {
+    const id = await svc.deployCustom({ name: "Bedrock", image: "itzg/minecraft-bedrock-server:latest", ports: [{ port: 19132, protocol: "udp" }] });
+    await expect(svc.changePorts(id, 20000)).rejects.toMatchObject({ status: 409 });
   });
 });

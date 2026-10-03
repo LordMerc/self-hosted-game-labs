@@ -57,5 +57,7 @@ env:
 console:
   exec: [rcon-cli]
   examples: [list, say Server restarting soon, save-all, whitelist list]
+  broadcast:
+    command: "say ${MESSAGE}"
 data:
   - containerPath: /data
