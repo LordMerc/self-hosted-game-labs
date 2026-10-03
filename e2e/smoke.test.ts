@@ -66,6 +66,11 @@ afterAll(async () => {
 const shot = (name: string) => (shots ? page.screenshot({ path: path.join(shots, `${name}.png`) }) : undefined);
 const row = (name: string) => page.locator("tbody tr", { hasText: name });
 /** Opens a row's "..." menu and picks an item. */
+/** Picks a template from the "View more" dialog, which holds every game and the custom image. */
+const pick = async (name: string) => {
+  await page.getByRole("button", { name: "View more" }).click();
+  await page.getByRole("dialog", { name: "All games" }).getByRole("button", { name }).click();
+};
 const choose = async (name: string, item: string) => {
   await row(name).getByRole("button", { name: /More actions/ }).click();
   await page.getByRole("menuitem", { name: item }).click();
@@ -78,14 +83,22 @@ describe("the panel in a browser", () => {
     await page.getByPlaceholder("Password").fill(PASSWORD);
     await page.keyboard.press("Enter");
     await page.getByRole("heading", { name: "Game servers" }).waitFor();
+    // A few templates sit on the page; "View more" opens a dialog with all of them and the custom image, and Close puts it away.
+    expect(await page.locator(".deploy > .templates .template-card").count()).toBe(4);
+    await page.getByRole("button", { name: "View more" }).click();
+    const all = page.getByRole("dialog", { name: "All games" });
     for (const t of ["Palworld", "Minecraft (Java)", "Valheim", "Satisfactory", "Terraria", "Custom Docker image"]) {
-      await page.getByRole("button", { name: t }).waitFor();
+      await all.getByRole("button", { name: t }).waitFor();
     }
+    await page.mouse.click(5, 5); // clicking outside does not close it
+    await all.waitFor();
+    await all.getByRole("button", { name: "Close" }).click();
+    await all.waitFor({ state: "detached" });
     await shot("1-empty");
   });
 
   it("deploys a template from the form and shows the server running", async () => {
-    await page.getByRole("button", { name: "Palworld" }).first().click();
+    await pick("Palworld");
     await page.getByRole("heading", { name: "Deploy Palworld" }).waitFor();
     await page.getByRole("button", { name: "Deploy", exact: true }).click();
     await row("Palworld").getByText("Running").waitFor();
@@ -93,7 +106,7 @@ describe("the panel in a browser", () => {
   });
 
   it("makes the user choose the Minecraft EULA, and shows what the choices are", async () => {
-    await page.getByRole("button", { name: "Minecraft (Java)" }).click();
+    await pick("Minecraft (Java)");
     const eula = page.getByLabel(/Accept the Minecraft EULA/);
     expect(await eula.locator("option").allTextContents()).toEqual(["Choose…", "TRUE"]);
     await page.getByRole("button", { name: "Deploy", exact: true }).click();
@@ -106,7 +119,7 @@ describe("the panel in a browser", () => {
   });
 
   it("sets up a custom Docker image, and says so when a port is taken", async () => {
-    await page.getByRole("button", { name: "Custom Docker image" }).click();
+    await pick("Custom Docker image");
     await page.getByLabel("Server name").fill("Bedrock");
     await page.getByLabel("Docker image").fill("itzg/minecraft-bedrock-server:latest");
     await page.getByLabel("Ports the game uses").fill("25565/tcp");
@@ -119,7 +132,7 @@ describe("the panel in a browser", () => {
   });
 
   it("warns when a memory limit is below what the game needs, shows the limit, and changes it from the server page", async () => {
-    await page.getByRole("button", { name: "Satisfactory" }).click();
+    await pick("Satisfactory");
     await page.getByRole("spinbutton", { name: /Memory limit/ }).fill("4");
     await page.getByText(/needs about 8 GB of memory, so a 4 GB limit/).waitFor();
     await page.getByRole("button", { name: "Deploy", exact: true }).click();
