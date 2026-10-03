@@ -288,6 +288,14 @@ pre.mono { margin: 0; background: var(--bg); border-radius: 10px; padding: 1rem;
 @media (max-width: 1680px) {
   .layout { grid-template-columns: minmax(0, 1fr) 340px; gap: 1.5rem; }
 }
+/* With the Network panel beside it the table has about 1100px: fold the Ports column under the address and let cells shrink, so the row actions are never pushed out of view. */
+@media (max-width: 1760px) {
+  .col-ports { display: none; }
+  .inline-ports { display: flex; }
+  .server-cell { min-width: 0; gap: 0.7rem; }
+  .addr-main { min-width: 0; }
+  td { padding-left: 0.55rem; padding-right: 0.55rem; }
+}
 /* Below this the panel no longer fits beside the table, so it goes underneath. */
 @media (max-width: 1300px) {
   .layout { grid-template-columns: minmax(0, 1fr); gap: 2.5rem; margin-right: 0; }
@@ -301,11 +309,6 @@ pre.mono { margin: 0; background: var(--bg); border-radius: 10px; padding: 1rem;
   .content { --pad-x: 2rem; padding: 2rem var(--pad-x) 3rem; }
   .stat { padding: 0.25rem 1.1rem; }
   .stat-value { font-size: 1.85rem; }
-  .col-ports { display: none; }
-  .inline-ports { display: flex; }
-  .server-cell { min-width: 0; gap: 0.7rem; }
-  .addr-main { min-width: 0; }
-  td { padding-left: 0.55rem; padding-right: 0.55rem; }
   .act-btn { padding: 0.3rem 0.65rem; }
 }
 @media (min-width: 1301px) and (max-width: 1500px) {

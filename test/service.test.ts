@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { loadConfig } from "../src/server/config.js";
 import { openDb } from "../src/server/db/index.js";
-import { parseListeningUdp, ServerService, UserError } from "../src/server/servers/service.js";
+import { parseListeningUdp, REACH_MAX_AGE_MS, ServerService, UserError } from "../src/server/servers/service.js";
 import { loadTemplates } from "../src/server/templates/loader.js";
 import type { TcpProbe } from "../src/server/reachability.js";
 import { FakeConnectivity, FakeDns, FakeDocker } from "./helpers/fakes.js";
@@ -761,6 +761,52 @@ describe("outside port check", () => {
     probeAnswer = { state: "unknown", detail: "Could not reach fake-checker: boom" };
     await svc.checkReachability(mc);
     expect((await svc.list())[0].reachability).toMatchObject({ state: "unknown", text: "Could not reach fake-checker: boom" });
+  });
+
+  it("keeps the last answer across a panel restart and dates it", async () => {
+    const mc = await svc.deploy({ templateId: "minecraft", name: "MC", env: { EULA: "TRUE" }, access: "public" });
+    await svc.checkReachability(mc);
+    const restarted = new ServerService((svc as unknown as { d: ConstructorParameters<typeof ServerService>[0] }).d);
+    const r = (await restarted.list())[0].reachability;
+    expect(r).toMatchObject({ state: "ok", stale: null, attempt: null });
+    expect(Date.now() - new Date(r!.at).getTime()).toBeLessThan(60_000);
+  });
+
+  it("marks an answer stale when the public IP changed or it is over a day old, and keeps showing it", async () => {
+    const mc = await svc.deploy({ templateId: "minecraft", name: "MC", env: { EULA: "TRUE" }, access: "public" });
+    await svc.checkReachability(mc);
+    net.ip = "198.51.100.9";
+    await svc.reconcile(); // the panel notices the new address
+    expect((await svc.list())[0].reachability).toMatchObject({ state: "ok", stale: "ip-changed" });
+    await svc.checkReachability(mc);
+    expect((await svc.list())[0].reachability).toMatchObject({ state: "ok", stale: null });
+    const db = (svc as unknown as { d: { db: ReturnType<typeof openDb>["db"] } }).d.db;
+    const { portChecks } = await import("../src/server/db/schema.js");
+    db.update(portChecks).set({ checkedAt: new Date(Date.now() - REACH_MAX_AGE_MS - 60_000) }).run();
+    expect((await svc.list())[0].reachability).toMatchObject({ state: "ok", stale: "old" });
+  });
+
+  it("does not replace a saved answer with a check that could not finish", async () => {
+    const mc = await svc.deploy({ templateId: "minecraft", name: "MC", env: { EULA: "TRUE" }, access: "public" });
+    await svc.checkReachability(mc);
+    probeAnswer = { state: "unknown", detail: "Could not reach fake-checker: boom" };
+    await svc.checkReachability(mc);
+    expect((await svc.list())[0].reachability).toMatchObject({ state: "ok", attempt: { text: "Could not reach fake-checker: boom" } });
+    probeAnswer = { state: "closed", detail: "Could not connect from any of 3 locations" };
+    await svc.checkReachability(mc);
+    expect((await svc.list())[0].reachability).toMatchObject({ state: "problem", attempt: null });
+  });
+
+  it("goes back to untested when the ports or the access change", async () => {
+    const mc = await svc.deploy({ templateId: "minecraft", name: "MC", env: { EULA: "TRUE" }, access: "public" });
+    await svc.checkReachability(mc);
+    await svc.changePorts(mc, 25570);
+    expect((await svc.list())[0].reachability).toBeNull();
+    await svc.checkReachability(mc);
+    expect((await svc.list())[0].reachability).toMatchObject({ state: "ok" });
+    await svc.setAccess(mc, "private");
+    await svc.setAccess(mc, "public");
+    expect((await svc.list())[0].reachability).toBeNull();
   });
 
   it("skips stopped servers, refuses private ones, and does nothing when there is nothing public", async () => {
