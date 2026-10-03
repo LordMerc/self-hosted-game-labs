@@ -30,7 +30,7 @@ config.HOST_LAN_IP ||= detectLanIp();
 const { db } = openDb(path.join(config.DATA_DIR, "panel.db"));
 const templates = loadTemplates(config.TEMPLATES_DIR);
 const docker = new DockerodeDriver();
-const connectivity = config.CONNECTIVITY === "upnp" ? new UpnpProvider(undefined, () => echoPublicIp(config.IP_ECHO_URL)) : new ManualProvider(db, config.IP_ECHO_URL);
+const connectivity = config.CONNECTIVITY === "upnp" ? new UpnpProvider(undefined, () => echoPublicIp(config.IP_ECHO_URL), config.HOST_LAN_IP || undefined) : new ManualProvider(db, config.IP_ECHO_URL);
 const dnsSettings = new DnsSettings(db, config);
 
 const service = new ServerService({ config, db, templates, docker, connectivity, dnsProvider: () => dnsSettings.current() });
