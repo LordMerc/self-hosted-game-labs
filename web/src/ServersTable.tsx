@@ -7,6 +7,7 @@ import { HiddenIp, isIpAddress } from "./HiddenIp";
 import { Icon } from "./Icons";
 import { limitText } from "./Limits";
 import { RowMenu, type MenuItem } from "./RowMenu";
+import { Spark } from "./Spark";
 
 type StatusKey = "running" | "starting" | "stopped" | "paused" | "crashed" | "failed" | "deploying" | "updating";
 
@@ -123,6 +124,8 @@ export function ServersTable({
             const max = maxPlayers(s);
             const live = stats?.servers[s.id]?.players;
             const use = stats?.servers[s.id];
+            const past = stats?.history.servers[s.id];
+            const minutes = stats?.history.peaks.windowMinutes ?? 15;
             const locked = s.status === "deploying" || s.status === "updating";
             const st = statusOf(s);
             const items: MenuItem[] = [
@@ -165,8 +168,11 @@ export function ServersTable({
                     </div>
                   )}
                   {use && (
-                    <div className="muted usage" title="Share of the whole host's CPU, and memory in use">
-                      {use.cpuPercent == null ? "CPU —" : `CPU ${use.cpuPercent.toFixed(use.cpuPercent < 10 ? 1 : 0)}%`} · {bytes(use.memBytes)}
+                    <div className="muted usage usage-grid" title="Share of the whole host's CPU, and memory in use, over the last few minutes">
+                      <span>{use.cpuPercent == null ? "CPU —" : `CPU ${use.cpuPercent.toFixed(use.cpuPercent < 10 ? 1 : 0)}%`}</span>
+                      {past && past.cpu.some((v) => v !== null) ? <Spark mini values={past.cpu} floor={5} tone="var(--stat-cpu)" label={`${s.name} CPU over the last ${minutes} minutes`} /> : <span />}
+                      <span>RAM {bytes(use.memBytes)}</span>
+                      {past && past.memBytes.some((v) => v !== null) ? <Spark mini relative values={past.memBytes} floor={64 * 2 ** 20} tone="var(--stat-memory)" label={`${s.name} memory over the last ${minutes} minutes`} /> : <span />}
                     </div>
                   )}
                   {limitText(s.limits) && (

@@ -127,6 +127,8 @@ th:last-child, td:last-child { padding-right: 1.4rem; }
 @media (prefers-reduced-motion: reduce) { .pill-dot { animation: none !important; } .meter::after, .spark .bar { transition: none; } }
 .players { white-space: nowrap; display: flex; align-items: center; gap: 0.35rem; margin-top: 0.4rem; }
 .usage { white-space: nowrap; font-size: 0.8125rem; margin-top: 0.1rem; }
+.usage-grid { display: grid; grid-template-columns: auto 72px; align-items: center; justify-content: start; gap: 0.2rem 0.75rem; }
+.spark.mini { height: 16px; margin: 0; gap: 1px; overflow: hidden; }
 .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); margin-right: 0.15rem; vertical-align: 1px; }
 .dot.online { background: var(--ok); box-shadow: 0 0 8px var(--ok-glow); }
 .dot.paused, .dot.deploying, .dot.updating { background: var(--warn); }
