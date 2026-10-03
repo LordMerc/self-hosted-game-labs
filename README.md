@@ -30,6 +30,17 @@ Open `http://<server-lan-ip>:8090` and set the admin password on first run.
 
 **Do this before exposing anything:** the panel has access to the Docker socket, which is root-equivalent control of the host. Keep it on your LAN or behind a VPN such as Tailscale. Never port forward the panel itself. The first-run password screen is open to anyone who can reach the port until you complete it, so do it right after starting the container.
 
+### Run the published image instead of building
+
+Every commit on `main` is published as `ghcr.io/lordmerc/self-hosted-game-labs:latest` (amd64 and arm64), and releases as `:1.0.0`-style version tags. To run it without building anything:
+
+```bash
+curl -O https://raw.githubusercontent.com/LordMerc/self-hosted-game-labs/main/compose.image.yaml
+docker compose -f compose.image.yaml up -d
+```
+
+It needs the same things as `compose.yaml`: the Docker socket mount, the `gamelabs-data` volume for the panel's own data, and `GAME_DATA_DIR` (default `/srv/gameservers`, and the host path must be the same inside the container). The optional variables (`PANEL_PORT`, `HOST_LAN_IP`, `CONNECTIVITY`, `BACKUP_KEEP`, `PORT_CHECK`, ...) are listed in `.env.example`. Set `IMAGE_TAG=1.0.0` to pin a release instead of following `latest`.
+
 ## Domain names (optional)
 
 Without a domain, public servers are reached by your IP address. To get names like `palworld.example.com`, open **Settings** in the panel, paste a Cloudflare API token and pick your domain. The panel lists the steps. In short: create a custom token at Cloudflare with **Zone · Zone · Read** and **Zone · DNS · Edit**, limited to your domain. The panel creates DNS-only records (never proxied) and keeps them pointed at your current IP, and it only ever changes records it created. You can instead set `CF_API_TOKEN`, `CF_ZONE` and `PUBLIC_HOST` as environment variables, which override the Settings page.
