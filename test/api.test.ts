@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { mkdtempSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/server/app.js";
@@ -10,7 +12,9 @@ import { FakeConnectivity, FakeDocker } from "./helpers/fakes.js";
 import { DnsSettings } from "../src/server/dns/settings.js";
 import { Notifier } from "../src/server/notifications/notifier.js";
 
-const config = loadConfig({ SESSION_SECRET: "x".repeat(32), DATA_DIR: "/tmp/unused" });
+// Deploys create the server's folder, so it must be somewhere the test can write (the default, /srv/gameservers, is not on CI).
+const games = mkdtempSync(path.join(os.tmpdir(), "gl-api-")).replace(/^[A-Za-z]:/, "").replaceAll("\\", "/");
+const config = loadConfig({ SESSION_SECRET: "x".repeat(32), DATA_DIR: "/tmp/unused", GAMESERVERS_DIR: games });
 let app: FastifyInstance;
 let fakeDocker: FakeDocker;
 
