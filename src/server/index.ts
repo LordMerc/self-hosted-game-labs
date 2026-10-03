@@ -73,6 +73,20 @@ const scheduledBackups = async () => {
   }
 };
 
+let caring = false;
+const scheduledCare = async () => {
+  if (caring) return;
+  caring = true;
+  try {
+    const done = await service.runScheduledCare();
+    if (done.length > 0) console.log(`scheduled care: ${done.join("; ")}`);
+  } catch (e) {
+    console.error("scheduled care failed:", e);
+  } finally {
+    caring = false;
+  }
+};
+
 // Notice crashes and player joins/leaves within about half a minute, whether or not anyone has the page open.
 let watching = false;
 const watch = async () => {
@@ -92,6 +106,7 @@ setInterval(watch, 30_000).unref();
 setTimeout(scheduledBackups, 60_000).unref();
 setInterval(scheduledBackups, 10 * 60 * 1000).unref();
 setInterval(reconcile, RECONCILE_MS).unref();
+setInterval(scheduledCare, 60 * 1000).unref();
 
 // Looks for a newer release at most once a day (the check itself decides whether one is due; this just asks hourly).
 const checkForUpdates = () => updates.checkIfDue().catch(() => undefined);

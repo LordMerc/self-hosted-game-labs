@@ -205,3 +205,13 @@ Built against fakes: a recording notifier in the service tests, a fake `fetch` f
 - **Quiet on purpose:** stop and restart from the panel are not reported as down; messages carry the server name only, never an address or password.
 - **To check on the homelab:** paste a real webhook, press Send test message (expect a green embed in the channel). Stop a game with `docker stop gl-<name>` and expect "went down" within about 30 seconds; start it again for "is online". For a crash, `docker kill gl-<name>` should say "went down", then Docker restarts it and, within the next poll, it should say "online" or "started it again". Join Palworld from the game and expect "1 player joined" (Palworld's A2S count accuracy is itself unverified, see above).
 
+
+## Restarts, updates and ports
+
+Built against fakes (fake Docker, fake Docker Hub list, fake clock) and the browser test. Not run on the homelab yet.
+
+- **Pinned Palworld image:** `thijsvanloef/palworld-server-docker:v2.8.0`. On 2026-10-03 Docker Hub showed `latest`, `v2` and `v2.8.0` all pointing at the same image (pushed 2026-09-30, before the first world was made), so the pin is the version that has been running. The version list comes from Docker Hub's public API, which was reachable from the build sandbox.
+- **Daily restart:** checked once a minute against the panel's local time (`TZ`). A job that was due while the panel was down still runs if it is at most an hour late, otherwise it waits for tomorrow. Palworld's warning is `Broadcast Server_restarting_in_5_minutes.` over `rcon-cli` (Palworld's broadcast only takes one word, so spaces become underscores) and Minecraft's is `say`. **To check on the homelab:** set a restart two minutes away with a 1 minute warning and watch the game chat; the server's activity list says what was sent.
+- **Updates:** a tag check downloads nothing. For an image without version tags the panel pulls it and compares image ids. Applying makes a backup (and stops if that fails), removes the container, and starts a new one from the new image with the same data folder. The long download is covered by a test that holds the pull and checks that the server stays "Restarting" and is not rebuilt twice.
+- **Ports:** every port of the game moves by the same amount, so Valheim's query port stays one above the game port and Satisfactory's shared port stays shared. On a public server the old router rules are closed and the new ones opened by the same code that makes a server public. **To check on the homelab:** change a public server's port, confirm the router lists the new port, and join on it.
+- **Not covered:** going back to an older version has no button; restore the backup from before the update.

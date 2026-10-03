@@ -40,6 +40,8 @@ export interface Server {
   connect: { lan: string | null; public: string | null; instructions: string | null };
   pendingRules: { id: number; port: number; protocol: "tcp" | "udp" }[];
   reachability: Reachability | null;
+  /** A newer version of the game's image was found by the last check. */
+  update: { to: string } | null;
 }
 
 export interface OtherPanelServer {
@@ -166,6 +168,16 @@ export interface ServerDetail {
   env: { key: string; label: string; help: string | null; choices: string[] | null; required: boolean; secret: boolean; generate: boolean; value: string | null; isSet: boolean }[];
   minMemoryMb: number | null;
   console: { examples: string[] } | null;
+  care: {
+    timezone: string;
+    settings: { restart: { enabled: boolean; time: string; warnMinutes: number }; update: { auto: boolean; time: string } };
+    /** The game can show a message to the players in the game. */
+    canWarn: boolean;
+    lastRestartOn: string | null;
+    image: { name: string; tag: string; pinned: boolean; moved: boolean };
+    update: { checkedAt: string; available: boolean; via: "tag" | "image"; current: string; latest: string | null; note: string } | null;
+    portsEditable: boolean;
+  };
   events: { id: number; level: "info" | "warn" | "error"; message: string; at: string }[];
 }
 

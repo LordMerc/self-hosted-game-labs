@@ -251,6 +251,15 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
     const r = await service.updateSettings(idParam(req), body.data);
     return reply.code(r.restarting ? 202 : 200).send(r);
   });
+  app.put("/api/servers/:id/care", async (req) => service.setCare(idParam(req), req.body));
+  app.post("/api/servers/:id/update/check", async (req) => service.checkUpdate(idParam(req)));
+  app.post("/api/servers/:id/update/apply", async (req, reply) => reply.code(202).send(await service.applyUpdate(idParam(req))));
+  app.put("/api/servers/:id/ports", async (req, reply) => {
+    const body = z.object({ port: z.number() }).safeParse(req.body);
+    if (!body.success) throw new UserError("Type a port number");
+    const r = await service.changePorts(idParam(req), body.data.port);
+    return reply.code(r.restarting ? 202 : 200).send(r);
+  });
   app.post("/api/servers/:id/console", async (req) => {
     const body = z.object({ command: z.string() }).safeParse(req.body);
     if (!body.success) throw new UserError("command is required");

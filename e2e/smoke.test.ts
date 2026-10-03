@@ -33,7 +33,7 @@ beforeAll(async () => {
   const { db } = openDb(":memory:");
   const templates = loadTemplates(path.resolve("templates"));
   const docker = new FakeDocker();
-  const service = new ServerService({ config, db, templates, docker, connectivity: new FakeConnectivity(), hostPorts: () => new Set(), background: false, stableMs: 0, portProbe: { name: "fake-checker", check: async () => ({ state: "open", detail: "Connected from 3 of 3 locations" }) }, queryPlayers: async () => ({ online: 2, max: 32 }) });
+  const service = new ServerService({ config, db, templates, docker, connectivity: new FakeConnectivity(), hostPorts: () => new Set(), background: false, stableMs: 0, tagLister: async () => ["v2.8.0", "v2.9.0", "latest"], portProbe: { name: "fake-checker", check: async () => ({ state: "open", detail: "Connected from 3 of 3 locations" }) }, queryPlayers: async () => ({ online: 2, max: 32 }) });
   // A newer release is "out there", so the update notice has something to show.
   const release = { tag_name: "v0.2.0", name: "v0.2.0", html_url: "https://github.com/LordMerc/self-hosted-game-labs/releases/tag/v0.2.0" };
   const updates = new UpdateChecker(db, { current: "0.1.0", envEnabled: true, fetchFn: (async () => new Response(JSON.stringify(release))) as unknown as typeof fetch });
@@ -51,6 +51,8 @@ beforeAll(async () => {
 
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ["--no-sandbox"] });
   page = await browser.newPage({ viewport: { width: 1300, height: 1100 } });
+  page.setDefaultTimeout(8000); // a step that cannot find its element fails with its own message, not the whole test timing out
+  page.on("dialog", (d) => void d.accept()); // confirm() questions: always say yes
   page.on("pageerror", (e) => pageErrors.push(e.message));
   // The port clash in the custom-image test is a 409 on purpose; anything else the browser reports is a bug.
   page.on("console", (m) => m.type() === "error" && !m.text().includes("409") && pageErrors.push(`console: ${m.text()}`));
@@ -150,8 +152,28 @@ describe("the panel in a browser", () => {
     await row("Palworld Prime").waitFor();
   });
 
+  it("sets a daily restart, finds and applies an update, and moves the game port", async () => {
+    await page.getByRole("button", { name: "Palworld Prime", exact: true }).first().click();
+    await page.getByRole("heading", { name: "Restarts and updates" }).waitFor();
+    await page.getByLabel("Restart every day at").check();
+    await page.getByLabel("Restart time").fill("03:30");
+    await page.getByRole("button", { name: "Save schedule" }).click();
+    await page.getByText("Saved.").first().waitFor();
+    await page.getByRole("button", { name: "Check for update" }).click();
+    await page.locator("p.update-note", { hasText: /Version v2\.9\.0 is out/ }).waitFor();
+    await shot("4b-update");
+    await page.getByRole("button", { name: "Update to v2.9.0" }).click();
+    await page.getByText(/Updating\. A backup was made/).waitFor();
+    await page.locator("span.mono", { hasText: "palworld-server-docker:v2.9.0" }).waitFor();
+    await page.getByLabel("Game port").fill("9000");
+    await page.getByRole("button", { name: "Change port" }).click();
+    await page.getByText(/restarting on the new port/).waitFor();
+    await page.getByText("9000", { exact: false }).first().waitFor();
+    await page.getByRole("link", { name: "Game servers" }).click();
+    await row("Palworld Prime").waitFor();
+  });
+
   it("backs up a server, deletes it, and sets it up again from the Backups page", async () => {
-    page.on("dialog", (d) => void d.accept());
     await row("Palworld Prime").getByRole("button", { name: "Backups" }).click();
     await page.getByRole("button", { name: "Back up now" }).click();
     await page.locator(".backup-list li").first().waitFor();

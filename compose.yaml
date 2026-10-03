@@ -28,6 +28,7 @@ services:
       CF_ZONE: ${CF_ZONE:-}
       BACKUP_KEEP: ${BACKUP_KEEP:-7}
       PORT_CHECK: ${PORT_CHECK:-on}
+      TZ: ${TZ:-UTC}
       SESSION_SECRET: ${SESSION_SECRET:-}
       TRUST_PROXY: ${TRUST_PROXY:-}
       COOKIE_SECURE: ${COOKIE_SECURE:-auto}

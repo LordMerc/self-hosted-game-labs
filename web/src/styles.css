@@ -306,3 +306,9 @@ button.chip:disabled { opacity: 0.5; cursor: default; }
 button.ghost.danger { color: var(--bad); }
 .server-link { background: none; border: 0; padding: 0; color: inherit; font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
 .server-link:hover { color: var(--accent); text-decoration: underline; }
+
+.wrap-row { flex-wrap: wrap; align-items: center; }
+.check { display: inline-flex; align-items: center; gap: 0.5rem; }
+.update-note { color: var(--warn, #fbbf24); margin: 0; }
+.update-chip { margin-left: 0.5rem; padding: 0.05rem 0.5rem; font-size: 0.75rem; cursor: pointer; color: var(--warn, #fbbf24); }
+.settings-card select, .settings-card input[type="time"], .settings-card input[type="number"] { font: inherit; }
