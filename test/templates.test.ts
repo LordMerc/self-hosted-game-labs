@@ -120,6 +120,8 @@ backup: { exclude: [gamefiles, config/backups] }
       `https://example.com/${"a".repeat(500)}.png`,
     ];
     for (const value of bad) expect(() => parseTemplate(`${base}artwork: "${value}"\n`), value).toThrow(/Invalid/);
+    expect(parseTemplate(`${base}artworkPosition: 80\n`).artworkPosition).toBe(80);
+    for (const bad of ["-1", "101", "50.5", "middle"]) expect(() => parseTemplate(`${base}artworkPosition: ${bad}\n`), bad).toThrow(/Invalid/);
     expect(() => parseTemplate(`${base}artworkCredit: ""\n`)).toThrow(/Invalid/);
     expect(() => parseTemplate(`${base}artworkCredit: ${"x".repeat(301)}\n`)).toThrow(/Invalid/);
   });
