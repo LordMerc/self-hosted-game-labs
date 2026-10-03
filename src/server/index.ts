@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
@@ -9,7 +11,19 @@ import { DockerodeDriver } from "./docker/driver.js";
 import { ServerService } from "./servers/service.js";
 import { loadTemplates } from "./templates/loader.js";
 
-const config = loadConfig();
+/** Sessions need a stable secret. Use SESSION_SECRET if given, otherwise generate one once and keep it in the data dir. */
+function sessionSecret(): string | undefined {
+  if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+  const dataDir = process.env.DATA_DIR ?? "/data";
+  const file = path.join(dataDir, "session-secret");
+  if (!existsSync(file)) {
+    mkdirSync(dataDir, { recursive: true });
+    writeFileSync(file, randomBytes(32).toString("hex"), { mode: 0o600 });
+  }
+  return readFileSync(file, "utf8").trim();
+}
+
+const config = loadConfig({ ...process.env, SESSION_SECRET: sessionSecret() });
 const { db } = openDb(path.join(config.DATA_DIR, "panel.db"));
 const templates = loadTemplates(config.TEMPLATES_DIR);
 const docker = new DockerodeDriver();

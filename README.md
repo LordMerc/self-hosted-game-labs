@@ -20,7 +20,7 @@ Node 22 + TypeScript, Fastify API, React + Vite frontend served by the same proc
 ## Quick start
 
 ```bash
-cp .env.example .env     # set SESSION_SECRET (openssl rand -hex 32), HOST_LAN_IP, etc.
+cp .env.example .env     # set HOST_LAN_IP, PUBLIC_HOST, and the Cloudflare values if you want DNS
 docker compose up -d --build
 ```
 
