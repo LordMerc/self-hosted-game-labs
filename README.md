@@ -4,7 +4,7 @@
 
 ![The Game Labs dashboard: host stats with small charts, a table of game servers with status, address, ports and an Access column, and the Network health checklist on the right](docs/images/dashboard.png)
 
-> **Early release (v0.2.0).** Palworld and RuneScape: Dragonwilds are running on a real homelab, with friends joining over the internet. The other games are built and tested against fakes and throwaway containers but not played on yet. See [Supported games](#supported-games) and [docs/verification.md](docs/verification.md) for exactly what has and has not been tried.
+> **Early release (v0.2.1).** Palworld and RuneScape: Dragonwilds are running on a real homelab, with friends joining over the internet. The other games are built and tested against fakes and throwaway containers but not played on yet. See [Supported games](#supported-games) and [docs/verification.md](docs/verification.md) for exactly what has and has not been tried.
 
 ## What's new in 0.2.1
 
