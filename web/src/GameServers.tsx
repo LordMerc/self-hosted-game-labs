@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, loadTemplates, type ActivityItem, type Network, type OtherPanelServer, type Server, type Stats, type Template } from "./api";
 import { Backups } from "./Backups";
+import { ConnectDialog } from "./ConnectDialog";
 import { CustomDialog } from "./CustomDialog";
 import { DeployCards } from "./DeployCards";
 import { DeployDialog } from "./DeployDialog";
@@ -39,6 +40,7 @@ export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: 
   const [customOpen, setCustomOpen] = useState(false);
   const [logsFor, setLogsFor] = useState<Server | null>(null);
   const [backupsFor, setBackupsFor] = useState<Server | null>(null);
+  const [connectFor, setConnectFor] = useState<Server | null>(null);
   const [message, setMessage] = useState("");
   const [stats, setStats] = useState<Stats | null>(null);
   const [others, setOthers] = useState<OtherPanelServer[]>([]);
@@ -197,6 +199,7 @@ export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: 
                 onOpenServer={onOpenServer}
                 onLogs={setLogsFor}
                 onBackups={setBackupsFor}
+                onConnect={setConnectFor}
                 onDelete={remove}
                 onReveal={reveal}
               />
@@ -256,6 +259,7 @@ export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: 
         />
       )}
       {backupsFor && <Backups id={backupsFor.id} name={backupsFor.name} running={backupsFor.status === "online"} onClose={() => setBackupsFor(null)} onChange={() => void refresh()} />}
+      {connectFor && <ConnectDialog server={connectFor} onClose={() => setConnectFor(null)} />}
       {logsFor && <LogViewer id={logsFor.id} name={logsFor.name} onClose={() => setLogsFor(null)} />}
     </div>
   );
