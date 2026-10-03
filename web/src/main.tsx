@@ -7,6 +7,7 @@ import { GameServers } from "./GameServers";
 import { ServerDetail } from "./ServerDetail";
 import type { Page } from "./Nav";
 import { Settings } from "./Settings";
+import "./theme.css";
 import "./styles.css";
 
 function App() {

@@ -1,0 +1,93 @@
+/*
+ * The look of the panel, in one place. Every colour, radius, border and surface style used by styles.css comes from a
+ * variable here, so restyling the panel is an edit to this file. The design source is the Pencil frame; copy its values here.
+ *
+ * The page is "free floating": containers (tiles, the table, template cards, the Network health column, settings cards) have no
+ * background, no border and no divider lines, and are grouped by spacing alone. To bring panels back, give --card-bg a colour
+ * and --card-border-color / --divider a visible one. Dialogs, menus and tooltips sit above the page, so they keep their own
+ * solid surface (--float-*).
+ */
+:root {
+  color-scheme: dark;
+
+  /* Page */
+  --bg: #0d0e11;
+  --bg-2: #0d0f14;
+  --glow-top: #161a2b;
+  --glow-corner: rgba(40, 36, 70, 0.35);
+  --text: #f1f3f7;
+  --muted: #8b93a3;
+  --faint: #5c6473;
+
+  /* Brand and status */
+  --accent: #818cf8;
+  --accent-soft: rgba(129, 140, 248, 0.14);
+  --brand-from: #6366f1;
+  --brand-to: #818cf8;
+  --ok: #4ade80;
+  --ok-soft: rgba(74, 222, 128, 0.12);
+  --ok-glow: rgba(74, 222, 128, 0.6);
+  --warn: #fbbf24;
+  --warn-soft: rgba(251, 191, 36, 0.12);
+  --bad: #f87171;
+  --bad-soft: rgba(248, 113, 113, 0.12);
+  --beta: #f59e0b;
+  --beta-text: #1f1300;
+  --danger-line: rgba(248, 113, 113, 0.32);
+  --tag-bg: rgba(13, 14, 17, 0.7);
+  --public: #93a8ff;
+  --public-soft: rgba(102, 132, 255, 0.16);
+
+  /* Containers: transparent, no outline, no dividers */
+  --card-bg: transparent;
+  --card-border-color: transparent;
+  --divider: transparent;
+  --nav-line: transparent;
+  --hover-bg: rgba(255, 255, 255, 0.04);
+  --selected-bg: #171b23;
+
+  /* Controls (buttons, inputs, chips) keep a thin outline so they still read as things you can press */
+  --border: #20252f;
+  --border-soft: #181c24;
+  --control-bg: transparent;
+  --input-bg: #0d0f14;
+  --surface-2: #171b23;
+
+  /* Things that float above the page, so they need to be solid */
+  --float-bg: #11141a;
+  --float-menu-bg: #141922;
+  --float-border-color: #20252f;
+  --backdrop: rgba(3, 4, 8, 0.75);
+  --shadow-menu: 0 16px 40px rgba(0, 0, 0, 0.55);
+  --shadow-hint: 0 8px 24px rgba(0, 0, 0, 0.4);
+
+  /* Shape */
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 22px;
+  --radius-pill: 999px;
+
+  /* Host tiles */
+  --stat-cpu: #6684ff;
+  --stat-memory: #a78bfa;
+  --stat-storage: #22d3ee;
+  --stat-network: #4ade80;
+  --stat-players: #fbbf24;
+
+  /* Primary button */
+  --primary-bg: #fff;
+  --primary-bg-hover: #e6e8ee;
+  --primary-text: #0b0d12;
+}
+
+/* Game colours: --tone is the accent, --tone-bg its dark wash */
+.tone-blue { --tone: #3b82f6; --tone-bg: #10203d; }
+.tone-violet { --tone: #a78bfa; --tone-bg: #221a3d; }
+.tone-cyan { --tone: #22d3ee; --tone-bg: #0d2a33; }
+.tone-green { --tone: #4ade80; --tone-bg: #11261b; }
+.tone-orange { --tone: #fb923c; --tone-bg: #2b1a10; }
+.tone-teal { --tone: #2dd4bf; --tone-bg: #0e2a2a; }
+.tone-amber { --tone: #fbbf24; --tone-bg: #2b2210; }
+.tone-custom { --tone: var(--muted); --tone-bg: var(--surface-2); }
+.tone-red { --tone: #f87171; --tone-bg: #2d1416; }

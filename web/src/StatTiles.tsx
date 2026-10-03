@@ -40,24 +40,24 @@ export function StatTiles({ stats }: { stats: Stats | null }) {
   return (
     <section className="stats" aria-label="Host">
       <Tile label="CPU" value={cpu == null ? null : `${Math.round(cpu)}%`} sub={cpu == null ? none : `${host!.cpu.cores} cores${cpuPeak != null ? ` · peak ${Math.round(cpuPeak)}% (${minutes} min)` : ""}`}>
-        {hist && hist.host.cpu.length > 0 && <Spark values={hist.host.cpu} floor={20} tone="#6684ff" label={`CPU over the last ${minutes} minutes`} />}
-        {(!hist || hist.host.cpu.length === 0) && cpu != null && <Meter fill={cpu} tone="#6684ff" label="CPU in use" />}
+        {hist && hist.host.cpu.length > 0 && <Spark values={hist.host.cpu} floor={20} tone="var(--stat-cpu)" label={`CPU over the last ${minutes} minutes`} />}
+        {(!hist || hist.host.cpu.length === 0) && cpu != null && <Meter fill={cpu} tone="var(--stat-cpu)" label="CPU in use" />}
       </Tile>
       <Tile label="Memory" value={host?.memory ? bytes(host.memory.usedBytes) : null} sub={host?.memory ? `of ${bytes(host.memory.totalBytes)} · ${Math.round(pct(host.memory.usedBytes, host.memory.totalBytes))}%` : none}>
-        {host?.memory && <Meter fill={pct(host.memory.usedBytes, host.memory.totalBytes)} tone="#a78bfa" label="Memory in use" />}
+        {host?.memory && <Meter fill={pct(host.memory.usedBytes, host.memory.totalBytes)} tone="var(--stat-memory)" label="Memory in use" />}
       </Tile>
       <Tile label="Storage" value={host?.storage ? bytes(host.storage.usedBytes) : null} sub={host?.storage ? `of ${bytes(host.storage.totalBytes)} · ${Math.round(pct(host.storage.usedBytes, host.storage.totalBytes))}% used` : none}>
-        {host?.storage && <Meter fill={pct(host.storage.usedBytes, host.storage.totalBytes)} tone="#22d3ee" label="Storage in use" />}
+        {host?.storage && <Meter fill={pct(host.storage.usedBytes, host.storage.totalBytes)} tone="var(--stat-storage)" label="Storage in use" />}
       </Tile>
       <Tile label="Network" value={host?.network ? `↓ ${rate(host.network.rxPerSec)}` : null} sub={host?.network ? `↑ ${rate(host.network.txPerSec)}` : none}>
-        {hist && hist.host.rx.some((v) => v !== null) && <Spark values={hist.host.rx} floor={10_000} tone="#4ade80" label={`Download over the last ${minutes} minutes`} />}
+        {hist && hist.host.rx.some((v) => v !== null) && <Spark values={hist.host.rx} floor={10_000} tone="var(--stat-network)" label={`Download over the last ${minutes} minutes`} />}
       </Tile>
       <Tile
         label="Players online"
         value={counts.length === 0 ? null : String(online)}
         sub={counts.length === 0 ? none : `${slots > 0 ? `of ${slots} slots` : `across ${counts.length} server${counts.length === 1 ? "" : "s"}`}${peakToday != null ? ` · peak ${peakToday} today` : ""}`}
       >
-        {hist && hist.host.players.some((v) => v !== null) && <Spark values={hist.host.players} floor={4} tone="#fbbf24" label={`Players over the last ${minutes} minutes`} />}
+        {hist && hist.host.players.some((v) => v !== null) && <Spark values={hist.host.players} floor={4} tone="var(--stat-players)" label={`Players over the last ${minutes} minutes`} />}
       </Tile>
     </section>
   );

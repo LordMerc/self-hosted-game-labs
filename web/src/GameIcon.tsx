@@ -13,7 +13,7 @@ function gameTone(templateId: string) {
 /** A game's colour: its template's `accent` when it has one, otherwise one picked from its id. Same on every page. */
 export function gameStyle(templateId: string): { className: string; style?: CSSProperties } {
   const accent = accentFor(templateId);
-  return accent ? { className: "", style: { "--tone": accent, "--tone-bg": `color-mix(in srgb, ${accent} 16%, #0d0e11)` } as CSSProperties } : { className: `tone-${gameTone(templateId)}` };
+  return accent ? { className: "", style: { "--tone": accent, "--tone-bg": `color-mix(in srgb, ${accent} 16%, var(--bg))` } as CSSProperties } : { className: `tone-${gameTone(templateId)}` };
 }
 
 export function GameIcon({ id, name }: { id: string; name: string }) {
