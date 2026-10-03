@@ -147,6 +147,8 @@ describe("stats", () => {
     const headers = { cookie: cookieOf(setup) };
     const list = (await app.inject({ url: "/api/templates", headers })).json() as { id: string; accent: string | null; artwork: string | null }[];
     expect(list.find((t) => t.id === "palworld")).toMatchObject({ accent: "#4ade80", artwork: null });
+    // The panel can read a player count for these games and cannot for the rest, which the page says instead of showing a blank.
+    expect(Object.fromEntries(list.map((t) => [t.id, t.reportsPlayers]))).toMatchObject({ palworld: true, minecraft: true, valheim: true, dragonwilds: false, satisfactory: false, terraria: false });
     expect((await app.inject({ url: "/api/templates/palworld/artwork", headers })).statusCode).toBe(404);
   });
 });

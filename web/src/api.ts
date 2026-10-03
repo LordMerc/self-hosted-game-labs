@@ -18,6 +18,8 @@ export interface Template {
   /** URL of a picture the template ships, or null (the card shows a gradient). */
   artwork: string | null;
   maxPlayers?: number;
+  /** The panel can read this game's live player count. False: it never will, so say so rather than show nothing. */
+  reportsPlayers: boolean;
   notes?: string;
   /** Memory the game needs, in MB; a lower memory limit gets a warning. */
   minMemoryMb: number | null;

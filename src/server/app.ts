@@ -152,13 +152,15 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
   const idParam = (req: { params: unknown }) => (req.params as { id: string }).id;
 
   app.get("/api/templates", async () =>
-    templates.filter((t) => !isCustomId(t.id)).map(({ id, name, image, maxPlayers, notes, resources, join, ports, env, accent, artwork }) => ({
+    templates.filter((t) => !isCustomId(t.id)).map(({ id, name, image, maxPlayers, notes, resources, join, ports, env, accent, artwork, playerCount }) => ({
       id,
       accent: accent ?? null,
       artwork: artwork && existsSync(path.join(config.TEMPLATES_DIR, artwork)) ? `/api/templates/${id}/artwork` : null,
       name,
       image,
       maxPlayers,
+      /** Whether the panel can read this game's live player count; false means it never will, so the page says so. */
+      reportsPlayers: Boolean(playerCount) || ports.some((p) => p.query !== "none"),
       notes,
       minMemoryMb: resources.minMemoryMb ?? null,
       join,
