@@ -198,7 +198,8 @@ textarea { resize: vertical; font-family: var(--mono, ui-monospace, monospace); 
 .template-card { display: grid; grid-template-rows: auto 1fr; width: 100%; min-width: 0; text-align: left; padding: 0; overflow: hidden; border-radius: var(--radius-lg); border: 1px solid var(--card-border-color); background: var(--card-bg); color: var(--text); }
 .template-card:hover { background: var(--hover-bg); }
 .card-banner { position: relative; display: block; width: 100%; aspect-ratio: 5 / 2; background: radial-gradient(120% 150% at 85% 0%, color-mix(in srgb, var(--tone) 42%, transparent), transparent 62%), linear-gradient(135deg, color-mix(in srgb, var(--tone) 24%, var(--bg)), color-mix(in srgb, var(--tone) 6%, var(--bg))); }
-.card-banner[data-art] { background: linear-gradient(0deg, var(--tag-bg), transparent 60%), var(--art) center / cover, color-mix(in srgb, var(--tone) 18%, var(--bg)); }
+/* With a picture: same size as the gradient banner, a dark fade at the bottom so the edge meets the card text cleanly, and no big letter. The tone shows while the picture loads. */
+.card-banner[data-art] { background: linear-gradient(0deg, rgba(8, 9, 12, 0.78), rgba(8, 9, 12, 0.25) 45%, transparent 75%), var(--art) center / cover no-repeat, color-mix(in srgb, var(--tone) 18%, var(--bg)); }
 .card-banner[data-art] .banner-letter { display: none; }
 .banner-letter { position: absolute; left: 1rem; bottom: -0.55rem; font-size: 4.2rem; line-height: 1; font-weight: 750; letter-spacing: -0.04em; color: color-mix(in srgb, var(--tone) 55%, transparent); }
 .tag { position: absolute; top: 0.6rem; left: 0.6rem; padding: 0.05rem 0.55rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; background: var(--tag-bg); color: var(--ok); border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent); }

@@ -96,4 +96,31 @@ backup: { exclude: [gamefiles, config/backups] }
       expect(() => parseTemplate(`${base}${bad}\n`), bad).toThrow(/Invalid/);
     }
   });
+
+  it("accepts an https artwork link with a credit, and rejects links that are unsafe or not a png, jpg or webp", () => {
+    const ok = parseTemplate(`${base}artwork: https://cdn.example.com/press/key-art.PNG?v=2\nartworkCredit: Press kit at example.com/press, free for non-commercial community use\n`);
+    expect(ok.artwork).toBe("https://cdn.example.com/press/key-art.PNG?v=2");
+    expect(ok.artworkCredit).toMatch(/Press kit/);
+    const bad = [
+      "http://example.com/x.png",
+      "ftp://example.com/x.png",
+      "https://example.com/x.svg",
+      "https://example.com/x.png.exe",
+      "https://example.com/x",
+      "https://user:pw@example.com/x.png",
+      "https://example.com:8443/x.png",
+      "https://example.com/x.png#frag",
+      "https://127.0.0.1/x.png",
+      "https://169.254.169.254/x.png",
+      "https://2130706433/x.png",
+      "https://[::1]/x.png",
+      "https://localhost/x.png",
+      "https://printer.local/x.png",
+      "https://intranet/x.png",
+      `https://example.com/${"a".repeat(500)}.png`,
+    ];
+    for (const value of bad) expect(() => parseTemplate(`${base}artwork: "${value}"\n`), value).toThrow(/Invalid/);
+    expect(() => parseTemplate(`${base}artworkCredit: ""\n`)).toThrow(/Invalid/);
+    expect(() => parseTemplate(`${base}artworkCredit: ${"x".repeat(301)}\n`)).toThrow(/Invalid/);
+  });
 });
