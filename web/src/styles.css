@@ -158,12 +158,6 @@ th:last-child, td:last-child { padding-right: 1.4rem; }
 .address { display: flex; align-items: flex-start; gap: 0.5rem; }
 .addr-main { color: var(--text); overflow-wrap: anywhere; min-width: 150px; }
 .addr-main.dim { color: var(--muted); }
-.addr-sub { font-size: 0.8125rem; overflow-wrap: anywhere; }
-.howto { margin-top: 0.3rem; }
-.howto summary { cursor: pointer; color: var(--accent); font-size: 0.8125rem; list-style: none; display: inline-flex; align-items: center; gap: 0.35rem; }
-.howto summary::-webkit-details-marker { display: none; }
-.howto summary::before { content: "ⓘ"; }
-.howto p { margin: 0.35rem 0 0; }
 .small-text { font-size: 0.8125rem; max-width: 280px; }
 .wrap { white-space: normal; }
 .chips { display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem; }
@@ -306,6 +300,10 @@ dd { margin: 0; text-align: right; display: flex; justify-content: flex-end; ali
 .backup-group-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 .backup-section { margin: 0.75rem 0 -0.25rem; font-size: 1.05rem; }
 .dialog.logs { width: min(900px, 100%); }
+.dialog.connect { width: min(520px, 100%); }
+.connect-row { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr) auto; align-items: center; gap: 0.6rem; }
+.connect-row .mono { overflow-wrap: anywhere; }
+.dialog.connect .chips { flex-direction: row; flex-wrap: wrap; }
 pre.mono { margin: 0; background: var(--bg); border-radius: 10px; padding: 1rem; height: 55vh; overflow: auto; white-space: pre-wrap; word-break: break-all; }
 
 @media (max-width: 1680px) {

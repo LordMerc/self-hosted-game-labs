@@ -63,6 +63,7 @@ export function ServersTable({
   onOpenServer,
   onLogs,
   onBackups,
+  onConnect,
   onDelete,
   onReveal,
 }: {
@@ -74,6 +75,7 @@ export function ServersTable({
   onOpenServer: (id: string) => void;
   onLogs: (s: Server) => void;
   onBackups: (s: Server) => void;
+  onConnect: (s: Server) => void;
   onDelete: (s: Server) => void;
   onReveal: (s: Server, key: string) => void;
 }) {
@@ -113,6 +115,7 @@ export function ServersTable({
             const items: MenuItem[] = [
               { label: "Restart", icon: "restart", disabled: s.status !== "online", onSelect: () => void post(s, "restart") },
               { label: "Backups…", icon: "archive", disabled: locked, onSelect: () => onBackups(s) },
+              { label: "How to connect…", icon: "info", onSelect: () => onConnect(s) },
               ...s.secrets.map((k) => ({ label: `Show ${k.toLowerCase().replace(/_/g, " ")}`, icon: "key" as const, onSelect: () => onReveal(s, k) })),
               { label: "Settings and console", icon: "settings2", onSelect: () => onOpenServer(s.id) },
               s.access === "public"
@@ -168,13 +171,6 @@ export function ServersTable({
                   <div className="address">
                     <div>
                       <div className={`mono addr-main${s.access === "private" ? " dim" : ""}`}>{primary && isIpAddress(primary) && primary === s.connect.public ? <HiddenIp value={primary} /> : (primary ?? "—")}</div>
-                      {s.connect.public && s.connect.lan && <div className="mono muted addr-sub">LAN {s.connect.lan}</div>}
-                      {s.connect.instructions && (
-                        <details className="howto">
-                          <summary>How to connect</summary>
-                          <p className="muted small-text wrap">{s.connect.instructions}</p>
-                        </details>
-                      )}
                       <div className="chips inline-ports">
                         {s.ports.map((p) => (
                           <span key={`${p.port}${p.protocol}`} className="chip mono">
