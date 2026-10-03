@@ -4,6 +4,7 @@ import path from "node:path";
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { ManualProvider } from "./connectivity/manual.js";
+import { echoPublicIp } from "./connectivity/provider.js";
 import { UpnpProvider } from "./connectivity/upnp.js";
 import { openDb } from "./db/index.js";
 import { DnsSettings } from "./dns/settings.js";
@@ -29,7 +30,7 @@ config.HOST_LAN_IP ||= detectLanIp();
 const { db } = openDb(path.join(config.DATA_DIR, "panel.db"));
 const templates = loadTemplates(config.TEMPLATES_DIR);
 const docker = new DockerodeDriver();
-const connectivity = config.CONNECTIVITY === "upnp" ? new UpnpProvider() : new ManualProvider(db, config.IP_ECHO_URL);
+const connectivity = config.CONNECTIVITY === "upnp" ? new UpnpProvider(undefined, () => echoPublicIp(config.IP_ECHO_URL)) : new ManualProvider(db, config.IP_ECHO_URL);
 const dnsSettings = new DnsSettings(db, config);
 
 const service = new ServerService({ config, db, templates, docker, connectivity, dnsProvider: () => dnsSettings.current() });
