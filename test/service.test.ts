@@ -6,6 +6,7 @@ import { loadConfig } from "../src/server/config.js";
 import { openDb } from "../src/server/db/index.js";
 import { parseListeningUdp, ServerService, UserError } from "../src/server/servers/service.js";
 import { loadTemplates } from "../src/server/templates/loader.js";
+import type { TcpProbe } from "../src/server/reachability.js";
 import { FakeConnectivity, FakeDns, FakeDocker } from "./helpers/fakes.js";
 
 let docker: FakeDocker;
@@ -14,9 +15,14 @@ let dns: FakeDns;
 let svc: ServerService;
 let dir: string;
 let playersAnswer = true;
+const probeCalls: [string, number][] = [];
+let probeAnswer: { state: "open" | "closed" | "unknown"; detail: string } = { state: "open", detail: "Connected from 3 of 3 locations" };
+const probe: TcpProbe = { name: "fake-checker", check: async (ip, port) => (probeCalls.push([ip, port]), probeAnswer) };
 let hostBusy: Set<`${number}/${"tcp" | "udp"}`>;
 
 beforeEach(() => {
+  probeCalls.length = 0;
+  probeAnswer = { state: "open", detail: "Connected from 3 of 3 locations" };
   dir = mkdtempSync(path.join(os.tmpdir(), "gl-"));
   const config = loadConfig({
     SESSION_SECRET: "x".repeat(32),
@@ -40,6 +46,7 @@ beforeEach(() => {
     hostPorts: () => hostBusy,
     background: false,
     stableMs: 0,
+    portProbe: probe,
     queryPlayers: async () => (playersAnswer ? { online: 4, max: 32 } : null),
   });
 });
@@ -711,5 +718,64 @@ describe("template settings", () => {
     const [s] = await svc.list();
     expect(s.id).toBe(again);
     expect(s.ports).toEqual([{ name: "udp-19132", port: 19132, protocol: "udp" }]);
+  });
+});
+
+describe("outside port check", () => {
+  it("tests a public server's TCP ports from outside, using the public IP, and shows UDP as forwarded by the router", async () => {
+    const mc = await svc.deploy({ templateId: "minecraft", name: "MC", env: { EULA: "TRUE" }, access: "public" });
+    const pal = await deploy("Pal", { access: "public" });
+    const r = await svc.checkReachability();
+    expect(r.via).toBe("fake-checker");
+    expect(probeCalls).toEqual([["203.0.113.7", 25565]]); // Palworld has only UDP ports: nothing to send outside
+    expect(r.results.filter((i) => i.serverId === mc)).toEqual([expect.objectContaining({ port: 25565, protocol: "tcp", state: "open" })]);
+    expect(r.results.filter((i) => i.serverId === pal).map((i) => [i.port, i.state])).toEqual([[8211, "forwarded"], [27015, "forwarded"]]);
+    const list = await svc.list();
+    expect(list.find((s) => s.id === mc)!.reachability).toMatchObject({ state: "ok", text: "Reachable from the internet" });
+    expect(list.find((s) => s.id === pal)!.reachability).toMatchObject({ state: "forwarded" });
+  });
+
+  it("reports a closed port and a port the router is not forwarding as problems, never as open", async () => {
+    const mc = await svc.deploy({ templateId: "minecraft", name: "MC", env: { EULA: "TRUE" }, access: "public" });
+    probeAnswer = { state: "closed", detail: "Could not connect from any of 3 locations (Connection timed out)" };
+    expect((await svc.checkReachability(mc)).results[0]).toMatchObject({ state: "closed" });
+    expect((await svc.list())[0].reachability).toMatchObject({ state: "problem", text: "Port 25565 is not reachable from the internet" });
+    const pal = await deploy("Pal", { access: "public" });
+    net.open.clear(); // the router lost its rules
+    const r = await svc.checkReachability(pal);
+    expect(r.results.map((i) => i.state)).toEqual(["not-forwarded", "not-forwarded"]);
+    expect((await svc.list()).find((s) => s.id === pal)!.reachability).toMatchObject({ state: "problem", text: "The router is not forwarding 8211/udp" });
+  });
+
+  it("keeps an unknown answer unknown", async () => {
+    const mc = await svc.deploy({ templateId: "minecraft", name: "MC", env: { EULA: "TRUE" }, access: "public" });
+    probeAnswer = { state: "unknown", detail: "Could not reach fake-checker: boom" };
+    await svc.checkReachability(mc);
+    expect((await svc.list())[0].reachability).toMatchObject({ state: "unknown", text: "Could not reach fake-checker: boom" });
+  });
+
+  it("skips stopped servers, refuses private ones, and does nothing when there is nothing public", async () => {
+    const mc = await svc.deploy({ templateId: "minecraft", name: "MC", env: { EULA: "TRUE" }, access: "public" });
+    await svc.stop(mc);
+    const r = await svc.checkReachability();
+    expect(r.results).toEqual([expect.objectContaining({ state: "stopped" })]);
+    expect(probeCalls).toEqual([]);
+    expect((await svc.list())[0].reachability).toBeNull();
+    const priv = await deploy("Quiet");
+    await expect(svc.checkReachability(priv)).rejects.toMatchObject({ status: 409 });
+    await expect(svc.checkReachability("nope")).rejects.toMatchObject({ status: 404 });
+    await svc.remove(mc);
+    await svc.remove(priv);
+    expect((await svc.checkReachability()).results).toEqual([]);
+  });
+
+  it("explains when the public IP cannot be found, and when the check is turned off", async () => {
+    await svc.deploy({ templateId: "minecraft", name: "MC", env: { EULA: "TRUE" }, access: "public" });
+    net.missing = true;
+    await expect(svc.checkReachability()).rejects.toMatchObject({ status: 502 });
+    net.missing = false;
+    (svc as unknown as { d: { portProbe: null } }).d.portProbe = null;
+    await expect(svc.checkReachability()).rejects.toMatchObject({ status: 409 });
+    expect(svc.portCheckInfo()).toEqual({ enabled: false, via: null });
   });
 });

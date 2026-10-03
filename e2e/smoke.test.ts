@@ -30,7 +30,7 @@ beforeAll(async () => {
   const { db } = openDb(":memory:");
   const templates = loadTemplates(path.resolve("templates"));
   const docker = new FakeDocker();
-  const service = new ServerService({ config, db, templates, docker, connectivity: new FakeConnectivity(), hostPorts: () => new Set(), background: false, stableMs: 0, queryPlayers: async () => ({ online: 2, max: 32 }) });
+  const service = new ServerService({ config, db, templates, docker, connectivity: new FakeConnectivity(), hostPorts: () => new Set(), background: false, stableMs: 0, portProbe: { name: "fake-checker", check: async () => ({ state: "open", detail: "Connected from 3 of 3 locations" }) }, queryPlayers: async () => ({ online: 2, max: 32 }) });
   const app = buildApp({ config, db, templates, service, docker, dnsSettings: new DnsSettings(db, config), webRoot: path.resolve("dist/web") });
   await app.listen({ port: 0, host: "127.0.0.1" });
   url = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
@@ -102,6 +102,15 @@ describe("the panel in a browser", () => {
     await page.getByRole("button", { name: "Deploy", exact: true }).click();
     await row("Bedrock").getByText("Running").waitFor();
     await shot("3-custom");
+  });
+
+  it("checks a public server's port from outside and shows the answer", async () => {
+    await row("Minecraft").getByRole("button", { name: "Public" }).click();
+    await page.getByRole("button", { name: "Run" }).first().waitFor();
+    await page.getByRole("button", { name: "Run", exact: true }).first().click();
+    await page.getByText("Connected from 3 of 3 locations").waitFor();
+    await page.getByText("via fake-checker").waitFor();
+    await shot("3b-port-check");
   });
 
   it("opens a server's page, runs a console command and renames the server", async () => {

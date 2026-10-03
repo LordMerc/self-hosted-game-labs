@@ -278,9 +278,15 @@ export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: 
                                 {s.connect.public && s.connect.lan && <div className="mono muted addr-sub">LAN {s.connect.lan}</div>}
                                 {s.connect.instructions && <div className="muted small-text wrap">{s.connect.instructions}</div>}
                                 {s.access === "public" && s.pendingRules.length === 0 && (
-                                  <div className="muted small-text" title="Check from a phone on cellular data.">
-                                    Reachability untested
-                                  </div>
+                                  s.reachability ? (
+                                    <div className={`small-text ${s.reachability.state === "problem" ? "warn" : "muted"}`} title={`Checked ${new Date(s.reachability.at).toLocaleTimeString()}. Use External port check in the Network panel to check again.`}>
+                                      <span className={`dot ${s.reachability.state === "problem" ? "error" : s.reachability.state === "unknown" ? "paused" : "online"}`} /> {s.reachability.text}
+                                    </div>
+                                  ) : (
+                                    <div className="muted small-text" title="Press Run under External port check in the Network panel, or check from a phone on cellular data.">
+                                      Reachability untested
+                                    </div>
+                                  )
                                 )}
                                 {s.access === "public" && s.pendingRules.length > 0 && (
                                   <div className="warn small-text">Waiting for router rule(s): confirm in the Network panel</div>
@@ -380,7 +386,7 @@ export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: 
             </section>
           </div>
 
-          <NetworkPanel network={network} onChange={refresh} />
+          <NetworkPanel network={network} servers={servers} onChange={refresh} />
         </div>
       </main>
 

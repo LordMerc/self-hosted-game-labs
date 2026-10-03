@@ -35,6 +35,7 @@ export interface Server {
   secrets: string[];
   connect: { lan: string | null; public: string | null; instructions: string | null };
   pendingRules: { id: number; port: number; protocol: "tcp" | "udp" }[];
+  reachability: Reachability | null;
 }
 
 export interface Network {
@@ -47,6 +48,22 @@ export interface Network {
   rules: { id: number; port: number; protocol: "tcp" | "udp"; confirmed: boolean; slug: string }[];
   mappings: { port: number; protocol: "tcp" | "udp"; description: string }[];
   mappingsError: string | null;
+  portCheck: { enabled: boolean; via: string | null };
+}
+
+export interface ReachItem {
+  serverId: string;
+  name: string;
+  port: number;
+  protocol: "tcp" | "udp";
+  state: "open" | "closed" | "unknown" | "forwarded" | "not-forwarded" | "stopped";
+  detail: string;
+}
+
+export interface Reachability {
+  state: "ok" | "problem" | "forwarded" | "unknown";
+  text: string;
+  at: string;
 }
 
 export interface AuthStatus {

@@ -16,6 +16,7 @@ import { listHostPorts } from "../ports/host.js";
 import { BackupStore, type BackupInfo } from "../backups.js";
 import { queryA2s, type PlayerCount } from "../players/a2s.js";
 import { buildCustomTemplate, checkCustomInput, isCustomId, type CustomInput } from "./custom.js";
+import type { TcpProbe } from "../reachability.js";
 import { queryMinecraft } from "../players/minecraft.js";
 import { slugify, uniqueSlug } from "../slug.js";
 
@@ -71,6 +72,8 @@ export interface ServiceDeps {
   /** TCP probe used for readiness; injectable for tests. */
   probeTcp?: (port: number) => Promise<boolean>;
   stableMs?: number;
+  /** Asks an outside machine whether a TCP port answers. Absent or null: the outside check is off. */
+  portProbe?: TcpProbe | null;
   /** Sets a folder's owner; injectable because tests do not run as root. */
   chown?: (dir: string, uid: number, gid: number) => void;
   /** Player-count query for a template port with a `query` kind; injectable for tests. */
@@ -122,6 +125,34 @@ export function expandCommand(command: string[], env: Record<string, string>): s
 }
 
 const CUSTOM_KEY = "custom-templates";
+
+export type ReachState = "open" | "closed" | "unknown" | "forwarded" | "not-forwarded" | "stopped";
+
+export interface ReachItem {
+  serverId: string;
+  name: string;
+  port: number;
+  protocol: "tcp" | "udp";
+  state: ReachState;
+  detail: string;
+}
+
+export interface Reachability {
+  state: "ok" | "problem" | "forwarded" | "unknown";
+  text: string;
+  at: string;
+}
+
+/** One line per server out of the per-port results. A problem outranks good news, because it is what the person needs to see. */
+function summarize(items: ReachItem[], at: string): Reachability {
+  const bad = items.find((i) => i.state === "closed" || i.state === "not-forwarded");
+  if (bad) return { state: "problem", text: bad.state === "closed" ? `Port ${bad.port} is not reachable from the internet` : `The router is not forwarding ${bad.port}/${bad.protocol}`, at };
+  const open = items.find((i) => i.state === "open");
+  if (open) return { state: "ok", text: "Reachable from the internet", at };
+  const fwd = items.find((i) => i.state === "forwarded");
+  if (fwd) return { state: "forwarded", text: "Router forwards the port. UDP can't be tested from outside", at };
+  return { state: "unknown", text: items[0]?.detail ?? "Could not be checked", at };
+}
 
 export class ServerService {
   constructor(private readonly d: ServiceDeps) {
@@ -430,6 +461,7 @@ export class ServerService {
     if (row.containerId) await this.d.docker.remove(row.containerId);
     if (opts.deleteData) rmSync(path.join(this.d.config.GAMESERVERS_DIR, row.slug), { recursive: true, force: true });
     this.d.db.delete(schema.servers).where(eq(schema.servers.id, id)).run();
+    this.reach.delete(id);
     this.dropCustomTemplate(row.templateId, row.slug);
     this.event(null, "info", `Deleted ${row.slug}${opts.deleteData ? " and its world data" : " (data kept)"}`);
     return { warnings: errors };
@@ -690,6 +722,7 @@ export class ServerService {
           public: r.access === "public" && host && gamePort ? `${host}:${gamePort.port}` : null,
           instructions: r.access === "public" && tpl?.join.method === "server-browser" ? (tpl.join.instructions ?? null) : null,
         },
+        reachability: r.access === "public" ? (this.reach.get(r.id) ?? null) : null,
         pendingRules: this.d.connectivity.kind !== "manual" ? [] : rules.filter((x) => x.serverId === r.id && !x.confirmed).map((x) => ({ id: x.id, port: x.port, protocol: x.protocol })),
       };
     });
@@ -1006,6 +1039,72 @@ export class ServerService {
     return this.row(id);
   }
 
+  // ------------------------------------------------- outside port check
+
+  private reach = new Map<string, Reachability>();
+
+  /** Whether the Run button works, and who would be asked. */
+  portCheckInfo() {
+    return { enabled: Boolean(this.d.portProbe), via: this.d.portProbe?.name ?? null };
+  }
+
+  /**
+   * Ask an outside service whether each public server's TCP ports answer. UDP has no handshake to test, so for UDP the panel
+   * reports what it does know: whether the router is forwarding the port. Nothing here claims more than was actually checked.
+   */
+  async checkReachability(serverId?: string): Promise<{ via: string; checkedAt: string; results: ReachItem[] }> {
+    const probe = this.d.portProbe;
+    if (!probe) throw new UserError("The outside port check is turned off (PORT_CHECK=off)", 409);
+    let rows = this.d.db.select().from(schema.servers).all();
+    if (serverId) {
+      const one = rows.find((r) => r.id === serverId);
+      if (!one) throw new UserError("Server not found", 404);
+      if (one.access !== "public") throw new UserError("Make the server public first", 409);
+      rows = [one];
+    } else {
+      rows = rows.filter((r) => r.access === "public");
+    }
+    const checkedAt = new Date().toISOString();
+    if (rows.length === 0) return { via: probe.name, checkedAt, results: [] };
+
+    let ip: string;
+    try {
+      ip = await this.d.connectivity.externalIp();
+    } catch (e) {
+      throw new UserError(`Could not find your public IP, so there is nothing to check: ${e instanceof Error ? e.message : String(e)}`, 502);
+    }
+    let mappings: Awaited<ReturnType<ConnectivityProvider["list"]>> = [];
+    if (this.d.connectivity.kind === "upnp") mappings = await this.d.connectivity.list().catch(() => []);
+    const confirmed = new Set(
+      this.d.db.select().from(schema.manualRules).all().filter((x) => x.confirmed).map((x) => `${x.serverId}:${x.port}/${x.protocol}`),
+    );
+
+    const results: ReachItem[] = [];
+    for (const r of rows) {
+      const ports = this.ports(r.id);
+      const item = (p: { port: number; protocol: "tcp" | "udp" }, state: ReachState, detail: string): ReachItem => ({ serverId: r.id, name: r.name, port: p.port, protocol: p.protocol, state, detail });
+      const mine: ReachItem[] = [];
+      if (r.status === "offline" || r.status === "paused") {
+        mine.push(item(ports[0] ?? { port: 0, protocol: "tcp" }, "stopped", "The server is stopped, so there is nothing to test"));
+      } else {
+        for (const p of ports) {
+          if (p.protocol === "tcp") {
+            const res = await probe.check(ip, p.port);
+            mine.push(item(p, res.state, res.detail));
+          } else {
+            const fwd =
+              this.d.connectivity.kind === "upnp" ? mappings.some((m) => m.port === p.port && m.protocol === "udp") : confirmed.has(`${r.id}:${p.port}/udp`);
+            mine.push(item(p, fwd ? "forwarded" : "not-forwarded", fwd ? "The router forwards this port. UDP can't be tested from outside, so a player joining is the real test" : "The router is not forwarding this port"));
+          }
+        }
+      }
+      if (!mine.some((i) => i.state === "stopped")) this.reach.set(r.id, summarize(mine, checkedAt));
+      results.push(...mine);
+    }
+    this.event(null, "info", `Outside port check run for ${rows.length} server${rows.length === 1 ? "" : "s"} via ${probe.name}`);
+    return { via: probe.name, checkedAt, results };
+  }
+
   async network() {
     const { connectivity, config, db } = this.d;
     const rules = db
@@ -1040,6 +1139,7 @@ export class ServerService {
       rules: connectivity.kind === "manual" ? rules : [],
       mappings: mappings.list,
       mappingsError: mappings.error,
+      portCheck: this.portCheckInfo(),
     };
   }
 

@@ -194,6 +194,8 @@ dd { margin: 0; text-align: right; display: flex; justify-content: flex-end; ali
 .map { display: flex; align-items: center; gap: 0.6rem; }
 .rule { display: flex; gap: 0.5rem; align-items: flex-start; padding: 0.2rem 0; }
 .probe { display: flex; gap: 0.6rem; }
+.probe-results { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.7rem; }
+.probe-results li { display: grid; gap: 0.15rem; }
 .probe select { flex: 1; min-width: 0; }
 
 /* Dialogs */

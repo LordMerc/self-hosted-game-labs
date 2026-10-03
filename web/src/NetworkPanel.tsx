@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, type Network } from "./api";
+import { api, type Network, type ReachItem, type Server } from "./api";
 import { HiddenIp } from "./HiddenIp";
 import { Icon } from "./Icons";
 
@@ -37,7 +37,81 @@ function RouterDetails() {
   );
 }
 
-export function NetworkPanel({ network, onChange }: { network: Network | null; onChange: () => void }) {
+const reachTone: Record<ReachItem["state"], string> = { open: "online", forwarded: "online", closed: "error", "not-forwarded": "error", unknown: "paused", stopped: "paused" };
+const reachWord: Record<ReachItem["state"], string> = { open: "Open", forwarded: "Forwarded", closed: "Closed", "not-forwarded": "Not forwarded", unknown: "Unknown", stopped: "Stopped" };
+
+/** Why a port may be closed, in one line, from what the outside checker reported. */
+function reachHint(i: ReachItem) {
+  if (i.state !== "closed") return null;
+  if (/refused/i.test(i.detail)) return "The connection reached your network, but nothing answered on that port. Is the game running and listening?";
+  return "Nothing answered. Usually the router is not forwarding this port, or the internet provider blocks it.";
+}
+
+/** Asks an outside service to try each public server's TCP ports. Only runs when pressed, because it sends the public IP to that service. */
+function PortCheck({ info, servers, onDone }: { info: Network["portCheck"]; servers: Server[]; onDone: () => void }) {
+  const pub = servers.filter((s) => s.access === "public");
+  const [target, setTarget] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [out, setOut] = useState<{ via: string; checkedAt: string; results: ReachItem[] } | null>(null);
+
+  async function run() {
+    setBusy(true);
+    setError("");
+    try {
+      const r = await api<{ via: string; checkedAt: string; results: ReachItem[] }>("/network/port-check", { method: "POST", body: target ? { serverId: target } : {} });
+      setOut(r);
+      onDone();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+    setBusy(false);
+  }
+
+  return (
+    <section>
+      <div className="sec-head">
+        <h3>External port check</h3>
+        <span className="muted small-text">{info.via ? `via ${info.via}` : "off"}</span>
+      </div>
+      <div className="probe">
+        <select aria-label="Servers to check" value={target} onChange={(e) => setTarget(e.target.value)} disabled={!info.enabled || pub.length === 0 || busy}>
+          <option value="">All public servers</option>
+          {pub.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        <button className="primary" onClick={() => void run()} disabled={!info.enabled || pub.length === 0 || busy}>
+          <Icon name="radar" size={15} /> {busy ? "Checking…" : "Run"}
+        </button>
+      </div>
+      {!info.enabled && <p className="muted small-text">Turned off. Set PORT_CHECK=on to use it.</p>}
+      {info.enabled && pub.length === 0 && <p className="muted small-text">Make a server public to check it.</p>}
+      {error && <p className="error small-text">{error}</p>}
+      {out && out.results.length === 0 && <p className="muted small-text">Nothing to check.</p>}
+      {out && out.results.length > 0 && (
+        <ul className="probe-results">
+          {out.results.map((i) => (
+            <li key={`${i.serverId}${i.port}${i.protocol}`}>
+              <div>
+                <span className={`dot ${reachTone[i.state]}`} /> <strong>{i.name}</strong> <span className="mono">{i.port ? `${i.port} ${i.protocol.toUpperCase()}` : ""}</span> <span className="muted">{reachWord[i.state]}</span>
+              </div>
+              <div className="muted small-text wrap">{i.detail}</div>
+              {reachHint(i) && <div className="warn small-text wrap">{reachHint(i)}</div>}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="muted small-text">
+        {info.enabled ? `Pressing Run sends your public IP and the port number to ${info.via}. Nothing is sent otherwise. ` : ""}UDP games cannot be tested from outside; for those the panel shows whether the router forwards the port.
+      </p>
+    </section>
+  );
+}
+
+export function NetworkPanel({ network, servers, onChange }: { network: Network | null; servers: Server[]; onChange: () => void }) {
   const [checking, setChecking] = useState(false);
   if (!network) return null;
   const confirm = (id: number, confirmed: boolean) => api(`/network/rules/${id}`, { method: "PUT", body: { confirmed } }).then(onChange);
@@ -170,21 +244,7 @@ export function NetworkPanel({ network, onChange }: { network: Network | null; o
         )}
       </section>
 
-      <section>
-        <div className="sec-head">
-          <h3>External port check</h3>
-          <span className="muted small-text">via external probe</span>
-        </div>
-        <div className="probe">
-          <select disabled aria-label="Servers to check">
-            <option>All public servers</option>
-          </select>
-          <button className="primary" disabled title="Needs an external probe service, which is not set up yet">
-            <Icon name="radar" size={15} /> Run
-          </button>
-        </div>
-        <p className="muted small-text">Not available yet. For now, test from a phone on cellular data.</p>
-      </section>
+      <PortCheck info={network.portCheck} servers={servers} onDone={onChange} />
 
       {network.reconcile.problems.length > 0 && (
         <section>

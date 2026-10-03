@@ -12,6 +12,7 @@ import { DockerodeDriver } from "./docker/driver.js";
 import { ServerService } from "./servers/service.js";
 import { detectLanIp } from "./lan-ip.js";
 import { HostStats } from "./host-stats.js";
+import { CheckHostProbe } from "./reachability.js";
 import { loadTemplates } from "./templates/loader.js";
 
 /** Sessions need a stable secret. Use SESSION_SECRET if given, otherwise generate one once and keep it in the data dir. */
@@ -34,7 +35,7 @@ const docker = new DockerodeDriver();
 const connectivity = config.CONNECTIVITY === "upnp" ? new UpnpProvider(undefined, () => echoPublicIp(config.IP_ECHO_URL), config.HOST_LAN_IP || undefined) : new ManualProvider(db, config.IP_ECHO_URL);
 const dnsSettings = new DnsSettings(db, config);
 
-const service = new ServerService({ config, db, templates, docker, connectivity, dnsProvider: () => dnsSettings.current() });
+const service = new ServerService({ config, db, templates, docker, connectivity, dnsProvider: () => dnsSettings.current(), portProbe: config.PORT_CHECK === "on" ? new CheckHostProbe() : null });
 const hostStats = new HostStats([config.GAMESERVERS_DIR, config.DATA_DIR]);
 hostStats.snapshot(); // first sample, so CPU and network rates exist by the time the page asks
 const app = buildApp({ config, db, templates, service, docker, dnsSettings, hostStats, webRoot: "dist/web" });
