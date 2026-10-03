@@ -90,7 +90,7 @@ function IconButton({ icon, label, onClick, disabled, danger }: { icon: IconName
   );
 }
 
-export function GameServers({ onLogout, onNavigate }: { onLogout: () => void; onNavigate: (p: Page) => void }) {
+export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: () => void; onNavigate: (p: Page) => void; onOpenServer: (id: string) => void }) {
   const [servers, setServers] = useState<Server[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [network, setNetwork] = useState<Network | null>(null);
@@ -246,7 +246,7 @@ export function GameServers({ onLogout, onNavigate }: { onLogout: () => void; on
                             <div className="server-cell">
                               <GameIcon id={s.templateId} name={s.templateName} />
                               <div>
-                                <strong>{s.name}</strong>
+                                <button className="server-link" onClick={() => onOpenServer(s.id)} title="Open settings and console">{s.name}</button>
                                 <div className="muted">{s.templateName}</div>
                               </div>
                             </div>
