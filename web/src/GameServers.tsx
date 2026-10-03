@@ -252,8 +252,8 @@ export function GameServers({ onLogout, onNavigate }: { onLogout: () => void; on
                             </div>
                           </td>
                           <td>
-                            <span className={`status ${s.status}`}>
-                              <span className={`dot ${s.status}`} /> {statusLabel[s.status]}
+                            <span className={`status ${s.starting ? "deploying" : s.status}`} title={s.starting ? "The game is still loading or downloading; it will say Running once it is ready to join" : undefined}>
+                              <span className={`dot ${s.starting ? "deploying" : s.status}`} /> {s.starting ? "Starting" : statusLabel[s.status]}
                             </span>
                             {(live || max !== undefined) && (
                               <div className="muted players" title={live ? "Players connected right now" : "This game does not report live player counts yet"}>

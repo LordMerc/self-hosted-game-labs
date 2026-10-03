@@ -48,6 +48,8 @@ export const templateSchema = z
         z
           .object({
             containerPath: z.string().startsWith("/"),
+            /** Owner the game runs as. The panel creates the folder as root, so for images that do not fix this themselves it sets it. */
+            owner: z.object({ uid: z.number().int().min(0), gid: z.number().int().min(0) }).strict().optional(),
           })
           .strict(),
       )

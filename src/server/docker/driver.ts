@@ -54,6 +54,10 @@ export interface ContainerDriver {
   restart(id: string): Promise<void>;
   remove(id: string): Promise<void>;
   state(id: string): Promise<ContainerState>;
+  /** When the container's current run began (changes on every restart), or null if unknown. */
+  startedAt(id: string): Promise<string | null>;
+  /** Run a command inside the running container and collect what it prints. Never goes through a shell. */
+  exec(id: string, cmd: string[], opts?: { timeoutMs?: number }): Promise<{ exitCode: number | null; output: string }>;
   /** Current CPU and memory of a running container. */
   usage(id: string): Promise<ContainerUsage>;
   /** Follow logs until the signal aborts. */
@@ -152,6 +156,35 @@ export class DockerodeDriver implements ContainerDriver {
       if ((e as { statusCode?: number }).statusCode === 404) return "missing";
       throw e;
     }
+  }
+
+  async startedAt(id: string): Promise<string | null> {
+    try {
+      return (await this.docker.getContainer(id).inspect()).State.StartedAt ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async exec(id: string, cmd: string[], opts: { timeoutMs?: number } = {}): Promise<{ exitCode: number | null; output: string }> {
+    const exec = await this.docker.getContainer(id).exec({ Cmd: cmd, AttachStdout: true, AttachStderr: true, Tty: false });
+    const stream = (await exec.start({ hijack: true, stdin: false })) as unknown as NodeJS.ReadableStream & { destroy(): void };
+    let output = "";
+    const { Writable } = await import("node:stream");
+    const sink = new Writable({
+      write(chunk: Buffer, _enc, cb) {
+        if (output.length < 200_000) output += chunk.toString("utf8");
+        cb();
+      },
+    });
+    this.docker.modem.demuxStream(stream, sink, sink);
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => (stream.destroy(), reject(new Error("The command took too long and was stopped"))), opts.timeoutMs ?? 10_000);
+      stream.on("end", () => (clearTimeout(timer), resolve()));
+      stream.on("error", (e) => (clearTimeout(timer), reject(e)));
+    });
+    const info = await exec.inspect();
+    return { exitCode: info.ExitCode ?? null, output };
   }
 
   async usage(id: string): Promise<ContainerUsage> {

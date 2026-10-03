@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { chownSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { randomBytes, randomUUID } from "node:crypto";
 import path from "node:path";
 import net from "node:net";
@@ -9,7 +9,7 @@ import { schema } from "../db/index.js";
 import type { GameTemplate } from "../../shared/template.js";
 import type { ContainerDriver, ContainerState } from "../docker/driver.js";
 import { LABEL_ID, LABEL_MANAGED, LABEL_SLUG } from "../docker/driver.js";
-import type { ConnectivityProvider } from "../connectivity/provider.js";
+import { RouterNotFoundError, type ConnectivityProvider } from "../connectivity/provider.js";
 import type { DnsClient } from "../dns/cloudflare.js";
 import { allocatePorts, checkPorts, portKey, type Allocation, type PortKey } from "../ports/allocator.js";
 import { listHostPorts } from "../ports/host.js";
@@ -70,6 +70,8 @@ export interface ServiceDeps {
   probeTcp?: (port: number) => Promise<boolean>;
   readyTimeoutMs?: number;
   stableMs?: number;
+  /** Sets a folder's owner; injectable because tests do not run as root. */
+  chown?: (dir: string, uid: number, gid: number) => void;
   /** Player-count query for a template port with `query: a2s`; injectable for tests. */
   queryPlayers?: (host: string, port: number) => Promise<PlayerCount | null>;
 }
@@ -82,6 +84,16 @@ export interface DnsContext {
 }
 
 const randomSecret = () => randomBytes(12).toString("base64url");
+
+/** Ports with a bound UDP socket, from the contents of /proc/net/udp (and udp6). */
+export function parseListeningUdp(text: string): Set<number> {
+  const ports = new Set<number>();
+  for (const line of text.split("\n")) {
+    const m = line.match(/^\s*\d+:\s+[0-9A-Fa-f]+:([0-9A-Fa-f]{4})\s/);
+    if (m) ports.add(parseInt(m[1], 16));
+  }
+  return ports;
+}
 
 export function tcpProbe(port: number, host = "127.0.0.1"): Promise<boolean> {
   return new Promise((resolve) => {
@@ -228,6 +240,13 @@ export class ServerService {
       const binds = t.data.map((dp, i) => {
         const host = t.data.length === 1 ? dataRoot : path.join(dataRoot, path.basename(dp.containerPath) || String(i));
         mkdirSync(host, { recursive: true });
+        if (dp.owner) {
+          try {
+            (this.d.chown ?? chownSync)(host, dp.owner.uid, dp.owner.gid);
+          } catch (e) {
+            this.event(id, "warn", `Could not set the owner of ${host} to ${dp.owner.uid}:${dp.owner.gid}; if the game cannot write its files, run chown on that folder: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
         return { host, container: dp.containerPath };
       });
       this.event(id, "info", `Pulling ${t.image}`);
@@ -285,11 +304,18 @@ export class ServerService {
     await this.d.docker.start(row.containerId);
     this.setStatus(id, "online");
     this.event(id, "info", "Started");
-    // The router may have forgotten the ports while the server was stopped, and reconcile leaves stopped servers alone.
-    if (row.access === "public" && this.d.config.HOST_LAN_IP) {
-      for (const p of this.ports(id)) {
-        await this.d.connectivity.ensureOpen(id, row.slug, p.port, p.protocol, this.d.config.HOST_LAN_IP).catch((e: unknown) => this.event(id, "warn", `Could not re-open ${p.port}/${p.protocol} on the router: ${e instanceof Error ? e.message : String(e)}`));
-      }
+    await this.reopenIfPublic(id);
+  }
+
+  /** A public server that was stopped may have lost its router mappings (reboot) while it was off; put them back. */
+  private async reopenIfPublic(id: string) {
+    const row = this.row(id);
+    const lan = this.d.config.HOST_LAN_IP;
+    if (row.access !== "public" || !lan) return;
+    try {
+      for (const p of this.ports(id)) await this.d.connectivity.ensureOpen(id, row.slug, p.port, p.protocol, lan);
+    } catch (e) {
+      this.event(id, "warn", `Could not check the router ports after starting: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -416,14 +442,21 @@ export class ServerService {
    * mappings on reboot, DNS records get deleted, public IPs change, containers get removed by hand.
    * Only ever touches containers/mappings/records that carry the gamelabs tag. Returns what it did.
    */
+  private routerMissStreak = 0;
+
   async reconcile(): Promise<string[]> {
     const actions: string[] = [];
     const problems: string[] = [];
+    // A router that does not answer discovery is usually a one-off. Note it, skip the rest of the router work
+    // this round, and only complain once it has been missing on two rounds in a row.
+    let routerMissing: string | null = null;
     const attempt = async (what: string, fn: () => Promise<void>) => {
+      if (routerMissing) return;
       try {
         await fn();
       } catch (e) {
-        problems.push(`${what}: ${e instanceof Error ? e.message : String(e)}`);
+        if (e instanceof RouterNotFoundError) routerMissing = e.message;
+        else problems.push(`${what}: ${e instanceof Error ? e.message : String(e)}`);
       }
     };
 
@@ -441,13 +474,12 @@ export class ServerService {
 
     const servers = this.d.db.select().from(schema.servers).all();
     const publicServers = servers.filter((s) => s.access === "public" && s.status !== "error");
-    // A stopped server needs no open ports; start() opens them again.
-    const runningPublic = publicServers.filter((s) => s.status === "online" || s.status === "paused");
 
     // 2. Router mappings for public servers (a router reboot wipes them).
     const lan = this.d.config.HOST_LAN_IP;
     if (lan) {
-      for (const s of runningPublic) {
+      // A stopped server has nothing listening, so its ports are left alone until it is started again.
+      for (const s of publicServers.filter((x) => x.status !== "offline")) {
         for (const p of this.ports(s.id)) {
           await attempt(`${s.slug} ${p.port}/${p.protocol}`, async () => {
             const owned = await this.d.connectivity.list();
@@ -489,6 +521,12 @@ export class ServerService {
     await attempt("backup records", async () => {
       for (const r of servers) this.saveBackupMeta(r);
     });
+    if (routerMissing) {
+      this.routerMissStreak++;
+      if (this.routerMissStreak >= 2) problems.push(routerMissing);
+    } else {
+      this.routerMissStreak = 0;
+    }
 
     for (const a of actions) this.event(null, "info", `Reconcile: ${a}`);
     for (const p of problems) this.event(null, "warn", `Reconcile problem: ${p}`);
@@ -512,9 +550,41 @@ export class ServerService {
     }
   }
 
+  /** `${containerId}@${startedAt}` of runs already seen with their game port open. A restart is a new run. */
+  private readyRuns = new Set<string>();
+
+  /**
+   * True while a running container's game has not opened its main port yet (first-run downloads, world loading).
+   * A TCP port is probed from the host. UDP cannot be probed from outside, so we look inside the container for a
+   * bound UDP socket on the game port. If that cannot be read (no `cat` in the image), assume ready.
+   */
+  private async isStarting(r: typeof schema.servers.$inferSelect): Promise<boolean> {
+    if (r.status !== "online" || !r.containerId) return false;
+    const tpl = this.d.templates.find((x) => x.id === r.templateId);
+    const main = tpl?.ports[0];
+    const mine = main && this.ports(r.id).find((p) => p.name === main.name);
+    if (!mine) return false;
+    const key = `${r.containerId}@${(await this.d.docker.startedAt(r.containerId)) ?? "?"}`;
+    if (this.readyRuns.has(key)) return false;
+    let listening: boolean;
+    try {
+      if (mine.protocol === "tcp") listening = await (this.d.probeTcp ?? tcpProbe)(mine.port);
+      else {
+        const [v4, v6] = await Promise.all(["/proc/net/udp", "/proc/net/udp6"].map((f) => this.d.docker.exec(r.containerId!, ["cat", f], { timeoutMs: 4000 })));
+        listening = parseListeningUdp(v4.output + "\n" + v6.output).has(mine.port);
+        if (v4.exitCode !== 0 && v4.exitCode !== null) return false; // cannot tell: do not claim "starting" forever
+      }
+    } catch {
+      return false;
+    }
+    if (listening) this.readyRuns.add(key);
+    return !listening;
+  }
+
   async list() {
     await this.refreshStatuses();
     const rows = this.d.db.select().from(schema.servers).all();
+    const starting = new Set((await Promise.all(rows.map(async (r) => ((await this.isStarting(r)) ? r.id : null)))).filter((x): x is string => x !== null));
     const ports = this.d.db.select().from(schema.serverPorts).all();
     const rules = this.d.db.select().from(schema.manualRules).all();
     const t = (id: string) => this.d.templates.find((x) => x.id === id);
@@ -532,6 +602,7 @@ export class ServerService {
         templateId: r.templateId,
         templateName: tpl?.name ?? r.templateId,
         status: r.status,
+        starting: starting.has(r.id),
         access: r.access,
         lastError: r.lastError,
         ports: sp.map((p) => ({ name: p.name, port: p.port, protocol: p.protocol })),

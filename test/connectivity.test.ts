@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { openDb, schema } from "../src/server/db/index.js";
 import { ManualProvider } from "../src/server/connectivity/manual.js";
-import { ConnectivityError } from "../src/server/connectivity/provider.js";
+import { ConnectivityError, RouterNotFoundError } from "../src/server/connectivity/provider.js";
 import { parseUpnpList, UpnpProvider, type UpnpcRunner } from "../src/server/connectivity/upnp.js";
 
 const LIST = `upnpc : miniupnpc library test client, version 2.2.5.
@@ -32,15 +32,6 @@ describe("parseUpnpList", () => {
       { protocol: "udp", port: 8211, internalIp: "192.168.1.50", internalPort: 8211, description: "gamelabs:palworld" },
       { protocol: "tcp", port: 32400, internalIp: "192.168.1.20", internalPort: 32400, description: "Plex" },
     ]);
-  });
-});
-
-describe("UpnpProvider discovery", () => {
-  it("looks once more when the router misses the first broadcast", async () => {
-    let n = 0;
-    const run: UpnpcRunner = async () => (++n === 1 ? "No IGD UPnP Device found on the network !\n" : LIST);
-    expect((await new UpnpProvider(run).list()).map((m) => m.port)).toEqual([8211]);
-    expect(n).toBe(2);
   });
 });
 
@@ -78,9 +69,35 @@ describe("UpnpProvider", () => {
   });
 
   it("gives a clear error when UPnP is off on the router", async () => {
-    const run: UpnpcRunner = async () => "No IGD UPnP Device found on the network !\n";
-    await expect(new UpnpProvider(run).ensureOpen("id", "x", 9000, "tcp", "192.168.1.50")).rejects.toThrow(/Turn UPnP on/);
-    await expect(new UpnpProvider(run).externalIp()).rejects.toBeInstanceOf(ConnectivityError);
+    let calls = 0;
+    const run: UpnpcRunner = async () => (calls++, "No IGD UPnP Device found on the network !\n");
+    const p = new UpnpProvider(run);
+    p.retryDelayMs = 0;
+    await expect(p.ensureOpen("id", "x", 9000, "tcp", "192.168.1.50")).rejects.toThrow(/Turn UPnP on/);
+    expect(calls).toBe(3); // asked three times before giving up
+    const e = await p.externalIp().catch((x) => x);
+    expect(e).toBeInstanceOf(RouterNotFoundError);
+    expect(e).toBeInstanceOf(ConnectivityError);
+  });
+
+  it("retries discovery, so one dropped reply is not reported as a missing router", async () => {
+    let n = 0;
+    const run: UpnpcRunner = async (args) => (args.includes("-l") && n++ === 0 ? "No IGD UPnP Device found on the network !\n" : LIST);
+    const p = new UpnpProvider(run);
+    p.retryDelayMs = 0;
+    expect(await p.externalIp()).toBe("203.0.113.7");
+  });
+
+  it("uses the router on this machine's own subnet when another device answers discovery first", async () => {
+    const calls: string[][] = [];
+    const run: UpnpcRunner = async (args) => {
+      calls.push(args);
+      if (args.includes("-u")) return LIST;
+      return " desc: http://192.168.1.1:49152/rootDesc.xml\n desc: http://192.168.50.1:1900/pwpmr/rootDesc.xml\nFound valid IGD : http://192.168.1.1:49152/ctl/IPConn\nExternalIPAddress = 10.0.0.9\n";
+    };
+    const p = new UpnpProvider(run, undefined, "192.168.50.61");
+    expect(await p.externalIp()).toBe("203.0.113.7");
+    expect(calls[1]).toEqual(["-m", "192.168.50.61", "-u", "http://192.168.50.1:1900/pwpmr/rootDesc.xml", "-l"]);
   });
 
   it("falls back to the IP echo when the router does not report its external IP", async () => {

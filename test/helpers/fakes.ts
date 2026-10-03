@@ -1,5 +1,5 @@
 import type { ContainerDriver, ContainerSpec, ContainerState } from "../../src/server/docker/driver.js";
-import type { ConnectivityProvider, Mapping, OpenResult } from "../../src/server/connectivity/provider.js";
+import { RouterNotFoundError, type ConnectivityProvider, type Mapping, type OpenResult } from "../../src/server/connectivity/provider.js";
 import type { DnsClient } from "../../src/server/dns/cloudflare.js";
 import type { Protocol } from "../../src/server/ports/allocator.js";
 
@@ -23,18 +23,41 @@ export class FakeDocker implements ContainerDriver {
   }
   async start(id: string) {
     this.containers.get(id)!.state = this.crashOnStart ? "exited" : "running";
+    this.starts.set(id, (this.starts.get(id) ?? 0) + 1);
   }
   async stop(id: string) {
     this.containers.get(id)!.state = "exited";
   }
   async restart(id: string) {
     this.containers.get(id)!.state = "running";
+    this.starts.set(id, (this.starts.get(id) ?? 0) + 1);
   }
   async remove(id: string) {
     this.containers.delete(id);
   }
   async state(id: string): Promise<ContainerState> {
     return this.containers.get(id)?.state ?? "missing";
+  }
+  /** Whether the game inside has opened its UDP sockets yet (what the "Starting" check looks at). */
+  gameListening = true;
+  /** Set to make exec fail like an image without `cat`. */
+  execFails = false;
+  execLog: string[][] = [];
+  execReply = (cmd: string[]) => `ran ${cmd.join(" ")}`;
+  async startedAt(id: string) {
+    return this.containers.has(id) ? `t${this.starts.get(id) ?? 0}` : null;
+  }
+  starts = new Map<string, number>();
+  async exec(id: string, cmd: string[]) {
+    this.execLog.push(cmd);
+    if (this.execFails) throw new Error("exec failed");
+    const c = this.containers.get(id);
+    if (cmd[0] === "cat" && cmd[1] === "/proc/net/udp") {
+      const rows = this.gameListening && c ? c.spec.ports.filter((p) => p.protocol === "udp").map((p, i) => `  ${i}: 00000000:${p.port.toString(16).toUpperCase().padStart(4, "0")} 00000000:0000 07 00000000:00000000 00:00000000 00000000     0        0 1 1 0000000000000000 0`) : [];
+      return { exitCode: 0, output: ["  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops", ...rows].join("\n") };
+    }
+    if (cmd[0] === "cat") return { exitCode: 0, output: "  sl  local_address\n" };
+    return { exitCode: 0, output: this.execReply(cmd) };
   }
   usageById = new Map<string, { cpuPercent: number | null; memBytes: number }>();
   async usage(id: string) {
@@ -50,8 +73,11 @@ export class FakeConnectivity implements ConnectivityProvider {
   kind = "upnp" as const;
   open = new Map<string, string>(); // "8211/udp" -> slug
   fail: string | null = null;
+  /** Simulates discovery finding no router at all. */
+  missing = false;
   ip = "203.0.113.7";
   async ensureOpen(_id: string, slug: string, port: number, protocol: Protocol): Promise<OpenResult> {
+    if (this.missing) throw new RouterNotFoundError("No UPnP router found.");
     if (this.fail) throw new Error(this.fail);
     this.open.set(`${port}/${protocol}`, slug);
     return { state: "open" };
@@ -60,12 +86,14 @@ export class FakeConnectivity implements ConnectivityProvider {
     if (this.open.get(`${port}/${protocol}`) === slug) this.open.delete(`${port}/${protocol}`);
   }
   async list(): Promise<Mapping[]> {
+    if (this.missing) throw new RouterNotFoundError("No UPnP router found.");
     return [...this.open].map(([k, slug]) => {
       const [port, protocol] = k.split("/");
       return { port: Number(port), protocol: protocol as Protocol, description: `gamelabs:${slug}` };
     });
   }
   async externalIp() {
+    if (this.missing) throw new RouterNotFoundError("No UPnP router found.");
     return this.ip;
   }
 }

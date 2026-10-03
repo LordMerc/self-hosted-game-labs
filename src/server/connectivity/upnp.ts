@@ -5,6 +5,7 @@ import {
   ConnectivityError,
   describeMapping,
   OWNER_PREFIX,
+  RouterNotFoundError,
   type ConnectivityProvider,
   type Mapping,
   type OpenResult,
@@ -69,8 +70,12 @@ export class UpnpProvider implements ConnectivityProvider {
     private readonly bindIp?: string,
   ) {}
 
-  /** Control URL of the router, learned when discovery says "not connected" (see `upnpc`). */
+  /** Control URL of the router, learned when discovery says "not connected" or finds a different device first. */
   private rootUrl?: string;
+
+  /** Pause between discovery attempts. Overridable so tests do not wait. */
+  retryDelayMs = 1000;
+  private static readonly DISCOVERY_ATTEMPTS = 3;
 
   /**
    * Every upnpc call goes through here so discovery is pinned to the right interface. Some routers (TP-Link Deco)
@@ -79,22 +84,46 @@ export class UpnpProvider implements ConnectivityProvider {
    */
   private async upnpc(args: string[]): Promise<string> {
     const base = this.bindIp ? ["-m", this.bindIp] : [];
-    const out = await this.run([...base, ...(this.rootUrl ? ["-u", this.rootUrl] : []), ...args]);
-    if (!this.rootUrl && /not connected/i.test(out) && !/ExternalIPAddress|redirected to|Local LAN ip/i.test(out)) {
-      const url = out.match(/desc:\s*(http\S+)/)?.[1];
-      if (url) {
-        this.rootUrl = url;
-        return this.run([...base, "-u", url, ...args]);
-      }
+    let out = "";
+    for (let attempt = 1; attempt <= UpnpProvider.DISCOVERY_ATTEMPTS; attempt++) {
+      out = await this.run([...base, ...(this.rootUrl ? ["-u", this.rootUrl] : []), ...args]);
+      // Discovery is a multicast broadcast and a single dropped reply looks like "no router": ask again before giving up.
+      if (this.rootUrl || !NO_IGD.test(out) || attempt === UpnpProvider.DISCOVERY_ATTEMPTS) break;
+      await new Promise((r) => setTimeout(r, this.retryDelayMs));
+    }
+    if (this.rootUrl) return out;
+    const url = this.betterRouter(out) ?? this.notConnectedRouter(out);
+    if (url) {
+      this.rootUrl = url;
+      return this.run([...base, "-u", url, ...args]);
     }
     return out;
   }
 
+  /** Some routers (TP-Link Deco) are found but flagged "(not connected?)", and then upnpc stops. Use their description URL directly. */
+  private notConnectedRouter(out: string): string | undefined {
+    if (!/not connected/i.test(out) || /ExternalIPAddress|redirected to|Local LAN ip/i.test(out)) return undefined;
+    return out.match(/desc:\s*(http\S+)/)?.[1];
+  }
+
+  /**
+   * Another device on the network (an ISP modem behind the router, say) can answer discovery first. If upnpc picked a
+   * device that is not on this machine's own subnet while one that is was also found, use the one on our subnet.
+   */
+  private betterRouter(out: string): string | undefined {
+    if (!this.bindIp) return undefined;
+    const subnet = (ip: string) => ip.split(".").slice(0, 3).join(".");
+    const chosen = out.match(/Found (?:valid |a \(not connected\?\) )?IGD\s*:\s*https?:\/\/(\d+\.\d+\.\d+\.\d+)/i)?.[1];
+    if (!chosen || subnet(chosen) === subnet(this.bindIp)) return undefined;
+    for (const m of out.matchAll(/desc:\s*(https?:\/\/(\d+\.\d+\.\d+\.\d+)\S*)/gi)) {
+      if (subnet(m[2]) === subnet(this.bindIp)) return m[1];
+    }
+    return undefined;
+  }
+
   private async listAll() {
-    let out = await this.upnpc(["-l"]);
-    // Discovery is a single UDP broadcast and a router sometimes misses it, so look once more before giving up.
-    if (NO_IGD.test(out)) out = await this.upnpc(["-l"]);
-    if (NO_IGD.test(out)) throw new ConnectivityError(UPNP_OFF);
+    const out = await this.upnpc(["-l"]);
+    if (NO_IGD.test(out)) throw new RouterNotFoundError(UPNP_OFF);
     return parseUpnpList(out);
   }
 
@@ -106,7 +135,7 @@ export class UpnpProvider implements ConnectivityProvider {
     }
     if (current && current.internalIp === lanIp && current.description === describeMapping(slug)) return { state: "open" };
     const out = await this.upnpc(["-e", describeMapping(slug), "-a", lanIp, String(port), String(port), protocol.toUpperCase()]);
-    if (NO_IGD.test(out)) throw new ConnectivityError(UPNP_OFF);
+    if (NO_IGD.test(out)) throw new RouterNotFoundError(UPNP_OFF);
     if (/failed|error/i.test(out) && !/is redirected to/i.test(out)) {
       throw new ConnectivityError(`The router refused the port mapping for ${protocol.toUpperCase()} ${port}: ${out.trim().split("\n").slice(-2).join(" ").slice(0, 200)}`);
     }

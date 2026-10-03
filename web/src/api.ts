@@ -25,6 +25,8 @@ export interface Server {
   templateId: string;
   templateName: string;
   status: "deploying" | "online" | "paused" | "offline" | "updating" | "error";
+  /** Running, but the game has not opened its port yet (still downloading or loading). */
+  starting: boolean;
   access: "private" | "public";
   lastError: string | null;
   ports: { name: string; port: number; protocol: "tcp" | "udp" }[];
