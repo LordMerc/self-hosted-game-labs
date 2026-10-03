@@ -273,11 +273,16 @@ dd { margin: 0; text-align: right; display: flex; justify-content: flex-end; ali
 
 /* Backups page */
 .page-head p { margin: 0.35rem 0 0; }
-.backup-groups { display: grid; gap: 1.25rem; max-width: 860px; }
-.backup-group { display: grid; gap: 0.9rem; padding: 1.25rem; border: 1px solid var(--card-border-color); border-radius: var(--radius-md); background: var(--card-bg); }
-.backup-group.deleted { border-color: var(--danger-line); }
+/* Grouped by spacing alone, like the dashboard: no fills, borders or dividers. The rows line up under the server's name. */
+.backup-groups { display: grid; gap: 2.75rem; max-width: 960px; }
+.backup-group { display: grid; gap: 0.6rem; }
 .backup-group-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-.backup-section { margin: 0.75rem 0 -0.25rem; font-size: 1.05rem; }
+.backup-group > .note, .backup-group > .small-text { margin: 0 0 0 calc(44px + 0.9rem); max-width: 560px; }
+.backup-group .backup-list { gap: 0; margin-left: calc(44px + 0.9rem); }
+.backup-group .backup-list li { padding: 0.7rem 0.75rem; margin-left: -0.75rem; border: 0; border-radius: var(--radius-sm); }
+.backup-group .backup-list li:hover { background: var(--hover-bg); }
+.backup-group .backup-list .mono { font-size: 0.82rem; }
+.backup-section { margin: 0.5rem 0 -1.25rem; font-size: 1.15rem; }
 .dialog.logs { width: min(900px, 100%); }
 .dialog.connect { width: min(520px, 100%); }
 .connect-row { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr) auto; align-items: center; gap: 0.6rem; }
