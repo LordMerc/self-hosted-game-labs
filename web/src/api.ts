@@ -95,3 +95,8 @@ export interface Backup {
   sizeBytes: number;
   createdAt: string;
 }
+
+export interface BackupSettings {
+  keep: number;
+  minDays: number;
+}

@@ -110,3 +110,7 @@ Not run: a backup or restore of a real game's data on the maintainer's host. Two
 ### Backup retention (2026-10-03, maintainer's requirement)
 
 A backup is kept at least 7 days, and deleting a server never removes its backups: `BACKUP_KEEP` only lets a backup go once it is beyond the newest N *and* at least 7 days old, and backups of a deleted server are never pruned. "Delete server and its world data" first takes a final backup, and stops if that fails. To restore after a deletion, create a new server with the same name (same slug) and open its Backups. Tests (110): age and count pruning with back-dated files, final backup on delete, redeploy and restore.
+
+### Per-server backup settings (2026-10-03, maintainer's request)
+
+Each server has "keep up to N backups" and "never delete one younger than D days" in its Backups window (defaults 7 and 7; `BACKUP_KEEP` sets the default N). When a new backup pushes the count over N, the oldest beyond N are deleted, but only those at least D days old; D = 0 means the count alone decides. Settings are stored beside the backups (`.backups/<slug>/settings.json`), so they survive deleting and recreating the server. Lowering N takes effect at the next backup. Tests (113): count-only pruning, per-server storage, validation, persistence across delete and redeploy; UI checked in headless Chromium (3 backups with N=2, D=0 leaves 2).

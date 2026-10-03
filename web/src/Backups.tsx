@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type Backup } from "./api";
+import { api, type Backup, type BackupSettings } from "./api";
 
 function size(n: number) {
   if (n < 1000) return `${n} B`;
@@ -14,9 +14,30 @@ export function Backups({ id, name, running, onClose, onChange }: { id: string; 
   const [list, setList] = useState<Backup[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [saved, setSaved] = useState<BackupSettings | null>(null);
+  const [keep, setKeep] = useState("");
+  const [days, setDays] = useState("");
 
   const load = useCallback(() => api<Backup[]>(`/servers/${id}/backups`).then(setList).catch((e) => setError(e.message)), [id]);
   useEffect(() => void load(), [load]);
+  useEffect(() => {
+    api<BackupSettings>(`/servers/${id}/backups/settings`)
+      .then((s) => (setSaved(s), setKeep(String(s.keep)), setDays(String(s.minDays))))
+      .catch((e) => setError(e.message));
+  }, [id]);
+
+  const dirty = saved !== null && (keep !== String(saved.keep) || days !== String(saved.minDays));
+  async function saveSettings() {
+    setError("");
+    try {
+      const s = await api<BackupSettings>(`/servers/${id}/backups/settings`, { method: "PUT", body: { keep: Number(keep), minDays: Number(days) } });
+      setSaved(s);
+      setKeep(String(s.keep));
+      setDays(String(s.minDays));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
 
   async function run(label: string, call: () => Promise<unknown>) {
     setBusy(label);
@@ -46,8 +67,24 @@ export function Backups({ id, name, running, onClose, onChange }: { id: string; 
           </button>
         </div>
         <p className="muted note">
-          A backup is a compressed copy of this server&apos;s world and settings. The server keeps running while it is made; for a perfectly clean copy, stop it first. Backups are kept for at least 7 days, and deleting the server does not delete them: to get one back later, create a new server with the same name and open its Backups.
+          A backup is a compressed copy of this server&apos;s world and settings. The server keeps running while it is made; for a perfectly clean copy, stop it first. Deleting the server does not delete its backups: to get one back later, create a new server with the same name and open its Backups.
         </p>
+        <div className="backup-settings">
+          <label>
+            Keep up to
+            <input type="number" min={1} max={100} value={keep} onChange={(e) => setKeep(e.target.value)} />
+            backups
+          </label>
+          <label>
+            but never delete one younger than
+            <input type="number" min={0} max={365} value={days} onChange={(e) => setDays(e.target.value)} />
+            days
+          </label>
+          <button className="ghost small" disabled={!dirty} onClick={saveSettings}>
+            Save
+          </button>
+          <p className="muted note">When a new backup makes the count go over, the oldest one is deleted. Set days to 0 to let the count alone decide.</p>
+        </div>
         <div>
           <button className="primary" disabled={busy !== null} onClick={() => run("backup", () => api(`/servers/${id}/backups`, { method: "POST" }))}>
             {busy === "backup" ? "Backing up…" : "Back up now"}
