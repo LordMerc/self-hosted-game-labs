@@ -319,6 +319,15 @@ function SettingsForm({ detail, disabled, onSaved }: { detail: Detail; disabled:
               </div>
               {shown[e.key] && <span className="mono small-text">{shown[e.key]}</span>}
             </>
+          ) : e.choices ? (
+            <select value={values[e.key]} onChange={(ev) => setValues({ ...values, [e.key]: ev.target.value })}>
+              {!e.required && <option value="">Default</option>}
+              {e.choices.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
           ) : (
             <input value={values[e.key]} onChange={(ev) => setValues({ ...values, [e.key]: ev.target.value })} />
           )}

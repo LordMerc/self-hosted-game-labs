@@ -15,6 +15,7 @@ import { allocatePorts, checkPorts, portKey, type Allocation, type PortKey } fro
 import { listHostPorts } from "../ports/host.js";
 import { BackupStore, type BackupInfo } from "../backups.js";
 import { queryA2s, type PlayerCount } from "../players/a2s.js";
+import { queryMinecraft } from "../players/minecraft.js";
 import { slugify, uniqueSlug } from "../slug.js";
 
 export class UserError extends Error {
@@ -68,12 +69,11 @@ export interface ServiceDeps {
   background?: boolean;
   /** TCP probe used for readiness; injectable for tests. */
   probeTcp?: (port: number) => Promise<boolean>;
-  readyTimeoutMs?: number;
   stableMs?: number;
   /** Sets a folder's owner; injectable because tests do not run as root. */
   chown?: (dir: string, uid: number, gid: number) => void;
-  /** Player-count query for a template port with `query: a2s`; injectable for tests. */
-  queryPlayers?: (host: string, port: number) => Promise<PlayerCount | null>;
+  /** Player-count query for a template port with a `query` kind; injectable for tests. */
+  queryPlayers?: (host: string, port: number, kind: "a2s" | "minecraft") => Promise<PlayerCount | null>;
 }
 
 export interface DnsContext {
@@ -105,6 +105,20 @@ export function tcpProbe(port: number, host = "127.0.0.1"): Promise<boolean> {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Reject a value the template says is not allowed (a choice that is not offered, or text of the wrong shape). */
+function checkEnvValue(key: string, def: GameTemplate["env"][string], v: string) {
+  if (!v) return;
+  if (def.choices && !def.choices.includes(v)) throw new UserError(`${def.label} must be one of: ${def.choices.join(", ")}`, 400, { field: key });
+  if (def.pattern !== undefined && !new RegExp(`^(?:${def.pattern})$`).test(v)) {
+    throw new UserError(`${def.label} ${def.patternMessage ?? "is not in the expected format"}`, 400, { field: key });
+  }
+}
+
+/** The container's start-up arguments with `${NAME}` filled in from the server's settings. An argument that ends up empty is dropped. */
+export function expandCommand(command: string[], env: Record<string, string>): string[] {
+  return command.map((arg) => arg.replace(/\$\{([A-Z_][A-Z0-9_]*)\}/g, (_, k: string) => env[k] ?? "")).filter((a) => a !== "");
+}
 
 export class ServerService {
   constructor(private readonly d: ServiceDeps) {}
@@ -165,6 +179,7 @@ export class ServerService {
       let v = (req.env?.[key] ?? def.default ?? "").trim();
       if (!v && def.generate) v = randomSecret();
       if (!v && def.required) throw new UserError(`${def.label} is required`, 400, { field: key });
+      checkEnvValue(key, def, v);
       if (v) env[key] = v;
     }
 
@@ -258,6 +273,8 @@ export class ServerService {
         name: `gl-${row.slug}`,
         image: t.image,
         env,
+        ...(t.command ? { command: expandCommand(t.command, env) } : {}),
+        ...(t.tty ? { tty: true } : {}),
         ports: ports.map((p) => ({ port: p.port, protocol: p.protocol })),
         binds,
         labels: { [LABEL_MANAGED]: "true", [LABEL_ID]: id, [LABEL_SLUG]: row.slug },
@@ -266,7 +283,7 @@ export class ServerService {
 
       await this.d.docker.start(containerId);
       this.event(id, "info", "Container started, waiting for it to come up");
-      await this.waitReady(containerId, t, ports);
+      await this.waitReady(containerId);
       this.setStatus(id, "online");
       this.event(id, "info", "Server is online");
 
@@ -279,23 +296,19 @@ export class ServerService {
   }
 
   /**
-   * Readiness: if the template has a TCP port we require it to accept connections; UDP-only games cannot be
-   * probed that way, so we require the container to stay up for a short stable window instead.
+   * Deploy is done once the container has stayed up for a short stable window. Games can take many minutes after
+   * that (first-run downloads, world generation), so the game port opening is not awaited here: the server list
+   * shows "Starting" until it does (see `isStarting`).
    */
-  private async waitReady(containerId: string, t: GameTemplate, ports: { name: string; port: number; protocol: string }[]) {
-    const deadline = Date.now() + (this.d.readyTimeoutMs ?? 120_000);
-    const tcpPort = ports.find((p) => p.protocol === "tcp");
-    const probe = this.d.probeTcp ?? tcpProbe;
+  private async waitReady(containerId: string) {
     const stable = this.d.stableMs ?? 8_000;
-    let upSince: number | null = null;
-    while (Date.now() < deadline) {
+    const started = Date.now();
+    for (;;) {
       const state = await this.d.docker.state(containerId);
       if (state !== "running") throw new Error(`Container stopped during startup (state: ${state}). Check the logs.`);
-      upSince ??= Date.now();
-      if (tcpPort ? await probe(tcpPort.port) : Date.now() - upSince >= stable) return;
-      await sleep(tcpPort ? 1500 : 500);
+      if (Date.now() - started >= stable) return;
+      await sleep(500);
     }
-    throw new Error(`Server did not become ready in time (template ${t.id}). Check the logs.`);
   }
 
   // ------------------------------------------------------------- lifecycle
@@ -623,16 +636,16 @@ export class ServerService {
   async usage(): Promise<Record<string, { cpuPercent: number | null; memBytes: number; players: PlayerCount | null }>> {
     const rows = this.d.db.select().from(schema.servers).all().filter((r) => r.containerId && r.status === "online");
     const ports = this.d.db.select().from(schema.serverPorts).all();
-    const queryPlayers = this.d.queryPlayers ?? ((host: string, port: number) => queryA2s(host, port));
+    const queryPlayers = this.d.queryPlayers ?? ((host: string, port: number, kind: "a2s" | "minecraft") => (kind === "minecraft" ? queryMinecraft(host, port) : queryA2s(host, port)));
     const out: Record<string, { cpuPercent: number | null; memBytes: number; players: PlayerCount | null }> = {};
     await Promise.all(
       rows.map(async (r) => {
         try {
           const u = await this.d.docker.usage(r.containerId!);
           const tpl = this.d.templates.find((x) => x.id === r.templateId);
-          const q = tpl?.ports.find((p) => p.query === "a2s");
+          const q = tpl?.ports.find((p) => p.query !== "none");
           const mine = q && ports.find((p) => p.serverId === r.id && p.name === q.name);
-          const players = mine ? await queryPlayers("127.0.0.1", mine.port).catch(() => null) : null;
+          const players = mine ? await queryPlayers("127.0.0.1", mine.port, q!.query as "a2s" | "minecraft").catch(() => null) : null;
           out[r.id] = { ...u, players };
         } catch {
           /* container gone or Docker busy: show nothing rather than a wrong number */
@@ -655,6 +668,7 @@ export class ServerService {
         key,
         label: def.label,
         help: def.help ?? null,
+        choices: def.choices ?? null,
         required: def.required,
         secret: def.secret,
         generate: def.generate,
@@ -686,6 +700,7 @@ export class ServerService {
       let v = String(raw).trim();
       if (!v && def.generate) v = randomSecret();
       if (!v && def.required) throw new UserError(`${def.label} is required`, 400, { field: key });
+      checkEnvValue(key, def, v);
       if (v) env[key] = v;
       else delete env[key];
     }
@@ -737,7 +752,14 @@ export class ServerService {
   private busyBackups = new Set<string>();
 
   private store() {
-    return (this.backups ??= new BackupStore(this.d.config.GAMESERVERS_DIR, this.d.config.BACKUP_KEEP));
+    return (this.backups ??= new BackupStore(this.d.config.GAMESERVERS_DIR, this.d.config.BACKUP_KEEP, (slug) => this.backupExclude(slug)));
+  }
+
+  /** What the server's template says backups leave out. Works for a deleted server too, through the meta kept beside its backups. */
+  private backupExclude(slug: string): string[] {
+    const row = this.d.db.select().from(schema.servers).where(eq(schema.servers.slug, slug)).get();
+    const templateId = row?.templateId ?? this.backups?.meta(slug)?.templateId;
+    return this.d.templates.find((x) => x.id === templateId)?.backup.exclude ?? [];
   }
 
   /** One backup or restore at a time per server. */

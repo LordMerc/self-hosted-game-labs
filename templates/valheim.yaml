@@ -1,0 +1,48 @@
+# Verify image, ports and env names against the image's current docs before changing.
+# https://github.com/community-valheim-tools/valheim-docker  (image: ghcr.io/community-valheim-tools/valheim-server)
+id: valheim
+name: Valheim
+image: ghcr.io/community-valheim-tools/valheim-server:latest
+maxPlayers: 10
+notes: The first start downloads the game server from Steam (about 1 GB), which can take several minutes. It shows Starting until it is ready.
+join:
+  method: direct
+ports:
+  # The game uses SERVER_PORT and the next port up for Steam's server query, so both move together.
+  - name: game
+    default: 2456
+    protocol: udp
+    env: SERVER_PORT
+  - name: query
+    default: 2457
+    protocol: udp
+    query: a2s
+env:
+  SERVER_NAME:
+    label: Server name
+    default: Valheim Server
+  WORLD_NAME:
+    label: World name
+    default: Dedicated
+    pattern: "[A-Za-z0-9 _-]+"
+    patternMessage: can only have letters, numbers, spaces, dashes and underscores
+    help: A new world with this name is made the first time. Use the same name to load an existing world.
+  SERVER_PASS:
+    label: Server password
+    required: true
+    secret: true
+    generate: true
+    pattern: .{5,}
+    patternMessage: must be at least 5 characters, or the game will not start
+    help: Players need this to join. Leave empty to have one generated; you can reveal it later. It cannot be part of the server name.
+  SERVER_PUBLIC:
+    label: Show in the in-game server list
+    default: "false"
+    choices: ["true", "false"]
+    help: With false, friends join by typing the server address in the game's Join by IP box.
+data:
+  - containerPath: /config
+  # The downloaded game server. Kept so a restart does not download it again; backups leave it out.
+  - containerPath: /opt/valheim
+backup:
+  exclude: [valheim, config/backups]

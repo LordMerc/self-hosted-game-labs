@@ -56,4 +56,35 @@ describe("template validation", () => {
   it("rejects privileged ports", () => {
     expect(() => parseTemplate(base.replace("7777", "80"))).toThrow(/Invalid template/);
   });
+
+  it("loads the Minecraft, Valheim, Satisfactory and Terraria templates", () => {
+    const all = loadTemplates(path.resolve("templates"));
+    const get = (id: string) => all.find((t) => t.id === id)!;
+    expect(get("minecraft").ports[0]).toMatchObject({ default: 25565, protocol: "tcp", env: "SERVER_PORT", query: "minecraft" });
+    // Valheim answers Steam's server query on the game port plus one, so both ports shift together.
+    expect(get("valheim").ports.map((p) => [p.default, p.query])).toEqual([[2456, "none"], [2457, "a2s"]]);
+    expect(get("satisfactory").ports.map((p) => [p.default, p.protocol])).toEqual([[7777, "udp"], [7777, "tcp"], [8888, "tcp"]]);
+    expect(get("terraria").tty).toBe(true);
+  });
+
+  it("accepts choices, patterns, a command, a terminal and backup exclusions", () => {
+    const t = parseTemplate(`${base}
+env:
+  LEVEL: { label: Level, default: easy, choices: [easy, hard], pattern: "[a-z]+" }
+command: [-level, "\${LEVEL}"]
+tty: true
+backup: { exclude: [gamefiles, config/backups] }
+`);
+    expect(t.command).toEqual(["-level", "${LEVEL}"]);
+    expect(t.backup.exclude).toEqual(["gamefiles", "config/backups"]);
+  });
+
+  it("rejects a command that names an unknown setting, a bad pattern, a default outside the choices and unsafe backup paths", () => {
+    expect(() => parseTemplate(`${base}\ncommand: ["\${NOPE}"]`)).toThrow(/unknown setting NOPE/);
+    expect(() => parseTemplate(`${base}\nenv:\n  A: { label: A, pattern: "(" }`)).toThrow(/regular expression/);
+    expect(() => parseTemplate(`${base}\nenv:\n  A: { label: A, default: x, choices: [y] }`)).toThrow(/one of the choices/);
+    for (const bad of ["../etc", "/abs", "a/../b", ".", "a b"]) {
+      expect(() => parseTemplate(`${base}\nbackup: { exclude: ["${bad}"] }`), bad).toThrow(/Invalid template/);
+    }
+  });
 });

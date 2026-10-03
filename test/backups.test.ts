@@ -125,5 +125,43 @@ describe("BackupStore", () => {
   });
 });
 
+describe("backup exclusions", () => {
+  const withBig = () => {
+    write("fact/saved/world.sav", "save");
+    write("fact/gamefiles/big.bin", "x".repeat(5000));
+    write("fact/gamefiles/deep/more.bin", "y");
+  };
+
+  it("leaves excluded paths out of the backup, but keeps similarly named ones elsewhere", async () => {
+    withBig();
+    write("fact/saved/gamefiles-notes.txt", "keep me");
+    const s = new BackupStore(root, 7, () => ["gamefiles"]);
+    const b = await s.create("fact");
+    expect(b.sizeBytes).toBeLessThan(2000);
+    await s.restore("fact", b.name, Date.now(), "fact2");
+    expect(existsSync(path.join(root, "fact2/saved/world.sav"))).toBe(true);
+    expect(existsSync(path.join(root, "fact2/saved/gamefiles-notes.txt"))).toBe(true);
+    expect(existsSync(path.join(root, "fact2/gamefiles"))).toBe(false);
+  });
+
+  it("carries excluded folders over when restoring into the folder they are in", async () => {
+    withBig();
+    const s = new BackupStore(root, 7, () => ["gamefiles"]);
+    const b = await s.create("fact");
+    write("fact/saved/world.sav", "newer");
+    await s.restore("fact", b.name);
+    expect(readFileSync(path.join(root, "fact/saved/world.sav"), "utf8")).toBe("save");
+    expect(readFileSync(path.join(root, "fact/gamefiles/deep/more.bin"), "utf8")).toBe("y");
+  });
+
+  it("excludes nothing by default", async () => {
+    withBig();
+    const s = new BackupStore(root);
+    const b = await s.create("fact");
+    await s.restore("fact", b.name, Date.now(), "fact2");
+    expect(existsSync(path.join(root, "fact2/gamefiles/big.bin"))).toBe(true);
+  });
+});
+
 import { readdirSync } from "node:fs";
 const readdirNames = (dir: string) => readdirSync(dir).sort();

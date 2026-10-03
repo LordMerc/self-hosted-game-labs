@@ -64,6 +64,8 @@ export class BackupStore {
   constructor(
     private readonly root: string,
     keep = 7,
+    /** Paths inside a server's data folder that its backups leave out (big files the game downloads again by itself). */
+    private readonly excludeFor: (slug: string) => string[] = () => [],
   ) {
     this.defaults = { keep, minDays: MIN_KEEP_DAYS, everyHours: 24 };
   }
@@ -149,7 +151,7 @@ export class BackupStore {
     for (let n = 2; existsSync(path.join(dir, name)); n++) name = `${slug}-${stamp(now)}-${n}.tar.gz`;
     const tmp = path.join(dir, `.${name}.partial`);
     try {
-      await tar(["-czf", tmp, "-C", this.root, slug]);
+      await tar(["-czf", tmp, "--anchored", ...this.excludeFor(slug).map((x) => `--exclude=${slug}/${x}`), "-C", this.root, slug]);
       renameSync(tmp, path.join(dir, name));
     } catch (e) {
       rmSync(tmp, { force: true });
@@ -193,6 +195,18 @@ export class BackupStore {
       } catch (e) {
         if (existsSync(aside)) renameSync(aside, live); // put the old data back
         throw e;
+      }
+      // What backups leave out is not in the backup, so it is carried over from the folder being replaced. If that fails the game downloads it again.
+      for (const x of this.excludeFor(target)) {
+        try {
+          const old = path.join(aside, x);
+          if (existsSync(old) && !existsSync(path.join(live, x))) {
+            mkdirSync(path.dirname(path.join(live, x)), { recursive: true });
+            renameSync(old, path.join(live, x));
+          }
+        } catch {
+          /* best effort */
+        }
       }
       rmSync(aside, { recursive: true, force: true });
     } finally {

@@ -23,8 +23,28 @@ const envVarSchema = z
     /** Generate a random value at deploy time when the user leaves it empty. */
     generate: z.boolean().default(false),
     help: z.string().optional(),
+    /** The value must be one of these; the forms show a drop-down. */
+    choices: z.array(z.string().min(1)).min(1).optional(),
+    /** The value must match this regular expression (whole value). `patternMessage` is shown when it does not. */
+    pattern: z.string().optional(),
+    patternMessage: z.string().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((v, ctx) => {
+    if (v.pattern !== undefined) {
+      try {
+        new RegExp(`^(?:${v.pattern})$`);
+      } catch {
+        ctx.addIssue({ code: "custom", path: ["pattern"], message: "is not a valid regular expression" });
+      }
+    }
+    if (v.default !== undefined && v.default !== "" && v.choices && !v.choices.includes(v.default)) {
+      ctx.addIssue({ code: "custom", path: ["default"], message: "must be one of the choices" });
+    }
+  });
+
+/** A path inside a server's data folder: plain names joined by slashes, no `..`. */
+const relPath = z.string().regex(/^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/, "must be a relative path of plain names").refine((p) => !p.split("/").some((x) => x === ".." || x === "."), "must not contain . or .. parts");
 
 // `.strict()` everywhere: unknown keys (privileged, networkMode, binds, ...) are rejected rather than
 // ignored, so a template can never smuggle in container options the panel does not deliberately support.
@@ -34,6 +54,8 @@ export const templateSchema = z
     name: z.string().min(1),
     image: z.string().min(1),
     maxPlayers: z.number().int().positive().optional(),
+    /** Shown in the deploy form: what to know before starting (memory needs, first-run steps). */
+    notes: z.string().optional(),
     join: z
       .object({
         method: z.enum(["direct", "server-browser"]).default("direct"),
@@ -51,6 +73,12 @@ export const templateSchema = z
       })
       .strict()
       .optional(),
+    /** Arguments passed to the image's own start-up command. `${NAME}` is replaced by that setting's value (a port's env name works too); an empty value drops the argument. */
+    command: z.array(z.string()).optional(),
+    /** Give the container a terminal. A few servers (Terraria) crash without one. */
+    tty: z.boolean().default(false),
+    /** Backups skip these paths (relative to the server's data folder), for big files that the game downloads again by itself. */
+    backup: z.object({ exclude: z.array(relPath).default([]) }).strict().default({ exclude: [] }),
     data: z
       .array(
         z
@@ -82,6 +110,11 @@ export const templateSchema = z
     });
     for (const name of Object.keys(t.env)) {
       if (portEnvs.has(name)) ctx.addIssue({ code: "custom", path: ["env", name], message: "is set from a port and cannot also be a user input" });
+    }
+    for (const [i, arg] of (t.command ?? []).entries()) {
+      for (const m of arg.matchAll(/\$\{([A-Z_][A-Z0-9_]*)\}/g)) {
+        if (!(m[1] in t.env) && !portEnvs.has(m[1])) ctx.addIssue({ code: "custom", path: ["command", i], message: `refers to unknown setting ${m[1]}` });
+      }
     }
     if (t.join.method === "server-browser" && !t.join.instructions) {
       ctx.addIssue({ code: "custom", path: ["join", "instructions"], message: "required when join.method is server-browser" });

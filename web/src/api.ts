@@ -6,6 +6,7 @@ export interface TemplateEnv {
   secret: boolean;
   generate: boolean;
   help?: string;
+  choices?: string[];
 }
 
 export interface Template {
@@ -13,6 +14,7 @@ export interface Template {
   name: string;
   image: string;
   maxPlayers?: number;
+  notes?: string;
   join: { method: "direct" | "server-browser"; instructions?: string };
   ports: { name: string; default: number; protocol: "tcp" | "udp" }[];
   env: TemplateEnv[];
@@ -119,7 +121,7 @@ export interface BackupGroup {
 
 export interface ServerDetail {
   server: Server;
-  env: { key: string; label: string; help: string | null; required: boolean; secret: boolean; generate: boolean; value: string | null; isSet: boolean }[];
+  env: { key: string; label: string; help: string | null; choices: string[] | null; required: boolean; secret: boolean; generate: boolean; value: string | null; isSet: boolean }[];
   console: { examples: string[] } | null;
   events: { id: number; level: "info" | "warn" | "error"; message: string; at: string }[];
 }
