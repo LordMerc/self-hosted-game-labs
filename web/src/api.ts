@@ -103,3 +103,10 @@ export interface BackupSettings {
   minDays: number;
   everyHours: number;
 }
+
+export interface ServerDetail {
+  server: Server;
+  env: { key: string; label: string; help: string | null; required: boolean; secret: boolean; generate: boolean; value: string | null; isSet: boolean }[];
+  console: { examples: string[] } | null;
+  events: { id: number; level: "info" | "warn" | "error"; message: string; at: string }[];
+}
