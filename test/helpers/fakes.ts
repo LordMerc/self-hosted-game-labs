@@ -81,6 +81,9 @@ export class FakeDns implements DnsClient {
     this.cnames.set(slug, target);
     return "created" as const;
   }
+  async listOwnedCnames() {
+    return [...this.cnames.keys()];
+  }
   async deleteCname(slug: string) {
     return this.cnames.delete(slug);
   }

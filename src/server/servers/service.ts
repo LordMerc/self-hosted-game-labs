@@ -345,6 +345,89 @@ export class ServerService {
     return { ip, result };
   }
 
+  // ------------------------------------------------------------- reconcile
+
+  /**
+   * Bring reality back in line with the database. Runs at startup and every few minutes: routers drop UPnP
+   * mappings on reboot, DNS records get deleted, public IPs change, containers get removed by hand.
+   * Only ever touches containers/mappings/records that carry the gamelabs tag. Returns what it did.
+   */
+  async reconcile(): Promise<string[]> {
+    const actions: string[] = [];
+    const problems: string[] = [];
+    const attempt = async (what: string, fn: () => Promise<void>) => {
+      try {
+        await fn();
+      } catch (e) {
+        problems.push(`${what}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    };
+
+    // 1. Containers: recreate any that vanished; sync status for the rest.
+    for (const r of this.d.db.select().from(schema.servers).all()) {
+      if (r.status === "deploying" || r.status === "error") continue;
+      if (r.containerId && (await this.d.docker.state(r.containerId).catch(() => "exited" as const)) === "missing") {
+        actions.push(`recreated missing container for ${r.slug}`);
+        this.event(r.id, "warn", "Container was missing; recreating");
+        this.setStatus(r.id, "deploying");
+        await this.runDeploy(r.id, r.access);
+      }
+    }
+    await this.refreshStatuses();
+
+    const servers = this.d.db.select().from(schema.servers).all();
+    const publicServers = servers.filter((s) => s.access === "public" && s.status !== "error");
+
+    // 2. Router mappings for public servers (a router reboot wipes them).
+    const lan = this.d.config.HOST_LAN_IP;
+    if (lan) {
+      for (const s of publicServers) {
+        for (const p of this.ports(s.id)) {
+          await attempt(`${s.slug} ${p.port}/${p.protocol}`, async () => {
+            const owned = await this.d.connectivity.list();
+            const had = owned.some((m) => m.port === p.port && m.protocol === p.protocol && m.description === `gamelabs:${s.slug}`);
+            await this.d.connectivity.ensureOpen(s.id, s.slug, p.port, p.protocol, lan);
+            if (!had && this.d.connectivity.kind === "upnp") actions.push(`re-opened ${p.port}/${p.protocol} for ${s.slug}`);
+          });
+        }
+      }
+    }
+
+    // 3. DNS: DDNS A record, CNAMEs for public servers, drop tagged CNAMEs for everything else.
+    if (this.d.dns && this.d.config.PUBLIC_HOST) {
+      const dns = this.d.dns;
+      const host = this.d.config.PUBLIC_HOST;
+      await attempt("ddns", async () => {
+        const r = await this.syncDdns();
+        if (r && r.result !== "unchanged") actions.push(`DDNS ${r.result} (${r.ip})`);
+      });
+      await attempt("dns", async () => {
+        const owned = new Set(await dns.listOwnedCnames());
+        for (const s of publicServers) {
+          if (!owned.has(s.slug)) {
+            await dns.upsertCname(s.slug, host);
+            actions.push(`restored DNS record for ${s.slug}`);
+          }
+        }
+        const wanted = new Set(publicServers.map((s) => s.slug));
+        for (const slug of owned) {
+          if (!wanted.has(slug)) {
+            await dns.deleteCname(slug);
+            actions.push(`removed stale DNS record for ${slug}`);
+          }
+        }
+      });
+    }
+
+    for (const a of actions) this.event(null, "info", `Reconcile: ${a}`);
+    for (const p of problems) this.event(null, "warn", `Reconcile problem: ${p}`);
+    const now = new Date().toISOString();
+    for (const [key, value] of [["reconcile_at", now], ["reconcile_problems", JSON.stringify(problems)]] as const) {
+      this.d.db.insert(schema.settings).values({ key, value }).onConflictDoUpdate({ target: schema.settings.key, set: { value } }).run();
+    }
+    return actions;
+  }
+
   // ------------------------------------------------------------------ read
 
   /** Reconcile stored status with Docker's view for steady-state servers. */
@@ -426,6 +509,7 @@ export class ServerService {
       lanIp: config.HOST_LAN_IP ?? null,
       publicIp,
       ipError,
+      reconcile: { at: setting("reconcile_at"), problems: JSON.parse(setting("reconcile_problems") ?? "[]") as string[] },
       dns: this.d.dns && config.PUBLIC_HOST ? { host: config.PUBLIC_HOST, zone: config.CF_ZONE ?? null, lastUpdate: setting("ddns_updated_at"), lastIp: setting("public_ip") } : null,
       rules: connectivity.kind === "manual" ? rules : [],
       mappings: connectivity.kind === "upnp" ? await connectivity.list().catch(() => []) : [],
