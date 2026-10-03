@@ -68,16 +68,14 @@ kbd { font: inherit; font-size: 0.75rem; color: var(--faint); border: 1px solid 
 .update-banner a { color: var(--accent); }
 
 /* Host tiles */
-.stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 2.25rem; }
+.stats { --spark-h: 30px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 2.25rem; }
 .stat { padding: 0.25rem 1.6rem; border-left: 1px solid var(--divider); display: grid; gap: 0.35rem; align-content: start; min-width: 0; }
 .stat:first-child { padding-left: 0; border-left: 0; }
 .stat-label { color: var(--muted); font-size: 0.9rem; }
 .stat-value { white-space: nowrap; font-size: 2.1rem; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; }
 .stat-value.pending { color: var(--faint); }
-.stat-sub { color: var(--faint); font-size: 0.8125rem; }
-.meter { height: 4px; width: 100%; border-radius: 4px; background: var(--border); position: relative; overflow: hidden; margin: 0.45rem 0; }
-.meter::after { content: ""; position: absolute; inset: 0 auto 0 0; width: var(--fill, 0%); background: var(--tone, var(--accent)); border-radius: 4px; transition: width 0.4s ease; }
-.spark { height: 30px; display: flex; align-items: flex-end; gap: 2px; margin: 0.2rem 0; }
+.stat-sub { color: var(--faint); font-size: 0.8125rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spark { height: var(--spark-h, 30px); display: flex; align-items: flex-end; gap: 2px; margin: 0.2rem 0; }
 .spark .bar { flex: 1; min-width: 2px; border-radius: 1px; background: color-mix(in srgb, var(--tone) 55%, transparent); transition: height 0.4s ease; }
 .spark .bar.now { background: var(--tone); }
 .spark .bar.gap { height: 2px; background: var(--border); }
@@ -124,7 +122,7 @@ th:last-child, td:last-child { padding-right: 1.4rem; }
 .pill.starting .pill-dot, .pill.deploying .pill-dot, .pill.updating .pill-dot { animation: pulse 1.4s ease-in-out infinite; }
 .pill.crashed, .pill.failed { background: var(--bad-soft); color: var(--bad); }
 @keyframes pulse { 50% { opacity: 0.25; } }
-@media (prefers-reduced-motion: reduce) { .pill-dot { animation: none !important; } .meter::after, .spark .bar { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .pill-dot { animation: none !important; } .spark .bar { transition: none; } }
 .players { white-space: nowrap; display: flex; align-items: center; gap: 0.35rem; margin-top: 0.4rem; }
 .usage { white-space: nowrap; font-size: 0.8125rem; margin-top: 0.1rem; }
 .usage-grid { display: grid; grid-template-columns: auto 72px; align-items: center; justify-content: start; gap: 0.2rem 0.75rem; }

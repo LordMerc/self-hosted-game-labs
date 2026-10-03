@@ -17,6 +17,15 @@ describe("StatsHistory", () => {
     expect(v.peaks.cpuPercent).toBe(30);
   });
 
+  it("keeps the host's memory and storage in use, with a gap when the host could not report them", () => {
+    const h = new StatsHistory();
+    h.record({ ...host(1), memory: { usedBytes: 7, totalBytes: 16 }, storage: { usedBytes: 27, totalBytes: 983 } }, {});
+    h.record(host(1), {});
+    const v = h.view();
+    expect(v.host.mem).toEqual([7, null]);
+    expect(v.host.storage).toEqual([27, null]);
+  });
+
   it("sums the players that servers report, and leaves a gap when none report", () => {
     const h = new StatsHistory();
     h.record(host(1), { a: { cpuPercent: 1, memBytes: 5, players: { online: 3, max: 32 } }, b: { cpuPercent: null, memBytes: 6, players: { online: 2, max: 10 } }, c: { cpuPercent: 1, memBytes: 1, players: null } });
