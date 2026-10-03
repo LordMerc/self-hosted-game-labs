@@ -65,10 +65,17 @@ export class UpnpProvider implements ConnectivityProvider {
   constructor(
     private readonly run: UpnpcRunner = runUpnpc,
     private readonly fallbackIp?: () => Promise<string>,
+    /** LAN address of this machine. Makes `upnpc` search for the router on that network interface only. */
+    private readonly bindIp?: string,
   ) {}
 
+  /** Every upnpc call goes through here so discovery is pinned to the right interface. */
+  private upnpc(args: string[]): Promise<string> {
+    return this.run(this.bindIp ? ["-m", this.bindIp, ...args] : args);
+  }
+
   private async listAll() {
-    const out = await this.run(["-l"]);
+    const out = await this.upnpc(["-l"]);
     if (NO_IGD.test(out)) throw new ConnectivityError(UPNP_OFF);
     return parseUpnpList(out);
   }
@@ -80,7 +87,7 @@ export class UpnpProvider implements ConnectivityProvider {
       throw new ConnectivityError(`${protocol.toUpperCase()} ${port} is already forwarded on the router by something else ("${current.description}")`);
     }
     if (current && current.internalIp === lanIp && current.description === describeMapping(slug)) return { state: "open" };
-    const out = await this.run(["-e", describeMapping(slug), "-a", lanIp, String(port), String(port), protocol.toUpperCase()]);
+    const out = await this.upnpc(["-e", describeMapping(slug), "-a", lanIp, String(port), String(port), protocol.toUpperCase()]);
     if (NO_IGD.test(out)) throw new ConnectivityError(UPNP_OFF);
     if (/failed|error/i.test(out) && !/is redirected to/i.test(out)) {
       throw new ConnectivityError(`The router refused the port mapping for ${protocol.toUpperCase()} ${port}: ${out.trim().split("\n").slice(-2).join(" ").slice(0, 200)}`);
@@ -92,7 +99,7 @@ export class UpnpProvider implements ConnectivityProvider {
     const { entries } = await this.listAll();
     const current = entries.find((e) => e.port === port && e.protocol === protocol);
     if (!current || current.description !== describeMapping(slug)) return; // absent, or not ours: leave it alone
-    await this.run(["-d", String(port), protocol.toUpperCase()]);
+    await this.upnpc(["-d", String(port), protocol.toUpperCase()]);
   }
 
   async list(): Promise<Mapping[]> {
@@ -101,7 +108,7 @@ export class UpnpProvider implements ConnectivityProvider {
   }
 
   async diagnose(): Promise<string> {
-    return (await this.run(["-l"])).trim().slice(0, 4000);
+    return (await this.upnpc(["-l"])).trim().slice(0, 4000);
   }
 
   async externalIp(): Promise<string> {

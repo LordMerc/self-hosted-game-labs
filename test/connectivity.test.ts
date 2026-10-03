@@ -19,7 +19,7 @@ function fakeUpnpc(initial = LIST) {
   const calls: string[][] = [];
   const run: UpnpcRunner = async (args) => {
     calls.push(args);
-    return args[0] === "-l" ? initial : "";
+    return args.includes("-l") ? initial : "";
   };
   return { calls, run };
 }
@@ -80,6 +80,17 @@ describe("UpnpProvider", () => {
     await expect(new UpnpProvider(noIp).externalIp()).rejects.toThrow(/did not report/);
     const zero: UpnpcRunner = async () => "ExternalIPAddress = 0.0.0.0\n";
     expect(await new UpnpProvider(zero, async () => "198.51.100.4").externalIp()).toBe("198.51.100.4");
+  });
+
+  it("pins discovery to the LAN interface with -m when the LAN address is known", async () => {
+    const { run, calls } = fakeUpnpc();
+    const p = new UpnpProvider(run, undefined, "192.168.50.61");
+    await p.list();
+    await p.ensureOpen("id", "viking", 2456, "udp", "192.168.50.61");
+    await p.ensureClosed("id", "palworld", 8211, "udp");
+    expect(calls.every((c) => c[0] === "-m" && c[1] === "192.168.50.61")).toBe(true);
+    expect(calls.some((c) => c.includes("-e"))).toBe(true);
+    expect(calls.some((c) => c.includes("-d"))).toBe(true);
   });
 
   it("reads the external IP from the router", async () => {
