@@ -15,6 +15,7 @@ ports:
     default: 27015
     protocol: udp
     env: QUERY_PORT
+    query: a2s
 env:
   SERVER_NAME:
     label: Server name

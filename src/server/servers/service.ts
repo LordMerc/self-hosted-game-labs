@@ -13,6 +13,7 @@ import type { ConnectivityProvider } from "../connectivity/provider.js";
 import type { DnsClient } from "../dns/cloudflare.js";
 import { allocatePorts, checkPorts, portKey, type Allocation, type PortKey } from "../ports/allocator.js";
 import { listHostPorts } from "../ports/host.js";
+import { queryA2s, type PlayerCount } from "../players/a2s.js";
 import { slugify, uniqueSlug } from "../slug.js";
 
 export class UserError extends Error {
@@ -51,6 +52,8 @@ export interface ServiceDeps {
   probeTcp?: (port: number) => Promise<boolean>;
   readyTimeoutMs?: number;
   stableMs?: number;
+  /** Player-count query for a template port with `query: a2s`; injectable for tests. */
+  queryPlayers?: (host: string, port: number) => Promise<PlayerCount | null>;
 }
 
 export interface DnsContext {
@@ -495,14 +498,21 @@ export class ServerService {
     });
   }
 
-  /** CPU and memory for each running server, keyed by server id. A server whose stats fail is left out. */
-  async usage(): Promise<Record<string, { cpuPercent: number | null; memBytes: number }>> {
+  /** CPU, memory and player count for each running server, keyed by server id. Anything that fails is left out. */
+  async usage(): Promise<Record<string, { cpuPercent: number | null; memBytes: number; players: PlayerCount | null }>> {
     const rows = this.d.db.select().from(schema.servers).all().filter((r) => r.containerId && r.status === "online");
-    const out: Record<string, { cpuPercent: number | null; memBytes: number }> = {};
+    const ports = this.d.db.select().from(schema.serverPorts).all();
+    const queryPlayers = this.d.queryPlayers ?? ((host: string, port: number) => queryA2s(host, port));
+    const out: Record<string, { cpuPercent: number | null; memBytes: number; players: PlayerCount | null }> = {};
     await Promise.all(
       rows.map(async (r) => {
         try {
-          out[r.id] = await this.d.docker.usage(r.containerId!);
+          const u = await this.d.docker.usage(r.containerId!);
+          const tpl = this.d.templates.find((x) => x.id === r.templateId);
+          const q = tpl?.ports.find((p) => p.query === "a2s");
+          const mine = q && ports.find((p) => p.serverId === r.id && p.name === q.name);
+          const players = mine ? await queryPlayers("127.0.0.1", mine.port).catch(() => null) : null;
+          out[r.id] = { ...u, players };
         } catch {
           /* container gone or Docker busy: show nothing rather than a wrong number */
         }

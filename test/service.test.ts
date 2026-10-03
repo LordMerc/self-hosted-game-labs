@@ -13,6 +13,7 @@ let net: FakeConnectivity;
 let dns: FakeDns;
 let svc: ServerService;
 let dir: string;
+let playersAnswer = true;
 let hostBusy: Set<`${number}/${"tcp" | "udp"}`>;
 
 beforeEach(() => {
@@ -40,6 +41,7 @@ beforeEach(() => {
     background: false,
     stableMs: 0,
     readyTimeoutMs: 2000,
+    queryPlayers: async () => (playersAnswer ? { online: 4, max: 32 } : null),
   });
 });
 
@@ -231,7 +233,11 @@ describe("usage", () => {
     const a = await deploy("Alpha");
     const b = await deploy("Bravo");
     await svc.stop(b);
-    expect(Object.keys(await svc.usage())).toEqual([a]);
+    const u = await svc.usage();
+    expect(Object.keys(u)).toEqual([a]);
+    expect(u[a].players).toEqual({ online: 4, max: 32 });
+    playersAnswer = false;
+    expect((await svc.usage())[a].players).toBeNull();
     docker.usage = async () => {
       throw new Error("docker busy");
     };

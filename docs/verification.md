@@ -88,3 +88,12 @@ Also found on the way: `upnpc` prints its useful lines on stderr, so the panel k
 | Dashboard in headless Chromium against the real server on a Linux host | CPU, memory, storage and network tiles show live values (screenshot reviewed) |
 
 Not run: per-server CPU and memory against a real container (the Docker stats call is unit-tested with a recorded-format reply only). The CPU figure is a share of the whole host, not per core. Players online is still not reported.
+
+## Live player counts (2026-10-03)
+
+| Check | Result |
+|---|---|
+| Typecheck and tests | Pass, 99 tests. The A2S query is tested against a real local UDP socket: plain reply, challenge round trip, timeout, malformed replies |
+| Palworld on the real server | Not run. The Palworld template now sets `query: a2s` on its query port (27015/udp) and the panel asks `127.0.0.1:<port>`. Whether the Palworld image answers A2S_INFO with an accurate player count is unverified; if the count stays at "up to 32" or shows 0 while someone is online, that is the thing to check |
+
+Only `a2s` is implemented; `query: minecraft` is accepted by the template schema but not queried yet.
