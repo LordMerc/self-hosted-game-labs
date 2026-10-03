@@ -230,3 +230,6 @@ pre.mono { margin: 0; background: var(--bg); border-radius: 10px; padding: 1rem;
 .steps { margin: 0; padding-left: 1.25rem; display: grid; gap: 0.4rem; color: var(--muted); }
 .steps strong { color: var(--text); font-weight: 600; }
 .ok { color: var(--ok); }
+
+.hidden-ip { display: inline-flex; align-items: center; gap: 0.15rem; }
+.blurred { filter: blur(6px); user-select: none; pointer-events: none; }
