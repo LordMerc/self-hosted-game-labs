@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import cookie from "@fastify/cookie";
 import fastifyStatic from "@fastify/static";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import type { Config } from "./config.js";
@@ -56,7 +56,15 @@ export function buildApp({ config, db, templates, service, docker, webRoot }: Ap
     if (!isAuthed(req)) return reply.code(401).send({ error: "unauthorized" });
   });
 
-  app.get("/api/health", async () => ({ status: "ok" }));
+  // `build` is when this build was produced, so it is easy to tell whether a redeploy picked up new code.
+  const build = (() => {
+    try {
+      return statSync(new URL(import.meta.url)).mtime.toISOString();
+    } catch {
+      return null;
+    }
+  })();
+  app.get("/api/health", async () => ({ status: "ok", build }));
 
   app.get("/api/auth/status", async (req) => ({
     setupRequired: !hasAdminPassword(db),
