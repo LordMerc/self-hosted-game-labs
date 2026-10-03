@@ -80,6 +80,8 @@ export interface ContainerDriver {
   state(id: string): Promise<ContainerState>;
   /** When the container's current run began (changes on every restart), or null if unknown. */
   startedAt(id: string): Promise<string | null>;
+  /** The environment a container was created with, or null when it cannot be read. Optional: a driver that cannot say is treated as matching. */
+  containerEnv?(id: string): Promise<Record<string, string> | null>;
   /** Run a command inside the running container and collect what it prints. Never goes through a shell. */
   exec(id: string, cmd: string[], opts?: { timeoutMs?: number }): Promise<{ exitCode: number | null; output: string }>;
   /** Containers tagged by another panel instance (read-only: the panel never acts on these). */
@@ -118,6 +120,20 @@ export class DockerodeDriver implements ContainerDriver {
 
   async containerImageId(id: string): Promise<string | null> {
     return this.docker.getContainer(id).inspect().then((i) => i.Image, () => null);
+  }
+
+  async containerEnv(id: string): Promise<Record<string, string> | null> {
+    try {
+      const info = await this.docker.getContainer(id).inspect();
+      const out: Record<string, string> = {};
+      for (const e of info.Config.Env ?? []) {
+        const i = e.indexOf("=");
+        if (i > 0) out[e.slice(0, i)] = e.slice(i + 1);
+      }
+      return out;
+    } catch {
+      return null;
+    }
   }
 
   private pull(image: string, onProgress?: (line: string) => void): Promise<void> {

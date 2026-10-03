@@ -203,7 +203,7 @@ export interface ServerDetail {
   server: Server;
   env: { key: string; label: string; help: string | null; choices: string[] | null; required: boolean; secret: boolean; generate: boolean; value: string | null; isSet: boolean }[];
   minMemoryMb: number | null;
-  console: { examples: string[] } | null;
+  console: { examples: string[]; offNotice: string | null } | null;
   care: {
     timezone: string;
     settings: { restart: { enabled: boolean; time: string; warnMinutes: number }; update: { auto: boolean; time: string } };

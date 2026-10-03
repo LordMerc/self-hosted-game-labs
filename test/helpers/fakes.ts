@@ -61,6 +61,9 @@ export class FakeDocker implements ContainerDriver {
   execFails = false;
   execLog: string[][] = [];
   execReply = (cmd: string[]) => `ran ${cmd.join(" ")}`;
+  async containerEnv(id: string) {
+    return this.containers.get(id)?.spec.env ?? null;
+  }
   async startedAt(id: string) {
     return this.containers.has(id) ? `t${this.starts.get(id) ?? 0}` : null;
   }
