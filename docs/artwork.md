@@ -11,6 +11,7 @@ artworkCredit: Press kit at example.com/press, free for non-commercial community
 
 - A link must be `https`, name a public host (no IP addresses, no `localhost` or `.local` names), have no credentials, port or `#` part, and end in `.png`, `.jpg` or `.webp`.
 - `artworkCredit` is up to 300 characters and shows as a tooltip on the banner. Put the source URL and the terms in it.
+- `artworkPosition` (optional, 0 to 100, default 50) picks which part of a tall picture the banner keeps: 0 is the top, 100 the bottom. Minecraft uses 80 so the lettering near the top of its picture is cropped out.
 - A card with artwork has the same size as one without. The picture gets a dark fade at the bottom, and the big letter is hidden.
 - Use key art that reads well at about 2.4:1 (wide). A logo on its own does not make a good banner.
 

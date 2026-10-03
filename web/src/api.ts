@@ -19,6 +19,8 @@ export interface Template {
   artwork: string | null;
   /** Where the picture came from and its terms, for a tooltip; null when there is no picture. */
   artworkCredit: string | null;
+  /** Vertical focus of the picture in the banner, 0 (top) to 100 (bottom). */
+  artworkPosition: number;
   maxPlayers?: number;
   /** The panel can read this game's live player count. False: it never will, so say so rather than show nothing. */
   reportsPlayers: boolean;

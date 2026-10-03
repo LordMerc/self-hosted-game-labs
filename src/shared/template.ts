@@ -98,6 +98,8 @@ export const templateSchema = z
       .optional(),
     /** Where the picture came from and the terms it is used under; shown as a small tooltip on the card. */
     artworkCredit: z.string().trim().min(1).max(300).optional(),
+    /** Which part of a tall picture the banner keeps, as a percentage from the top (0) to the bottom (100). Default 50, the middle. */
+    artworkPosition: z.number().int().min(0).max(100).optional(),
     /** What the game needs to run well. A memory cap below `minMemoryMb` gets a warning (the cap is still allowed). */
     resources: z.object({ minMemoryMb: z.number().int().positive().optional() }).strict().default({}),
     /** Shown in the deploy form: what to know before starting (memory needs, first-run steps). */
