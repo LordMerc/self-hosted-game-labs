@@ -15,13 +15,25 @@ function ago(iso: string | null) {
 /** Raw router reply, so an odd router can be diagnosed from a screenshot. */
 function RouterDetails() {
   const [text, setText] = useState<string | null>(null);
-  const load = () => api<{ output: string | null }>("/network/diagnostics").then((r) => setText(r.output ?? "(nothing)")).catch((e) => setText(`Error: ${e.message}`));
-  return text === null ? (
-    <button className="ghost small" onClick={load}>
-      Show router details
-    </button>
-  ) : (
-    <pre className="router-details mono">{text}</pre>
+  const [open, setOpen] = useState(false);
+  const load = () => {
+    setOpen(true);
+    api<{ output: string | null }>("/network/diagnostics").then((r) => setText(r.output ?? "(nothing)")).catch((e) => setText(`Error: ${e.message}`));
+  };
+  if (!open) {
+    return (
+      <button className="ghost small" onClick={load}>
+        Show router details
+      </button>
+    );
+  }
+  return (
+    <>
+      <pre className="router-details mono">{text ?? "Asking the router..."}</pre>
+      <button className="ghost small" onClick={() => setOpen(false)}>
+        Hide router details
+      </button>
+    </>
   );
 }
 
