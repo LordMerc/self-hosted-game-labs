@@ -59,5 +59,16 @@ console.log(
   `Self Hosted Game Labs on :${config.PANEL_PORT} | ${templates.length} templates | connectivity=${connectivity.kind} | dns=${dnsSettings.status().configured ? "cloudflare" : "off"}`,
 );
 
+const scheduledBackups = async () => {
+  try {
+    const done = await service.runScheduledBackups();
+    if (done.length > 0) console.log(`scheduled backups: ${done.join("; ")}`);
+  } catch (e) {
+    console.error("scheduled backups failed:", e);
+  }
+};
+
 setTimeout(reconcile, 3000);
+setTimeout(scheduledBackups, 60_000).unref();
+setInterval(scheduledBackups, 10 * 60 * 1000).unref();
 setInterval(reconcile, RECONCILE_MS).unref();

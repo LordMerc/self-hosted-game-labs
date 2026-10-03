@@ -99,4 +99,5 @@ export interface Backup {
 export interface BackupSettings {
   keep: number;
   minDays: number;
+  everyHours: number;
 }
