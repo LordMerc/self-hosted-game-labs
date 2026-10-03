@@ -1,9 +1,11 @@
 import Docker from "dockerode";
 import type { Protocol } from "../ports/allocator.js";
 
-export const LABEL_MANAGED = "gamelabs.managed";
-export const LABEL_ID = "gamelabs.id";
-export const LABEL_SLUG = "gamelabs.slug";
+import { names } from "../instance.js";
+
+export const LABEL_MANAGED = `${names.labelPrefix}.managed`;
+export const LABEL_ID = `${names.labelPrefix}.id`;
+export const LABEL_SLUG = `${names.labelPrefix}.slug`;
 
 export interface ContainerSpec {
   name: string;
@@ -47,6 +49,16 @@ export function usageFromStats(s: RawStats): ContainerUsage {
   };
 }
 
+/** A game server container that belongs to a different panel instance. Shown read-only; never modified. */
+export interface OtherPanelContainer {
+  name: string;
+  instance: string;
+  slug: string;
+  image: string;
+  state: ContainerState;
+  ports: { port: number; protocol: Protocol }[];
+}
+
 /** The small slice of Docker the panel needs. Swapped for a fake in tests. */
 export interface ContainerDriver {
   pullImage(image: string, onProgress?: (line: string) => void): Promise<void>;
@@ -61,6 +73,8 @@ export interface ContainerDriver {
   startedAt(id: string): Promise<string | null>;
   /** Run a command inside the running container and collect what it prints. Never goes through a shell. */
   exec(id: string, cmd: string[], opts?: { timeoutMs?: number }): Promise<{ exitCode: number | null; output: string }>;
+  /** Containers tagged by another panel instance (read-only: the panel never acts on these). */
+  listOtherPanels(): Promise<OtherPanelContainer[]>;
   /** Current CPU and memory of a running container. */
   usage(id: string): Promise<ContainerUsage>;
   /** Follow logs until the signal aborts. */
@@ -190,6 +204,27 @@ export class DockerodeDriver implements ContainerDriver {
     });
     const info = await exec.inspect();
     return { exitCode: info.ExitCode ?? null, output };
+  }
+
+  async listOtherPanels(): Promise<OtherPanelContainer[]> {
+    const all = await this.docker.listContainers({ all: true });
+    const out: OtherPanelContainer[] = [];
+    for (const c of all) {
+      const labels = c.Labels ?? {};
+      // Another instance tags its containers `<instance>.managed=true`; skip our own and anything untagged.
+      const key = Object.keys(labels).find((k) => k.endsWith(".managed") && labels[k] === "true");
+      if (!key || key === LABEL_MANAGED) continue;
+      const instance = key.slice(0, -".managed".length);
+      out.push({
+        name: (c.Names?.[0] ?? c.Id).replace(/^\//, ""),
+        instance,
+        slug: labels[`${instance}.slug`] ?? "",
+        image: c.Image,
+        state: c.State === "running" ? "running" : c.State === "paused" ? "paused" : "exited",
+        ports: (c.Ports ?? []).filter((p) => p.PublicPort).map((p) => ({ port: p.PublicPort!, protocol: p.Type === "tcp" ? "tcp" : "udp" })),
+      });
+    }
+    return out;
   }
 
   async usage(id: string): Promise<ContainerUsage> {

@@ -15,6 +15,7 @@ import type { DnsSettings } from "./dns/settings.js";
 import { hasAdminPassword, setAdminPassword, verifyAdminPassword } from "./auth/password.js";
 import { LoginRateLimiter } from "./auth/rate-limit.js";
 import { HostStats } from "./host-stats.js";
+import { DEFAULT_INSTANCE, names } from "./instance.js";
 
 const SESSION_COOKIE = "gl_session";
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -77,6 +78,8 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
   app.get("/api/auth/status", async (req) => ({
     setupRequired: !hasAdminPassword(db),
     authenticated: isAuthed(req),
+    /** Only set when this is not the default panel, so the page can say which copy you are looking at. */
+    instance: names.instance === DEFAULT_INSTANCE ? null : names.instance,
   }));
 
   app.post("/api/auth/setup", async (req, reply) => {
@@ -130,6 +133,9 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
   app.get("/api/templates/:id/plan", async (req) => ({ ports: service.planPorts(idParam(req)) }));
 
   app.get("/api/servers", async () => service.list());
+
+  /** Game servers run by a different panel instance on this host: listed so you can see them, never changed from here. */
+  app.get("/api/other-panels", async () => docker.listOtherPanels().catch(() => []));
 
   /** Host figures and per-server usage for the dashboard. Players are not reported yet. */
   app.get("/api/stats", async () => ({ host: hostStats.snapshot(), servers: await service.usage() }));

@@ -1,4 +1,5 @@
 import type { Protocol } from "../ports/allocator.js";
+import { names } from "../instance.js";
 
 export type OpenResult =
   | { state: "open" }
@@ -13,7 +14,7 @@ export interface Mapping {
 
 /**
  * How game ports get from the internet to this machine. Every mapping the panel creates is described as
- * `gamelabs:<slug>`; providers must never modify or remove anything that does not carry that prefix.
+ * `<instance>:<slug>` (`gamelabs:<slug>` by default); providers must never modify or remove anything that does not carry that prefix.
  */
 export interface ConnectivityProvider {
   readonly kind: "manual" | "upnp";
@@ -26,7 +27,7 @@ export interface ConnectivityProvider {
   diagnose?(): Promise<string>;
 }
 
-export const OWNER_PREFIX = "gamelabs:";
+export const OWNER_PREFIX = names.ownerPrefix;
 export const describeMapping = (slug: string) => `${OWNER_PREFIX}${slug}`;
 
 export class ConnectivityError extends Error {}

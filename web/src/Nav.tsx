@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import { api, type AuthStatus } from "./api";
 import { Icon } from "./Icons";
 
 export type Page = "servers" | "backups" | "settings";
@@ -9,6 +11,8 @@ export function Nav({ page, onNavigate, onLogout }: { page: Page; onNavigate: (p
       {label}
     </a>
   );
+  const [instance, setInstance] = useState<string | null>(null);
+  useEffect(() => void api<AuthStatus>("/auth/status").then((s) => setInstance(s.instance), () => {}), []);
   return (
     <aside className="nav">
       <div className="brand">
@@ -16,6 +20,7 @@ export function Nav({ page, onNavigate, onLogout }: { page: Page; onNavigate: (p
           <Icon name="server" size={18} />
         </span>
         Game Labs
+        {instance && <span className="instance-badge">{instance}</span>}
       </div>
       <div className="nav-label">Menu</div>
       <nav>
