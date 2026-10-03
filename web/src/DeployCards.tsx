@@ -1,4 +1,4 @@
-import { type CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import type { Server, Template } from "./api";
 import { gameStyle } from "./GameIcon";
 import { Icon } from "./Icons";
@@ -10,11 +10,56 @@ function facts(t: Template) {
   return [t.minMemoryMb ? `${mem(t.minMemoryMb)} RAM` : null, t.maxPlayers ? `up to ${t.maxPlayers} players` : null].filter(Boolean).join(" · ") || "Docker template";
 }
 
+/** How many templates sit on the page; the rest are behind "View more". */
+const SHOWN = 4;
+
+function TemplateCard({ t, installed, onPick }: { t: Template; installed: boolean; onPick: (t: Template) => void }) {
+  const g = gameStyle(t.id);
+  return (
+    <button className="template-card" onClick={() => onPick(t)}>
+      <span className={`card-banner ${g.className}`.trim()} style={{ ...g.style, ...(t.artwork ? ({ "--art": `url(${t.artwork})` } as CSSProperties) : {}) }} data-art={t.artwork ? "yes" : undefined} aria-hidden="true">
+        <span className="banner-letter">{t.name.charAt(0)}</span>
+        {installed && <span className="tag">Installed</span>}
+      </span>
+      <span className="card-foot">
+        <span className="card-text">
+          <strong>{t.name}</strong>
+          <span className="muted">{facts(t)}</span>
+        </span>
+        <span className="card-plus" aria-hidden="true">
+          <Icon name="plus" size={15} />
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function CustomCard({ onCustom }: { onCustom: () => void }) {
+  return (
+    <button className="template-card custom" onClick={onCustom}>
+      <span className="card-banner tone-custom" aria-hidden="true">
+        <span className="banner-letter">+</span>
+      </span>
+      <span className="card-foot">
+        <span className="card-text">
+          <strong>Custom Docker image</strong>
+          <span className="muted">Any image, your own ports</span>
+        </span>
+        <span className="card-plus" aria-hidden="true">
+          <Icon name="plus" size={15} />
+        </span>
+      </span>
+    </button>
+  );
+}
+
 /**
- * The one-click templates, as cards with a colour wash per game. A template can name its own accent colour and, optionally,
- * ship a picture; none are included by default, so the repository carries no third-party game art.
+ * The one-click templates, as cards with a colour wash per game. The first few sit on the page; "View more" opens a dialog with
+ * every template and the custom image. A template can name its own accent colour and, optionally, ship a picture; none are
+ * included by default, so the repository carries no third-party game art.
  */
 export function DeployCards({ templates, servers, hero, onPick, onCustom }: { templates: Template[]; servers: Server[]; hero: boolean; onPick: (t: Template) => void; onCustom: () => void }) {
+  const [all, setAll] = useState(false);
   const installed = new Set(servers.map((s) => s.templateId));
   return (
     <>
@@ -28,41 +73,44 @@ export function DeployCards({ templates, servers, hero, onPick, onCustom }: { te
         </a>
       </div>
       <div className="templates">
-        {templates.map((t) => {
-          const g = gameStyle(t.id);
-          return (
-            <button key={t.id} className="template-card" onClick={() => onPick(t)}>
-              <span className={`card-banner ${g.className}`.trim()} style={{ ...g.style, ...(t.artwork ? ({ "--art": `url(${t.artwork})` } as CSSProperties) : {}) }} data-art={t.artwork ? "yes" : undefined} aria-hidden="true">
-                <span className="banner-letter">{t.name.charAt(0)}</span>
-                {installed.has(t.id) && <span className="tag">Installed</span>}
-              </span>
-              <span className="card-foot">
-                <span className="card-text">
-                  <strong>{t.name}</strong>
-                  <span className="muted">{facts(t)}</span>
-                </span>
-                <span className="card-plus" aria-hidden="true">
-                  <Icon name="plus" size={15} />
-                </span>
-              </span>
-            </button>
-          );
-        })}
-        <button className="template-card custom" onClick={onCustom}>
-          <span className="card-banner tone-custom" aria-hidden="true">
-            <span className="banner-letter">+</span>
-          </span>
-          <span className="card-foot">
-            <span className="card-text">
-              <strong>Custom Docker image</strong>
-              <span className="muted">Any image, your own ports</span>
-            </span>
-            <span className="card-plus" aria-hidden="true">
-              <Icon name="plus" size={15} />
-            </span>
-          </span>
-        </button>
+        {templates.slice(0, SHOWN).map((t) => (
+          <TemplateCard key={t.id} t={t} installed={installed.has(t.id)} onPick={onPick} />
+        ))}
       </div>
+      <button className="view-more" onClick={() => setAll(true)}>
+        View more
+      </button>
+      {all && (
+        <div className="backdrop">
+          <div className="card dialog templates-dialog" role="dialog" aria-modal="true" aria-label="All games">
+            <div className="row between">
+              <h2>Deploy a new server</h2>
+              <button className="ghost" onClick={() => setAll(false)}>
+                Close
+              </button>
+            </div>
+            <div className="templates">
+              {templates.map((t) => (
+                <TemplateCard
+                  key={t.id}
+                  t={t}
+                  installed={installed.has(t.id)}
+                  onPick={(picked) => {
+                    setAll(false);
+                    onPick(picked);
+                  }}
+                />
+              ))}
+              <CustomCard
+                onCustom={() => {
+                  setAll(false);
+                  onCustom();
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

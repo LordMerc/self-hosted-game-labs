@@ -69,6 +69,11 @@ const choose = async (name: string, item: string) => {
   await row(name).getByRole("button", { name: /More actions/ }).click();
   await page.getByRole("menuitem", { name: item }).click();
 };
+/** Picks a template from the "View more" dialog. */
+const pick = async (name: string) => {
+  await page.getByRole("button", { name: "View more" }).click();
+  await page.getByRole("dialog", { name: "All games" }).getByRole("button", { name }).click();
+};
 const deploy = async () => page.getByRole("button", { name: "Deploy", exact: true }).click();
 const shot = (name: string, opts: { fullPage?: boolean } = {}) => page.screenshot({ path: path.join(out, `${name}.png`), ...opts });
 
@@ -78,22 +83,22 @@ await page.keyboard.press("Enter");
 await page.getByRole("heading", { name: "Game servers" }).waitFor();
 
 // Palworld, Dragonwilds and Minecraft, all public; Valheim private.
-await page.getByRole("button", { name: "Palworld" }).first().click();
+await pick("Palworld");
 await deploy();
 await row("Palworld").getByText("Running").waitFor();
 
-await page.getByRole("button", { name: "RuneScape: Dragonwilds" }).first().click();
+await pick("RuneScape: Dragonwilds");
 await page.getByLabel("Your Dragonwilds Player ID").fill("DEMO-PLAYER-ID");
 await page.getByLabel("World name").fill("Merc Sanctum");
 await deploy();
 await row("Dragonwilds").getByText(/Running|Starting/).waitFor();
 
-await page.getByRole("button", { name: "Minecraft (Java)" }).first().click();
+await pick("Minecraft (Java)");
 await page.getByLabel(/Accept the Minecraft EULA/).selectOption("TRUE");
 await deploy();
 await row("Minecraft").getByText(/Running|Starting/).waitFor();
 
-await page.getByRole("button", { name: "Valheim" }).first().click();
+await pick("Valheim");
 await page.getByLabel(/Server password/).fill("demo-password");
 await deploy();
 await row("Valheim").getByText(/Running|Starting/).waitFor();
