@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 export interface BackupInfo {
@@ -8,8 +8,21 @@ export interface BackupInfo {
   createdAt: string;
 }
 
-/** A backup is never removed to make room until it is at least this old, however many newer ones exist. */
+/** Default: a backup is not removed to make room until it is at least this old, however many newer ones exist. */
 export const MIN_KEEP_DAYS = 7;
+
+export interface BackupSettings {
+  /** Most backups to keep. Once a new one pushes the count over this, the oldest go. */
+  keep: number;
+  /** A backup younger than this many days is never removed for room. 0 means the count alone decides. */
+  minDays: number;
+}
+
+export function parseSettings(v: unknown, fallback: BackupSettings): BackupSettings {
+  const o = (v ?? {}) as Partial<Record<keyof BackupSettings, unknown>>;
+  const int = (x: unknown, lo: number, hi: number, d: number) => (typeof x === "number" && Number.isInteger(x) && x >= lo && x <= hi ? x : d);
+  return { keep: int(o.keep, 1, 100, fallback.keep), minDays: int(o.minDays, 0, 365, fallback.minDays) };
+}
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const NAME = /^[a-z0-9][a-z0-9-]*-\d{8}-\d{6}(-\d+)?\.tar\.gz$/;
@@ -31,13 +44,37 @@ const stamp = (d: Date) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$
  * Compressed copies of a server's data folder, kept in `<gameservers>/.backups/<slug>/`.
  * Backups live outside the data folder, so deleting a server or its data never deletes its backups. Only a newer
  * backup of the same server can push an old one out, and only once it is beyond the newest `keep` and at least
- * MIN_KEEP_DAYS old. Backups of a deleted server are never pruned.
+ * `minDays` old (both settable per server; 7 and 7 by default). Backups of a deleted server are never pruned.
  */
 export class BackupStore {
+  private readonly defaults: BackupSettings;
+
   constructor(
     private readonly root: string,
-    private readonly keep = 7,
-  ) {}
+    keep = 7,
+  ) {
+    this.defaults = { keep, minDays: MIN_KEEP_DAYS };
+  }
+
+  /** Per-server settings live beside the backups, so they survive deleting and recreating the server. */
+  settings(slug: string): BackupSettings {
+    try {
+      return parseSettings(JSON.parse(readFileSync(path.join(this.dir(slug), "settings.json"), "utf8")), this.defaults);
+    } catch {
+      return this.defaults;
+    }
+  }
+
+  setSettings(slug: string, input: unknown): BackupSettings {
+    const o = (input ?? {}) as Record<string, unknown>;
+    const next = parseSettings(input, this.settings(slug));
+    if ((o.keep !== undefined && next.keep !== o.keep) || (o.minDays !== undefined && next.minDays !== o.minDays)) {
+      throw new Error("keep must be a whole number from 1 to 100, and days a whole number from 0 to 365");
+    }
+    mkdirSync(this.dir(slug), { recursive: true });
+    writeFileSync(path.join(this.dir(slug), "settings.json"), JSON.stringify(next));
+    return next;
+  }
 
   private dir(slug: string) {
     return path.join(this.root, ".backups", slug);
@@ -77,9 +114,10 @@ export class BackupStore {
       throw e;
     }
     if (opts.prune !== false) {
-      const cutoff = now.getTime() - MIN_KEEP_DAYS * DAY_MS;
-      for (const old of this.list(slug).slice(this.keep)) {
-        if (new Date(old.createdAt).getTime() <= cutoff) rmSync(path.join(dir, old.name), { force: true });
+      const { keep, minDays } = this.settings(slug);
+      const cutoff = now.getTime() - minDays * DAY_MS;
+      for (const old of this.list(slug).slice(keep)) {
+        if (minDays === 0 || new Date(old.createdAt).getTime() <= cutoff) rmSync(path.join(dir, old.name), { force: true });
       }
     }
     return this.list(slug).find((b) => b.name === name)!;

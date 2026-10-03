@@ -293,3 +293,14 @@ describe("deleting a server and its data", () => {
     expect(svc.listBackups(await deploy("Alpha"))).toHaveLength(1);
   });
 });
+
+describe("backup settings", () => {
+  it("are per server, validated, and survive deleting the server", async () => {
+    const id = await deploy("Alpha");
+    expect(svc.backupSettings(id)).toEqual({ keep: 7, minDays: 7 });
+    expect(svc.setBackupSettings(id, { keep: 5, minDays: 0 })).toEqual({ keep: 5, minDays: 0 });
+    expect(() => svc.setBackupSettings(id, { keep: 0 })).toThrow(UserError);
+    await svc.remove(id);
+    expect(svc.backupSettings(await deploy("Alpha"))).toEqual({ keep: 5, minDays: 0 });
+  });
+});

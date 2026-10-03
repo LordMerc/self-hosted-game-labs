@@ -166,6 +166,8 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
   });
 
   app.get("/api/servers/:id/backups", async (req) => service.listBackups(idParam(req)));
+  app.get("/api/servers/:id/backups/settings", async (req) => service.backupSettings(idParam(req)));
+  app.put("/api/servers/:id/backups/settings", async (req) => service.setBackupSettings(idParam(req), req.body));
   app.post("/api/servers/:id/backups", async (req) => service.backup(idParam(req)));
   app.post("/api/servers/:id/backups/:name/restore", async (req) => {
     await service.restoreBackup(idParam(req), (req.params as { name: string }).name);

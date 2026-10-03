@@ -156,6 +156,10 @@ summary::-webkit-details-marker { display: none; }
 .menu { position: relative; }
 .menu-items { position: absolute; right: 0; z-index: 5; margin-top: 0.3rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 0.3rem; display: grid; min-width: 180px; }
 
+.backup-settings { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; }
+.dialog .backup-settings label { display: flex; align-items: center; gap: 0.5rem; }
+.backup-settings input { width: 4.5rem; }
+.backup-settings .note { flex-basis: 100%; }
 .note { display: flex; align-items: center; gap: 0.6rem; margin: 1rem 0 0; font-size: 0.85rem; color: var(--muted); }
 .note.warn { color: var(--warn); }
 .deploy { margin-top: 3rem; }

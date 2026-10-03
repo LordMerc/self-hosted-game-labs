@@ -51,6 +51,26 @@ describe("BackupStore", () => {
     expect(names).toContain(kept.name);
   });
 
+  it("with 0 days, the count alone decides: the oldest goes when a new one pushes it over the limit", async () => {
+    const s = new BackupStore(root);
+    expect(s.settings("pal")).toEqual({ keep: 7, minDays: 7 });
+    s.setSettings("pal", { keep: 2, minDays: 0 });
+    const names: string[] = [];
+    for (const h of [1, 2, 3]) names.push((await s.create("pal", { now: new Date(`2026-10-03T0${h}:00:00Z`) })).name);
+    const left = s.list("pal").map((b) => b.name);
+    expect(left).toHaveLength(2);
+    expect(left).not.toContain(names[0]);
+  });
+
+  it("stores settings per server, keeps the other field when only one is sent, and rejects nonsense", () => {
+    const s = new BackupStore(root);
+    s.setSettings("pal", { keep: 5, minDays: 3 });
+    expect(s.setSettings("pal", { keep: 4 })).toEqual({ keep: 4, minDays: 3 });
+    expect(new BackupStore(root).settings("pal")).toEqual({ keep: 4, minDays: 3 });
+    expect(s.settings("other")).toEqual({ keep: 7, minDays: 7 });
+    for (const bad of [{ keep: 0 }, { keep: 101 }, { keep: "5" }, { minDays: -1 }, { minDays: 1.5 }]) expect(() => s.setSettings("pal", bad)).toThrow(/whole number/);
+  });
+
   it("does not prune when asked not to", async () => {
     const s = new BackupStore(root, 1);
     for (const h of [1, 2]) await s.create("pal", { now: new Date(`2026-10-03T0${h}:00:00Z`), prune: false });

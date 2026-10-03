@@ -566,6 +566,18 @@ export class ServerService {
     });
   }
 
+  backupSettings(id: string) {
+    return this.store().settings(this.row(id).slug);
+  }
+
+  setBackupSettings(id: string, input: unknown) {
+    try {
+      return this.store().setSettings(this.row(id).slug, input);
+    } catch (e) {
+      throw e instanceof UserError ? e : new UserError((e as Error).message, 400);
+    }
+  }
+
   deleteBackup(id: string, name: string) {
     const row = this.row(id);
     try {
