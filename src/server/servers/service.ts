@@ -9,7 +9,8 @@ import { schema } from "../db/index.js";
 import { templateSchema, type GameTemplate } from "../../shared/template.js";
 import type { ContainerDriver, ContainerState } from "../docker/driver.js";
 import { LABEL_ID, LABEL_MANAGED, LABEL_SLUG } from "../docker/driver.js";
-import { RouterNotFoundError, type ConnectivityProvider } from "../connectivity/provider.js";
+import { names } from "../instance.js";
+import { describeMapping, RouterNotFoundError, type ConnectivityProvider } from "../connectivity/provider.js";
 import type { DnsClient } from "../dns/cloudflare.js";
 import { allocatePorts, checkPorts, portKey, type Allocation, type PortKey } from "../ports/allocator.js";
 import { listHostPorts } from "../ports/host.js";
@@ -363,7 +364,7 @@ export class ServerService {
       }
 
       const containerId = await this.d.docker.create({
-        name: `gl-${row.slug}`,
+        name: names.containerName(row.slug),
         image: t.image,
         env,
         ...(t.command ? { command: expandCommand(t.command, env) } : {}),
@@ -593,7 +594,7 @@ export class ServerService {
         for (const p of this.ports(s.id)) {
           await attempt(`${s.slug} ${p.port}/${p.protocol}`, async () => {
             const owned = await this.d.connectivity.list();
-            const had = owned.some((m) => m.port === p.port && m.protocol === p.protocol && m.description === `gamelabs:${s.slug}`);
+            const had = owned.some((m) => m.port === p.port && m.protocol === p.protocol && m.description === describeMapping(s.slug));
             await this.d.connectivity.ensureOpen(s.id, s.slug, p.port, p.protocol, lan);
             if (!had && this.d.connectivity.kind === "upnp") actions.push(`re-opened ${p.port}/${p.protocol} for ${s.slug}`);
           });

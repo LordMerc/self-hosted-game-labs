@@ -1,9 +1,11 @@
 import Docker from "dockerode";
 import type { Protocol } from "../ports/allocator.js";
 
-export const LABEL_MANAGED = "gamelabs.managed";
-export const LABEL_ID = "gamelabs.id";
-export const LABEL_SLUG = "gamelabs.slug";
+import { names } from "../instance.js";
+
+export const LABEL_MANAGED = `${names.labelPrefix}.managed`;
+export const LABEL_ID = `${names.labelPrefix}.id`;
+export const LABEL_SLUG = `${names.labelPrefix}.slug`;
 
 export interface ContainerSpec {
   name: string;

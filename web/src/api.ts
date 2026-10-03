@@ -69,6 +69,7 @@ export interface Reachability {
 export interface AuthStatus {
   setupRequired: boolean;
   authenticated: boolean;
+  instance: string | null;
 }
 
 export class ApiError extends Error {

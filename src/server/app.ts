@@ -15,6 +15,7 @@ import type { DnsSettings } from "./dns/settings.js";
 import { hasAdminPassword, setAdminPassword, verifyAdminPassword } from "./auth/password.js";
 import { LoginRateLimiter } from "./auth/rate-limit.js";
 import { HostStats } from "./host-stats.js";
+import { DEFAULT_INSTANCE, names } from "./instance.js";
 
 const SESSION_COOKIE = "gl_session";
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -77,6 +78,8 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
   app.get("/api/auth/status", async (req) => ({
     setupRequired: !hasAdminPassword(db),
     authenticated: isAuthed(req),
+    /** Only set when this is not the default panel, so the page can say which copy you are looking at. */
+    instance: names.instance === DEFAULT_INSTANCE ? null : names.instance,
   }));
 
   app.post("/api/auth/setup", async (req, reply) => {

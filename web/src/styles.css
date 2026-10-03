@@ -59,6 +59,7 @@ button.small { padding: 0.25rem 0.75rem; font-size: 0.8rem; justify-self: start;
 .shell { display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: 100vh; }
 .nav { padding: 2rem 1.1rem 1.25rem; display: flex; flex-direction: column; gap: 0.6rem; border-right: 1px solid var(--border-soft); position: sticky; top: 0; height: 100vh; }
 .brand { display: flex; align-items: center; gap: 0.7rem; font-weight: 650; font-size: 1.15rem; padding: 0 0.6rem; margin-bottom: 1.6rem; }
+.instance-badge { font-size: 0.7rem; font-weight: 650; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.15rem 0.45rem; border-radius: 999px; background: #f59e0b; color: #1f1300; }
 .brand-mark { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; background: linear-gradient(145deg, #6366f1, #818cf8); color: #fff; }
 .nav-label { padding: 0 0.75rem; font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); font-weight: 600; }
 .nav nav { flex: 1; display: grid; gap: 0.2rem; align-content: start; }

@@ -41,6 +41,25 @@ docker compose -f compose.image.yaml up -d
 
 It needs the same things as `compose.yaml`: the Docker socket mount, the `gamelabs-data` volume for the panel's own data, and `GAME_DATA_DIR` (default `/srv/gameservers`, and the host path must be the same inside the container). The optional variables (`PANEL_PORT`, `HOST_LAN_IP`, `CONNECTIVITY`, `BACKUP_KEEP`, `PORT_CHECK`, ...) are listed in `.env.example`. Set `IMAGE_TAG=1.0.0` to pin a release instead of following `latest`.
 
+## Trying changes before a release
+
+You can run a second copy of the panel next to your real one to preview a branch before it reaches everyone. Give the copy its own name with `INSTANCE`, so the two panels never touch each other's game servers, router rules or DNS records, and give it its own port and game data folder.
+
+With Dockhand (or any Git-based stack deploy), create a second stack, for example `gamelabs-beta`, from the same repository:
+
+- **Branch:** the branch you want to try (a feature branch, or `beta`). Compose file: `compose.yaml` (builds from source on your machine).
+- **Environment variables:** `INSTANCE=beta`, `PANEL_PORT=8091`, and `GAME_DATA_DIR` set to a folder the real panel does not use (for example `/srv/gameservers-beta`).
+- Keep the stack name different from the real one, so it gets its own `gamelabs-data` volume and its own admin password.
+
+If you would rather test the prebuilt preview image, pushes to the `beta` branch publish `ghcr.io/lordmerc/self-hosted-game-labs:beta`. Use `compose.image.yaml` with `IMAGE_TAG=beta` and the same variables.
+
+Things to know:
+
+- The beta panel's containers are named `gl-beta-<name>`; the real panel keeps `gl-<name>`. The real panel ignores everything tagged `beta`, and the reverse.
+- Game ports are shared by the whole machine. To test deploying Palworld in the beta panel, stop the real Palworld server first (or test a game you are not running), otherwise the port is already taken.
+- Leave router automation and Cloudflare off in the beta panel (`CONNECTIVITY` defaults to `manual`), and use different server names, so it cannot change your real DNS or router rules.
+- Promote a tested change the normal way: open a pull request into `main`, merge it, and (optionally) tag a release.
+
 ## Domain names (optional)
 
 Without a domain, public servers are reached by your IP address. To get names like `palworld.example.com`, open **Settings** in the panel, paste a Cloudflare API token and pick your domain. The panel lists the steps. In short: create a custom token at Cloudflare with **Zone · Zone · Read** and **Zone · DNS · Edit**, limited to your domain. The panel creates DNS-only records (never proxied) and keeps them pointed at your current IP, and it only ever changes records it created. You can instead set `CF_API_TOKEN`, `CF_ZONE` and `PUBLIC_HOST` as environment variables, which override the Settings page.
