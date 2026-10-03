@@ -2,7 +2,7 @@
 
 An open-source, self-hosted control panel for running game servers on your own hardware. Pick a game, click deploy, and friends can join over the internet, with the panel handling containers, ports, and DNS so you do not have to touch your router or DNS dashboard after first-time setup.
 
-> **Status: early development (Milestone 1).** The foundation is in place: panel, login, database, template system and port allocation. Deploying servers, router port opening and DNS are next. See [docs/ROADMAP.md](docs/ROADMAP.md).
+> **Status: early development.** Deploy, start/stop, logs, Public/Private (manual or UPnP port forwarding) and Cloudflare DNS are built and tested against fakes, but have not yet been run against a real Docker host, router and Cloudflare zone. See [docs/ROADMAP.md](docs/ROADMAP.md) and [docs/verification.md](docs/verification.md).
 
 ## What it does (target)
 

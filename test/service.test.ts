@@ -183,3 +183,45 @@ describe("network", () => {
     expect(n).toMatchObject({ provider: "upnp", publicIp: "203.0.113.7", dns: { host: "play.example.com", lastIp: "203.0.113.7" } });
   });
 });
+
+describe("reconcile", () => {
+  it("re-opens mappings the router forgot and restores a deleted CNAME", async () => {
+    const id = await deploy();
+    await svc.setAccess(id, "public");
+    net.open.clear(); // simulated router reboot
+    dns.cnames.clear(); // someone deleted the record
+    const actions = await svc.reconcile();
+    expect([...net.open.keys()].sort()).toEqual(["27015/udp", "8211/udp"]);
+    expect(dns.cnames.get("our-palworld")).toBe("play.example.com");
+    expect(actions.join(" ")).toMatch(/re-opened 8211\/udp/);
+    expect(actions.join(" ")).toMatch(/restored DNS record/);
+  });
+
+  it("updates DDNS when the public IP changes, and does nothing when it has not", async () => {
+    await deploy();
+    await svc.syncDdns();
+    expect((await svc.reconcile()).join(" ")).not.toMatch(/DDNS/);
+    net.ip = "198.51.100.9";
+    expect((await svc.reconcile()).join(" ")).toMatch(/DDNS updated \(198\.51\.100\.9\)/);
+    expect(dns.a.get("play.example.com")).toBe("198.51.100.9");
+  });
+
+  it("removes tagged CNAMEs that no public server wants, and recreates a missing container", async () => {
+    const id = await deploy();
+    dns.cnames.set("ghost", "play.example.com");
+    docker.containers.clear(); // container removed behind our back
+    const actions = await svc.reconcile();
+    expect(dns.cnames.has("ghost")).toBe(false);
+    expect(actions.join(" ")).toMatch(/recreated missing container for our-palworld/);
+    expect(docker.containers.size).toBe(1);
+    expect((await svc.list()).find((s) => s.id === id)!.status).toBe("online");
+  });
+
+  it("records problems instead of throwing when the router is unreachable", async () => {
+    const id = await deploy();
+    await svc.setAccess(id, "public");
+    net.fail = "No UPnP router found.";
+    await svc.reconcile();
+    expect((await svc.network()).reconcile.problems.join(" ")).toMatch(/No UPnP router found/);
+  });
+});

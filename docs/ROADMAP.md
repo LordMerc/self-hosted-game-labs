@@ -14,20 +14,22 @@ Done (this scaffold):
 - [x] Palworld template
 - [x] Game servers page: server table, template row (deploy disabled)
 
-Next:
+Also done (built against fakes, see verification.md for what is unproven):
 
-- [ ] Docker driver: pull with progress, create labelled container, start, stop, restart, delete
-- [ ] Deploy flow and readiness wait; Error state with Retry / Remove
-- [ ] Log streaming (SSE)
-- [ ] Connectivity providers: `manual` (rules + confirmation), then `upnp` (`upnpc`)
-- [ ] Cloudflare: DDNS A record, per-server CNAME, `gamelabs:` ownership comments
-- [ ] Public / Private toggle
-- [ ] Deploy form generated from the template
-- [ ] Real-world verification: friend connects from outside the LAN
+- [x] Docker driver (pull, create labelled container, start, stop, restart, remove, log streaming) and the deploy flow with Error + Retry
+- [x] Connectivity providers: `manual` (rules + confirmation) and `upnp` (`upnpc`, only touches `gamelabs:` mappings)
+- [x] Cloudflare: DDNS A record and per-server CNAME, DNS-only, only touches `gamelabs:`-commented records
+- [x] Public / Private toggle, delete (data kept unless the name is typed), secrets hidden until revealed
+- [x] Deploy form generated from the template; Network panel; log viewer
+- [x] Reconcile loop (from Milestone 2): startup + every 5 minutes. Recreates missing containers, re-opens mappings, restores DNS, removes stale tagged DNS, updates DDNS on IP change
+
+Still open for Milestone 1:
+
+- [ ] Real-world verification on a Docker host: image builds, Palworld deploys, UPnP/manual rule works, DNS resolves, a friend connects from outside the LAN (needs the maintainer's hardware)
 
 ## Later
 
-2. **Stays working on its own**: reconcile loop, drift detection, honest reachability check
+2. **Stays working on its own**: honest reachability check (reconcile loop is done)
 3. **UI to spec**: Network panel, server detail page, deploy wizard, conflict UX, Dragonwilds template
 4. **Templates and care**: Minecraft, Valheim, Satisfactory, Terraria; backups and restore; scheduled restarts; update checks
 

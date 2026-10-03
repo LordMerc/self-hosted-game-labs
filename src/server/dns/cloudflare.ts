@@ -20,6 +20,8 @@ export interface DnsClient {
   upsertCname(slug: string, target: string): Promise<"created" | "updated" | "unchanged">;
   /** Delete `<slug>.<zone>` only if it carries the tag for that slug. */
   deleteCname(slug: string): Promise<boolean>;
+  /** Slugs of every CNAME in the zone carrying a gamelabs tag (not the ddns A record). */
+  listOwnedCnames(): Promise<string[]>;
   fqdn(slug: string): string;
 }
 
@@ -95,6 +97,19 @@ export class CloudflareClient implements DnsClient {
 
   upsertCname(slug: string, target: string) {
     return this.upsert("CNAME", this.fqdn(slug), target, serverComment(slug));
+  }
+
+  async listOwnedCnames(): Promise<string[]> {
+    const z = await this.zoneIdOf();
+    const slugs: string[] = [];
+    for (let page = 1; ; page++) {
+      const rows = await this.call<DnsRecord[]>("GET", `/zones/${z}/dns_records?type=CNAME&per_page=100&page=${page}`);
+      for (const r of rows) {
+        const c = r.comment ?? "";
+        if (c.startsWith(DNS_OWNER_PREFIX) && r.name === this.fqdn(c.slice(DNS_OWNER_PREFIX.length))) slugs.push(c.slice(DNS_OWNER_PREFIX.length));
+      }
+      if (rows.length < 100) return slugs;
+    }
   }
 
   async deleteCname(slug: string): Promise<boolean> {

@@ -19,7 +19,25 @@ const dns = config.CF_API_TOKEN && config.CF_ZONE ? new CloudflareClient(config.
 const service = new ServerService({ config, db, templates, docker, connectivity, dns });
 const app = buildApp({ config, db, templates, service, docker, webRoot: "dist/web" });
 
+const RECONCILE_MS = 5 * 60 * 1000;
+let reconciling = false;
+const reconcile = async () => {
+  if (reconciling) return;
+  reconciling = true;
+  try {
+    const actions = await service.reconcile();
+    if (actions.length > 0) console.log(`reconcile: ${actions.join("; ")}`);
+  } catch (e) {
+    console.error("reconcile failed:", e);
+  } finally {
+    reconciling = false;
+  }
+};
+
 await app.listen({ port: config.PANEL_PORT, host: "0.0.0.0" });
 console.log(
   `Self Hosted Game Labs on :${config.PANEL_PORT} | ${templates.length} templates | connectivity=${connectivity.kind} | dns=${dns ? "cloudflare" : "off"}`,
 );
+
+setTimeout(reconcile, 3000);
+setInterval(reconcile, RECONCILE_MS).unref();
