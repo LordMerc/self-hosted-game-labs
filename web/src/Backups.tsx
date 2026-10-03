@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type Backup, type BackupSettings } from "./api";
+import { Hint } from "./Hint";
 
 function size(n: number) {
   if (n < 1000) return `${n} B`;
@@ -72,11 +73,17 @@ export function Backups({ id, name, running, onClose, onChange }: { id: string; 
         <div className="backup-settings">
           <label>
             Keep up to
+            <Hint label="About the backup limit">
+              The most backups to hold on to. When a new backup would take you over this number, the oldest one is deleted. Example: 5 means the sixth backup replaces the oldest.
+            </Hint>
             <input type="number" min={1} max={100} value={keep} onChange={(e) => setKeep(e.target.value)} />
             backups
           </label>
           <label>
             but never delete one younger than
+            <Hint label="About the minimum age">
+              A safety net: a backup younger than this many days is never deleted, even if you are over the limit. Example: 7 means last week&apos;s backups are always safe. Use 0 to let the count alone decide.
+            </Hint>
             <input type="number" min={0} max={365} value={days} onChange={(e) => setDays(e.target.value)} />
             days
           </label>
