@@ -17,13 +17,13 @@ export type UpnpcRunner = (args: string[]) => Promise<string>;
 
 export const runUpnpc: UpnpcRunner = async (args) => {
   try {
-    const { stdout } = await execFileAsync("upnpc", args, { timeout: 15_000 });
-    return stdout;
+    const { stdout, stderr } = await execFileAsync("upnpc", args, { timeout: 15_000 });
+    return stderr ? `${stdout}\n${stderr}` : stdout;
   } catch (e) {
     const err = e as NodeJS.ErrnoException & { stdout?: string };
     if (err.code === "ENOENT") throw new ConnectivityError("`upnpc` (miniupnpc) is not installed");
     // upnpc exits non-zero on some failures but still prints useful output.
-    if (typeof err.stdout === "string" && err.stdout.length > 0) return err.stdout;
+    if (typeof err.stdout === "string" && err.stdout.length > 0) return `${err.stdout}\n${(err as { stderr?: string }).stderr ?? ""}`;
     throw new ConnectivityError(`upnpc failed: ${err.message}`);
   }
 };
@@ -69,9 +69,25 @@ export class UpnpProvider implements ConnectivityProvider {
     private readonly bindIp?: string,
   ) {}
 
-  /** Every upnpc call goes through here so discovery is pinned to the right interface. */
-  private upnpc(args: string[]): Promise<string> {
-    return this.run(this.bindIp ? ["-m", this.bindIp, ...args] : args);
+  /** Control URL of the router, learned when discovery says "not connected" (see `upnpc`). */
+  private rootUrl?: string;
+
+  /**
+   * Every upnpc call goes through here so discovery is pinned to the right interface. Some routers (TP-Link Deco)
+   * are found but flagged "(not connected?)", and then upnpc stops without querying them. In that case we take the
+   * router's description URL from the discovery output and talk to it directly with `-u`.
+   */
+  private async upnpc(args: string[]): Promise<string> {
+    const base = this.bindIp ? ["-m", this.bindIp] : [];
+    const out = await this.run([...base, ...(this.rootUrl ? ["-u", this.rootUrl] : []), ...args]);
+    if (!this.rootUrl && /not connected/i.test(out) && !/ExternalIPAddress|redirected to|Local LAN ip/i.test(out)) {
+      const url = out.match(/desc:\s*(http\S+)/)?.[1];
+      if (url) {
+        this.rootUrl = url;
+        return this.run([...base, "-u", url, ...args]);
+      }
+    }
+    return out;
   }
 
   private async listAll() {
