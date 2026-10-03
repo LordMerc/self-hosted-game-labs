@@ -124,6 +124,13 @@ Things to know:
 - Leave router automation and Cloudflare off in the beta panel (`CONNECTIVITY` defaults to `manual`), and use different server names, so it cannot change your real DNS or router rules.
 - Promote a tested change the normal way: open a pull request into `main`, merge it, and (optionally) tag a release.
 
+## Limiting CPU and memory (optional)
+
+On a machine that runs several games, one busy server can slow the others down. When you deploy a server, or later on its page, you can cap the most CPU cores and memory it may use. Leave a box empty for no limit, which is the default. Changing a limit restarts that server (your world is kept) because Docker applies the limits when the container is created.
+
+- The CPU limit is in cores, up to the number your machine has (for example `2` or `1.5`).
+- The memory limit is in GB and is a hard cap with no swap. A game that goes over it is stopped and restarted by Docker, so keep it above what the game needs, and above any memory setting the game has itself (such as Minecraft's `MEMORY`). The panel warns you when a limit is below what a template says its game needs (Satisfactory: about 8 GB).
+
 ## Domain names (optional)
 
 Without a domain, public servers are reached by your IP address. To get names like `palworld.example.com`, open **Settings** in the panel, paste a Cloudflare API token and pick your domain. The panel lists the steps. In short: create a custom token at Cloudflare with **Zone · Zone · Read** and **Zone · DNS · Edit**, limited to your domain. The panel creates DNS-only records (never proxied) and keeps them pointed at your current IP, and it only ever changes records it created. You can instead set `CF_API_TOKEN`, `CF_ZONE` and `PUBLIC_HOST` as environment variables, which override the Settings page.

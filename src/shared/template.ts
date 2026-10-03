@@ -54,6 +54,8 @@ export const templateSchema = z
     name: z.string().min(1),
     image: z.string().min(1),
     maxPlayers: z.number().int().positive().optional(),
+    /** What the game needs to run well. A memory cap below `minMemoryMb` gets a warning (the cap is still allowed). */
+    resources: z.object({ minMemoryMb: z.number().int().positive().optional() }).strict().default({}),
     /** Shown in the deploy form: what to know before starting (memory needs, first-run steps). */
     notes: z.string().optional(),
     join: z

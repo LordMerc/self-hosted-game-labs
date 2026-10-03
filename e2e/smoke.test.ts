@@ -106,6 +106,23 @@ describe("the panel in a browser", () => {
     await shot("3-custom");
   });
 
+  it("warns when a memory limit is below what the game needs, shows the limit, and changes it from the server page", async () => {
+    await page.getByRole("button", { name: "Satisfactory" }).click();
+    await page.getByRole("spinbutton", { name: /Memory limit/ }).fill("4");
+    await page.getByText(/needs about 8 GB of memory, so a 4 GB limit/).waitFor();
+    await page.getByRole("button", { name: "Deploy", exact: true }).click();
+    await row("Satisfactory").getByText("Limit 4 GB").waitFor();
+    await page.getByRole("button", { name: "Satisfactory", exact: true }).first().click();
+    await page.getByRole("spinbutton", { name: /CPU limit/ }).fill("2");
+    await page.getByRole("spinbutton", { name: /Memory limit/ }).fill("8");
+    await page.locator("form.settings-card").getByRole("button", { name: "Save and restart" }).click();
+    await page.getByText(/restarting to apply the changes/).waitFor();
+    await page.locator("dl.facts").getByText("2 cores · 8 GB").waitFor();
+    await shot("3a-limits");
+    await page.getByRole("link", { name: "Game servers" }).click();
+    await row("Satisfactory").getByText("Limit 2 cores · 8 GB").waitFor();
+  });
+
   it("checks a public server's port from outside and shows the answer", async () => {
     await row("Minecraft").getByRole("button", { name: "Public" }).click();
     await page.getByRole("button", { name: "Run" }).first().waitFor();

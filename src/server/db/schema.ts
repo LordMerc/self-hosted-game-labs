@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
@@ -20,6 +20,10 @@ export const servers = sqliteTable(
     access: text("access", { enum: ["private", "public"] }).notNull().default("private"),
     env: text("env", { mode: "json" }).$type<Record<string, string>>().notNull().default({}),
     containerId: text("container_id"),
+    /** Most CPU cores the game may use; null = no limit. */
+    cpus: real("cpus"),
+    /** Most memory the game may use, in MB; null = no limit. */
+    memoryMb: integer("memory_mb"),
     lastError: text("last_error"),
     createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   },

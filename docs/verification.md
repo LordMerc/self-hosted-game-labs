@@ -183,6 +183,18 @@ Built against fakes (a fake checker in the service and browser tests, and a fake
 - **Privacy:** nothing is sent unless Run is pressed. What is sent is the public IP and the port number. `PORT_CHECK=off` removes the button's backend.
 - **To check on the homelab:** Run on a public Minecraft or Terraria server returns "open" with "Connected from N of 3 locations"; with the server stopped or the rule removed it should say closed. If it says unknown, the detail line names what went wrong (send a screenshot); the provider's response format is the part most likely to need adjusting.
 
+## Per-server CPU and memory limits
+
+| Check | Command | Result |
+|---|---|---|
+| Typecheck, unit and API tests | `npm run typecheck`, `npm test` | Pass: limits are validated, stored, passed to the container spec, kept when a missing container is recreated, and warned about below a template's minimum (fake Docker) |
+| Driver | `test/driver-limits.test.ts` | Pass: `NanoCpus`, `Memory` and `MemorySwap` (equal to `Memory`, so no swap) appear in the create call only when a limit is set (fake dockerode client) |
+| Browser | `npm run test:e2e` | Pass: deploy form warning, limit shown in the list and on the server page, change and restart |
+
+### Not run (environment)
+
+- A real Docker daemon: that Docker accepts these values and kills a container over its memory cap is Docker's documented behaviour but has not been seen on the maintainer's host.
+
 
 ## Notifications
 

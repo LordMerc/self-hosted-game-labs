@@ -1,11 +1,13 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError, type Template } from "./api";
+import { LimitFields, limitsFromInput, memoryWarning, noLimitInput } from "./Limits";
 
 type Plan = { name: string; port: number; protocol: string }[];
 
 export function DeployDialog({ template, onClose, onDeployed }: { template: Template; onClose: () => void; onDeployed: () => void }) {
   const [name, setName] = useState(template.name);
   const [env, setEnv] = useState<Record<string, string>>(() => Object.fromEntries(template.env.map((e) => [e.key, e.default ?? ""])));
+  const [limits, setLimits] = useState(noLimitInput);
   const [plan, setPlan] = useState<Plan>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -16,10 +18,12 @@ export function DeployDialog({ template, onClose, onDeployed }: { template: Temp
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    const lim = limitsFromInput(limits);
+    if (typeof lim === "string") return setError(lim);
     setBusy(true);
     setError("");
     try {
-      await api("/servers", { method: "POST", body: { templateId: template.id, name, env } });
+      await api("/servers", { method: "POST", body: { templateId: template.id, name, env, ...lim } });
       onDeployed();
     } catch (err) {
       const apiErr = err as ApiError;
@@ -63,6 +67,7 @@ export function DeployDialog({ template, onClose, onDeployed }: { template: Temp
             {v.help && <span className="muted">{v.help}</span>}
           </label>
         ))}
+        <LimitFields value={limits} onChange={setLimits} warning={memoryWarning(limits, template.name, template.minMemoryMb)} />
         <div>
           <span className="muted">Ports (chosen automatically)</span>
           <div className="mono">{plan.map((p) => `${p.port}/${p.protocol}`).join("   ") || "…"}</div>
