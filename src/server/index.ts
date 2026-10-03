@@ -15,6 +15,7 @@ import { detectLanIp } from "./lan-ip.js";
 import { HostStats } from "./host-stats.js";
 import { settingsPeakStore, StatsHistory } from "./history.js";
 import { CheckHostProbe } from "./reachability.js";
+import { ArtworkCache } from "./templates/artwork.js";
 import { loadTemplates } from "./templates/loader.js";
 import { runningVersion, UpdateChecker } from "./updates.js";
 
@@ -34,6 +35,9 @@ const config = loadConfig({ ...process.env, SESSION_SECRET: sessionSecret() });
 config.HOST_LAN_IP ||= detectLanIp();
 const { db } = openDb(path.join(config.DATA_DIR, "panel.db"));
 const templates = loadTemplates(config.TEMPLATES_DIR);
+// Pictures that templates link to are fetched once into the data folder (never by the visitor's browser); until one arrives the card keeps its gradient.
+const artwork = new ArtworkCache(config.DATA_DIR, { log: (m) => console.log(m) });
+artwork.load(templates);
 const docker = new DockerodeDriver();
 const connectivity = config.CONNECTIVITY === "upnp" ? new UpnpProvider(undefined, () => echoPublicIp(config.IP_ECHO_URL), config.HOST_LAN_IP || undefined) : new ManualProvider(db, config.IP_ECHO_URL);
 const dnsSettings = new DnsSettings(db, config);
@@ -44,7 +48,7 @@ const hostStats = new HostStats([config.GAMESERVERS_DIR, config.DATA_DIR]);
 hostStats.snapshot(); // first sample, so CPU and network rates exist by the time the page asks
 const updates = new UpdateChecker(db, { current: runningVersion(config.APP_VERSION), envEnabled: config.UPDATE_CHECK === "on" });
 const history = new StatsHistory({ store: settingsPeakStore(db) });
-const app = buildApp({ config, db, templates, service, docker, dnsSettings, notifier, hostStats, history, updates, webRoot: "dist/web" });
+const app = buildApp({ config, db, templates, service, docker, dnsSettings, notifier, hostStats, history, updates, artwork, webRoot: "dist/web" });
 
 const RECONCILE_MS = 5 * 60 * 1000;
 let reconciling = false;
@@ -116,6 +120,10 @@ const sample = async () => {
     sampling = false;
   }
 };
+
+const fetchArtwork = () => artwork.refresh(templates).catch((e) => console.error("artwork fetch failed:", e));
+setTimeout(fetchArtwork, 2000).unref();
+setInterval(fetchArtwork, 60 * 60 * 1000).unref(); // retries only the pictures that have not arrived
 
 setTimeout(reconcile, 3000);
 setTimeout(sample, 5000).unref();

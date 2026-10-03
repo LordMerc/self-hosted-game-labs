@@ -35,3 +35,6 @@ Still open for Milestone 1:
 4. **Templates and care**: Minecraft, Valheim, Satisfactory, Terraria and a custom image option (done); backups and restore (done); scheduled restarts, update checks and port editing (built, not yet run on real hardware); per-server CPU and memory limits (done)
 
 Ideas outside the current scope (not committed): extra navigation sections from the concept art (Overview, Network, Backups, Logs) once there is a clear reason to split them from Game servers.
+
+Idea, not planned: a community template repository, so people can share game templates without a pull request here. Vetting would need every template to pass the same schema validation as the shipped ones (unknown or unsafe options rejected), with no privileged containers, host networking or bind mounts.
+Images would have to be pinned to a version and each template reviewed by a person before it is merged.

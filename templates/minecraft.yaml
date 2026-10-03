@@ -4,6 +4,9 @@ id: minecraft
 name: Minecraft (Java)
 image: itzg/minecraft-server:latest
 accent: "#2dd4bf"
+artwork: https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/key-art/Hero-Image_Vanilla_Standard_1200x675.jpg
+artworkPosition: 80
+artworkCredit: "Key art from the Minecraft store page at minecraft.net, © Mojang AB. Shown as the game's store picture, not under an open license"
 maxPlayers: 20
 notes: The first start downloads the game and makes the world, which can take a few minutes. It shows Starting until it is ready.
 join:

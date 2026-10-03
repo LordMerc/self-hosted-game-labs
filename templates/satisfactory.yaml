@@ -4,6 +4,8 @@ id: satisfactory
 name: Satisfactory
 image: wolveix/satisfactory-server:latest
 accent: "#fbbf24"
+artwork: https://cdn.cloudflare.steamstatic.com/steam/apps/526870/library_hero.jpg
+artworkCredit: "Steam store art for Satisfactory, © Coffee Stain Studios. Shown as the game's store picture, not under an open license"
 maxPlayers: 4
 notes: Needs about 8 GB of free memory, and the first start downloads about 8 GB of game files, which can take a long time. It shows Starting until it is ready. When it is, open Satisfactory, go to Server Manager and add this server to claim it and set the admin password.
 resources:
