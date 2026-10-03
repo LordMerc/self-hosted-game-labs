@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, existsSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -978,8 +978,8 @@ describe("updates", () => {
       return realPull(image);
     };
     const job = svc.applyUpdate(id);
-    await new Promise((r) => setTimeout(r, 20));
-    expect((await svc.list())[0].status).toBe("updating");
+    // The backup runs before the status flips, and how long it takes varies by machine, so wait for the flip instead of a fixed delay.
+    await vi.waitFor(async () => expect((await svc.list())[0].status).toBe("updating"), { timeout: 5000, interval: 10 });
     await svc.reconcile();
     expect(docker.containers.size).toBe(0); // reconcile did not start a second deploy
     release();
