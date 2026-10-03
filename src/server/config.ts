@@ -11,6 +11,8 @@ const schema = z.object({
   CONNECTIVITY: z.enum(["manual", "upnp"]).default("manual"),
   CF_API_TOKEN: z.string().optional(),
   CF_ZONE: z.string().optional(),
+  /** Override the "what is my IP" endpoint used when the router cannot tell us. */
+  IP_ECHO_URL: z.string().url().default("https://api.ipify.org"),
 });
 
 export type Config = z.infer<typeof schema>;
