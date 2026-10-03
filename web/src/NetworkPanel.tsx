@@ -3,6 +3,7 @@ import { api, type ActivityItem, type Network, type ReachItem, type Server } fro
 import { ago as shortAgo } from "./format";
 import { HiddenIp } from "./HiddenIp";
 import { Icon } from "./Icons";
+import { checkedAgo } from "./ServersTable";
 
 function ago(iso: string | null) {
   if (!iso) return null;
@@ -239,6 +240,7 @@ export function NetworkPanel({ network, servers, activity, onChange }: { network
   );
 
   const untested = pub.filter((s) => !s.reachability);
+  const stale = pub.filter((s) => s.reachability?.stale);
   const problems = pub.filter((s) => s.reachability?.state === "problem" || s.reachability?.state === "unknown");
   const reach: Item = {
     key: "reach",
@@ -256,14 +258,18 @@ export function NetworkPanel({ network, servers, activity, onChange }: { network
   } else if (untested.length > 0) {
     reach.state = "warn";
     reach.detail = `${untested.map((s) => s.name).join(", ")} ${untested.length === 1 ? "hasn't" : "haven't"} been tested from outside your network yet.`;
+  } else if (stale.length > 0) {
+    reach.state = "warn";
+    reach.detail = `${stale.map((s) => s.name).join(", ")}: the last check is out of date (${stale.some((s) => s.reachability!.stale === "ip-changed") ? "your public IP changed since" : "it is more than a day old"}). Run the check again to confirm.`;
   } else {
+    const oldest = pub.map((s) => s.reachability!.at).sort()[0];
     reach.state = "ok";
-    reach.detail = `${pub.length === 1 ? pub[0].name : `All ${pub.length} public servers`} reachable from the internet.`;
+    reach.detail = `${pub.length === 1 ? pub[0].name : `All ${pub.length} public servers`} reachable from the internet. ${checkedAgo(oldest)}.`;
   }
   if (network.portCheck.enabled && pub.length > 0) {
     reach.action = (
       <button className="act-btn" onClick={() => void runProbe()} disabled={probing}>
-        <Icon name="radar" size={14} /> {probing ? "Checking…" : untested.length > 0 || problems.length > 0 ? "Run check" : "Check again"}
+        <Icon name="radar" size={14} /> {probing ? "Checking…" : untested.length > 0 || problems.length > 0 || stale.length > 0 ? "Run check" : "Check again"}
       </button>
     );
     reach.more = (
