@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, type DnsStatus, type NotificationStatus, type NotifyKind, type TokenCheck } from "./api";
 import { Nav, type Page } from "./Nav";
+import { UpdatesSettings } from "./UpdateNotice";
 
 export function Settings({ onLogout, onNavigate }: { onLogout: () => void; onNavigate: (p: Page) => void }) {
   const [status, setStatus] = useState<DnsStatus | null>(null);
@@ -54,6 +55,8 @@ export function Settings({ onLogout, onNavigate }: { onLogout: () => void; onNav
         </section>
 
         <Notifications />
+
+        <UpdatesSettings />
       </main>
     </div>
   );

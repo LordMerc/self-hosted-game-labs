@@ -16,4 +16,7 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/drizzle ./drizzle
 COPY templates ./templates
 COPY package.json ./
+# The release number this image reports in Settings (set by the publish workflow; empty falls back to package.json).
+ARG APP_VERSION=""
+ENV APP_VERSION=$APP_VERSION
 CMD ["node", "dist/server/index.js"]

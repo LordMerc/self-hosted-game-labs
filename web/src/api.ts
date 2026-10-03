@@ -168,3 +168,14 @@ export interface ServerDetail {
   console: { examples: string[] } | null;
   events: { id: number; level: "info" | "warn" | "error"; message: string; at: string }[];
 }
+
+export interface UpdateState {
+  enabled: boolean;
+  lockedByEnv: boolean;
+  current: string;
+  comparable: boolean;
+  latest: { version: string; name: string; url: string; publishedAt: string | null } | null;
+  updateAvailable: boolean;
+  checkedAt: string | null;
+  error: string | null;
+}

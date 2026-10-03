@@ -10,6 +10,7 @@ import { LogViewer } from "./LogViewer";
 import { limitText } from "./Limits";
 import { Nav, type Page } from "./Nav";
 import { NetworkPanel } from "./NetworkPanel";
+import { UpdateBanner } from "./UpdateNotice";
 
 const statusLabel: Record<Server["status"], string> = {
   online: "Running",
@@ -193,6 +194,7 @@ export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: 
             New server
           </button>
         </header>
+        <UpdateBanner />
         {message && <p className="error banner">{message}</p>}
 
         <section className="stats" aria-label="Host">

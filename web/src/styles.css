@@ -72,6 +72,9 @@ button.small { padding: 0.25rem 0.75rem; font-size: 0.8rem; justify-self: start;
 .page-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 2rem; }
 .banner { padding: 0.6rem 1rem; border: 1px solid var(--bad); border-radius: 10px; margin: 0 0 1.25rem; }
 
+.update-banner { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.6rem 1rem; border: 1px solid var(--accent); border-radius: 10px; margin: 0 0 1.25rem; background: rgba(129, 140, 248, 0.08); }
+.update-banner a { color: var(--accent); }
+
 /* Host tiles */
 .stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 2.25rem; }
 .stat { padding: 0.25rem 1.6rem; border-left: 1px solid var(--border); display: grid; gap: 0.35rem; align-content: start; }
@@ -254,6 +257,10 @@ pre.mono { margin: 0; background: var(--bg); border-radius: 10px; padding: 1rem;
 .settings-card h3 { margin: 0.5rem 0 0.2rem; font-size: 0.95rem; }
 .settings-card p { margin: 0; }
 .settings-card a { color: var(--accent); }
+.settings-card + .settings-card { margin-top: 1.25rem; }
+.settings-card .small-text { max-width: none; }
+.settings-card .row { align-items: center; }
+.settings-card .check { display: flex; align-items: center; gap: 0.6rem; }
 .dns-form, .dns-status { display: grid; gap: 0.85rem; }
 .dns-form label { display: grid; gap: 0.3rem; }
 .dns-form .row input { flex: 1; }

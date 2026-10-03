@@ -18,6 +18,7 @@ services:
       - ${GAME_DATA_DIR:-/srv/gameservers}:${GAME_DATA_DIR:-/srv/gameservers}
     environment:
       PANEL_PORT: ${PANEL_PORT:-8090}
+      PANEL_HOST: ${PANEL_HOST:-0.0.0.0}
       INSTANCE: ${INSTANCE:-gamelabs}
       GAMESERVERS_DIR: ${GAME_DATA_DIR:-/srv/gameservers}
       HOST_LAN_IP: ${HOST_LAN_IP:-}
@@ -28,6 +29,9 @@ services:
       BACKUP_KEEP: ${BACKUP_KEEP:-7}
       PORT_CHECK: ${PORT_CHECK:-on}
       SESSION_SECRET: ${SESSION_SECRET:-}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-auto}
+      UPDATE_CHECK: ${UPDATE_CHECK:-on}
 
 volumes:
   gamelabs-data:
