@@ -87,5 +87,5 @@ export interface Stats {
     storage: { usedBytes: number; totalBytes: number } | null;
     network: { rxPerSec: number; txPerSec: number } | null;
   };
-  servers: Record<string, { cpuPercent: number | null; memBytes: number }>;
+  servers: Record<string, { cpuPercent: number | null; memBytes: number; players: { online: number; max: number } | null }>;
 }

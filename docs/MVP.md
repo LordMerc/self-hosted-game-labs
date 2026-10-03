@@ -14,7 +14,7 @@ Panel and auth, templates and port allocation, deploy / start / stop / restart /
 
 ## Not needed for the MVP, planned next
 
-- Header stats: CPU, memory, storage and network are done, plus per-server CPU and memory. Players online is still to do (each game reports it differently)
+- Header stats: CPU, memory, storage and network are done, plus per-server CPU and memory. Live player counts work for games that answer the Steam A2S query (Palworld, unverified on a real server); other games need their own query
 - Server detail page: config / env editor, console / RCON
 - More templates (Minecraft, Valheim, Satisfactory, Terraria, Dragonwilds, Custom): each must be verified against its image before shipping
 - Backups and restore, scheduled restarts, update checks

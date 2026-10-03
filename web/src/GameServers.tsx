@@ -32,7 +32,13 @@ const rate = (n: number) => `${bytes(n).replace(/(\d+)\.\d+/, "$1")}/s`;
 type Tile = { label: string; tone: "blue" | "violet" | "cyan" | "none"; value: string | null; sub: string; fill?: number };
 
 /** Host figures for the top row. Anything the backend cannot report stays an empty tile rather than an invented number. */
-function hostTiles(host: Stats["host"] | null): Tile[] {
+function players(servers: Stats["servers"] | undefined): Tile {
+  const counts = Object.values(servers ?? {}).flatMap((u) => (u.players ? [u.players.online] : []));
+  if (counts.length === 0) return { label: "Players online", tone: "none", value: null, sub: "Not reported yet" };
+  return { label: "Players online", tone: "none", value: String(counts.reduce((a, b) => a + b, 0)), sub: `across ${counts.length} server${counts.length === 1 ? "" : "s"}` };
+}
+
+function hostTiles(host: Stats["host"] | null, servers?: Stats["servers"]): Tile[] {
   const none = "Not reported yet";
   const pct = (used: number, total: number) => (total > 0 ? Math.min(100, (used / total) * 100) : 0);
   const cpu = host?.cpu.percent;
@@ -58,7 +64,7 @@ function hostTiles(host: Stats["host"] | null): Tile[] {
       value: host?.network ? `↓ ${rate(host.network.rxPerSec)}` : null,
       sub: host?.network ? `↑ ${rate(host.network.txPerSec)}` : none,
     },
-    { label: "Players online", tone: "none", value: null, sub: none },
+    players(servers),
   ];
 }
 
@@ -183,7 +189,7 @@ export function GameServers({ onLogout, onNavigate }: { onLogout: () => void; on
         {message && <p className="error banner">{message}</p>}
 
         <section className="stats" aria-label="Host">
-          {hostTiles(stats?.host ?? null).map((t) => (
+          {hostTiles(stats?.host ?? null, stats?.servers).map((t) => (
             <div key={t.label} className="stat">
               <span className="stat-label">{t.label}</span>
               <span className={`stat-value${t.value === null ? " pending" : ""}`}>{t.value ?? "—"}</span>
@@ -230,6 +236,7 @@ export function GameServers({ onLogout, onNavigate }: { onLogout: () => void; on
                     {shown.map((s) => {
                       const primary = s.connect.public ?? s.connect.lan;
                       const max = maxPlayers(s);
+                      const live = stats?.servers[s.id]?.players;
                       const locked = s.status === "deploying" || s.status === "updating";
                       return (
                         <tr key={s.id}>
@@ -246,9 +253,9 @@ export function GameServers({ onLogout, onNavigate }: { onLogout: () => void; on
                             <span className={`status ${s.status}`}>
                               <span className={`dot ${s.status}`} /> {statusLabel[s.status]}
                             </span>
-                            {max !== undefined && (
-                              <div className="muted players" title="Live player counts are not reported yet">
-                                <Icon name="users" size={13} /> up to {max}
+                            {(live || max !== undefined) && (
+                              <div className="muted players" title={live ? "Players connected right now" : "This game does not report live player counts yet"}>
+                                <Icon name="users" size={13} /> {live ? `${live.online} / ${live.max || max || "?"}` : `up to ${max}`}
                               </div>
                             )}
                             {stats?.servers[s.id] && (
