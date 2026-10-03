@@ -246,3 +246,9 @@ pre.mono { margin: 0; background: var(--bg); border-radius: 10px; padding: 1rem;
 .blurred { filter: blur(6px); user-select: none; pointer-events: none; }
 
 .router-details { margin: 0.5rem 0 0; padding: 0.6rem 0.75rem; background: var(--bg); border-radius: 8px; max-height: 14rem; overflow: auto; white-space: pre-wrap; font-size: 0.72rem; }
+
+/* Info hints */
+.hint { position: relative; display: inline-flex; color: var(--faint); cursor: help; outline: none; }
+.hint:hover, .hint:focus { color: var(--accent); }
+.hint-pop { display: none; position: absolute; z-index: 5; top: calc(100% + 8px); left: -0.5rem; width: 260px; padding: 0.7rem 0.85rem; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); font-size: 0.8rem; line-height: 1.45; font-weight: 400; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); white-space: normal; }
+.hint:hover .hint-pop, .hint:focus .hint-pop, .hint:focus-within .hint-pop { display: block; }
