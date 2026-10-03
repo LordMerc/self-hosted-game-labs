@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { chownSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { randomBytes, randomUUID } from "node:crypto";
 import path from "node:path";
 import net from "node:net";
@@ -53,6 +53,8 @@ export interface ServiceDeps {
   probeTcp?: (port: number) => Promise<boolean>;
   readyTimeoutMs?: number;
   stableMs?: number;
+  /** Sets a folder's owner; injectable because tests do not run as root. */
+  chown?: (dir: string, uid: number, gid: number) => void;
   /** Player-count query for a template port with `query: a2s`; injectable for tests. */
   queryPlayers?: (host: string, port: number) => Promise<PlayerCount | null>;
 }
@@ -65,6 +67,16 @@ export interface DnsContext {
 }
 
 const randomSecret = () => randomBytes(12).toString("base64url");
+
+/** Ports with a bound UDP socket, from the contents of /proc/net/udp (and udp6). */
+export function parseListeningUdp(text: string): Set<number> {
+  const ports = new Set<number>();
+  for (const line of text.split("\n")) {
+    const m = line.match(/^\s*\d+:\s+[0-9A-Fa-f]+:([0-9A-Fa-f]{4})\s/);
+    if (m) ports.add(parseInt(m[1], 16));
+  }
+  return ports;
+}
 
 export function tcpProbe(port: number, host = "127.0.0.1"): Promise<boolean> {
   return new Promise((resolve) => {
@@ -202,6 +214,13 @@ export class ServerService {
       const binds = t.data.map((dp, i) => {
         const host = t.data.length === 1 ? dataRoot : path.join(dataRoot, path.basename(dp.containerPath) || String(i));
         mkdirSync(host, { recursive: true });
+        if (dp.owner) {
+          try {
+            (this.d.chown ?? chownSync)(host, dp.owner.uid, dp.owner.gid);
+          } catch (e) {
+            this.event(id, "warn", `Could not set the owner of ${host} to ${dp.owner.uid}:${dp.owner.gid}; if the game cannot write its files, run chown on that folder: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
         return { host, container: dp.containerPath };
       });
       this.event(id, "info", `Pulling ${t.image}`);
@@ -501,9 +520,41 @@ export class ServerService {
     }
   }
 
+  /** `${containerId}@${startedAt}` of runs already seen with their game port open. A restart is a new run. */
+  private readyRuns = new Set<string>();
+
+  /**
+   * True while a running container's game has not opened its main port yet (first-run downloads, world loading).
+   * A TCP port is probed from the host. UDP cannot be probed from outside, so we look inside the container for a
+   * bound UDP socket on the game port. If that cannot be read (no `cat` in the image), assume ready.
+   */
+  private async isStarting(r: typeof schema.servers.$inferSelect): Promise<boolean> {
+    if (r.status !== "online" || !r.containerId) return false;
+    const tpl = this.d.templates.find((x) => x.id === r.templateId);
+    const main = tpl?.ports[0];
+    const mine = main && this.ports(r.id).find((p) => p.name === main.name);
+    if (!mine) return false;
+    const key = `${r.containerId}@${(await this.d.docker.startedAt(r.containerId)) ?? "?"}`;
+    if (this.readyRuns.has(key)) return false;
+    let listening: boolean;
+    try {
+      if (mine.protocol === "tcp") listening = await (this.d.probeTcp ?? tcpProbe)(mine.port);
+      else {
+        const [v4, v6] = await Promise.all(["/proc/net/udp", "/proc/net/udp6"].map((f) => this.d.docker.exec(r.containerId!, ["cat", f], { timeoutMs: 4000 })));
+        listening = parseListeningUdp(v4.output + "\n" + v6.output).has(mine.port);
+        if (v4.exitCode !== 0 && v4.exitCode !== null) return false; // cannot tell: do not claim "starting" forever
+      }
+    } catch {
+      return false;
+    }
+    if (listening) this.readyRuns.add(key);
+    return !listening;
+  }
+
   async list() {
     await this.refreshStatuses();
     const rows = this.d.db.select().from(schema.servers).all();
+    const starting = new Set((await Promise.all(rows.map(async (r) => ((await this.isStarting(r)) ? r.id : null)))).filter((x): x is string => x !== null));
     const ports = this.d.db.select().from(schema.serverPorts).all();
     const rules = this.d.db.select().from(schema.manualRules).all();
     const t = (id: string) => this.d.templates.find((x) => x.id === id);
@@ -521,6 +572,7 @@ export class ServerService {
         templateId: r.templateId,
         templateName: tpl?.name ?? r.templateId,
         status: r.status,
+        starting: starting.has(r.id),
         access: r.access,
         lastError: r.lastError,
         ports: sp.map((p) => ({ name: p.name, port: p.port, protocol: p.protocol })),

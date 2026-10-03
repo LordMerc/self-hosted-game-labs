@@ -39,3 +39,5 @@ env:
     help: Used for the in-game Server Management tab.
 data:
   - containerPath: /home/steam/rsdw-dedicated
+    # The server runs as the image's `steam` user (uid 1000) and cannot write to a root-owned folder.
+    owner: { uid: 1000, gid: 1000 }
