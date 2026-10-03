@@ -1,12 +1,13 @@
 # Builds the panel image and publishes it to GitHub Container Registry (ghcr.io/lordmerc/self-hosted-game-labs).
 # No secrets to set up: it uses the repository's built-in GITHUB_TOKEN.
 #   push to main    -> :latest and :sha-<short commit>
+#   push to beta    -> :beta and :sha-<short commit> (a preview image; see "Trying changes before a release" in the README)
 #   tag v1.2.3      -> :1.2.3 and :1.2 (and :sha-<short commit>)
 #   pull request    -> builds the image for both platforms to prove the Dockerfile works, but publishes nothing
 name: Publish image
 on:
   push:
-    branches: [main]
+    branches: [main, beta]
     tags: ["v*.*.*"]
   pull_request:
     paths:
@@ -43,6 +44,7 @@ jobs:
           flavor: latest=false
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=beta,enable=${{ github.ref == 'refs/heads/beta' }}
             type=sha,format=short
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}

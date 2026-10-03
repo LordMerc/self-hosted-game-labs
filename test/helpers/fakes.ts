@@ -1,4 +1,4 @@
-import type { ContainerDriver, ContainerSpec, ContainerState } from "../../src/server/docker/driver.js";
+import type { ContainerDriver, ContainerSpec, ContainerState, OtherPanelContainer } from "../../src/server/docker/driver.js";
 import { RouterNotFoundError, type ConnectivityProvider, type Mapping, type OpenResult } from "../../src/server/connectivity/provider.js";
 import type { DnsClient } from "../../src/server/dns/cloudflare.js";
 import type { Protocol } from "../../src/server/ports/allocator.js";
@@ -58,6 +58,10 @@ export class FakeDocker implements ContainerDriver {
     }
     if (cmd[0] === "cat") return { exitCode: 0, output: "  sl  local_address\n" };
     return { exitCode: 0, output: this.execReply(cmd) };
+  }
+  others: OtherPanelContainer[] = [];
+  async listOtherPanels() {
+    return this.others;
   }
   usageById = new Map<string, { cpuPercent: number | null; memBytes: number }>();
   async usage(id: string) {

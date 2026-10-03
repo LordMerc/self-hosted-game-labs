@@ -1,4 +1,6 @@
-export const DNS_OWNER_PREFIX = "gamelabs:";
+import { names } from "../instance.js";
+
+export const DNS_OWNER_PREFIX = names.ownerPrefix;
 export const DDNS_COMMENT = `${DNS_OWNER_PREFIX}ddns`;
 export const serverComment = (slug: string) => `${DNS_OWNER_PREFIX}${slug}`;
 

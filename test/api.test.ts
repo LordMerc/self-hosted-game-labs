@@ -11,11 +11,12 @@ import { DnsSettings } from "../src/server/dns/settings.js";
 
 const config = loadConfig({ SESSION_SECRET: "x".repeat(32), DATA_DIR: "/tmp/unused" });
 let app: FastifyInstance;
+let fakeDocker: FakeDocker;
 
 beforeEach(() => {
   const { db } = openDb(":memory:");
   const templates = loadTemplates(path.resolve("templates"));
-  const docker = new FakeDocker();
+  const docker = (fakeDocker = new FakeDocker());
   const service = new ServerService({ config, db, templates, docker, connectivity: new FakeConnectivity(), hostPorts: () => new Set(), background: false, stableMs: 0 });
   app = buildApp({ config, db, templates, service, docker, dnsSettings: new DnsSettings(db, config) });
 });
@@ -26,6 +27,17 @@ describe("api", () => {
   it("serves /api/health without auth", async () => {
     const res = await app.inject("/api/health");
     expect(res.json()).toMatchObject({ status: "ok" });
+  });
+
+  it("lists another panel's servers read-only, behind the login, and offers no way to act on them", async () => {
+    fakeDocker.others = [{ name: "gl-palworld", instance: "gamelabs", slug: "palworld", image: "x/palworld", state: "running", ports: [{ port: 8211, protocol: "udp" }] }];
+    expect((await app.inject("/api/other-panels")).statusCode).toBe(401);
+    const setup = await app.inject({ method: "POST", url: "/api/auth/setup", payload: { password: "correct horse battery" } });
+    const res = await app.inject({ url: "/api/other-panels", headers: { cookie: cookieOf(setup) } });
+    expect(res.json()).toEqual(fakeDocker.others);
+    const del = await app.inject({ method: "DELETE", url: "/api/other-panels/gl-palworld", headers: { cookie: cookieOf(setup) } });
+    expect(del.statusCode).toBe(404);
+    expect(fakeDocker.containers.size).toBe(0);
   });
 
   it("requires a session for everything else", async () => {

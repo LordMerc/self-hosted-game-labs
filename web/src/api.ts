@@ -38,6 +38,15 @@ export interface Server {
   reachability: Reachability | null;
 }
 
+export interface OtherPanelServer {
+  name: string;
+  instance: string;
+  slug: string;
+  image: string;
+  state: "running" | "paused" | "exited" | "missing";
+  ports: { port: number; protocol: "tcp" | "udp" }[];
+}
+
 export interface Network {
   provider: "manual" | "upnp";
   lanIp: string | null;
@@ -69,6 +78,7 @@ export interface Reachability {
 export interface AuthStatus {
   setupRequired: boolean;
   authenticated: boolean;
+  instance: string | null;
 }
 
 export class ApiError extends Error {

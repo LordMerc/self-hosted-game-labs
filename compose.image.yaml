@@ -6,7 +6,7 @@ services:
   gamelabs:
     image: ghcr.io/lordmerc/self-hosted-game-labs:${IMAGE_TAG:-latest}
     pull_policy: always
-    container_name: gamelabs
+    container_name: ${INSTANCE:-gamelabs}
     network_mode: host
     restart: unless-stopped
     volumes:
@@ -16,6 +16,7 @@ services:
       - ${GAME_DATA_DIR:-/srv/gameservers}:${GAME_DATA_DIR:-/srv/gameservers}
     environment:
       PANEL_PORT: ${PANEL_PORT:-8090}
+      INSTANCE: ${INSTANCE:-gamelabs}
       GAMESERVERS_DIR: ${GAME_DATA_DIR:-/srv/gameservers}
       HOST_LAN_IP: ${HOST_LAN_IP:-}
       PUBLIC_HOST: ${PUBLIC_HOST:-}

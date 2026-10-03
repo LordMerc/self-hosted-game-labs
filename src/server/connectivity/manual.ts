@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { schema } from "../db/index.js";
 import type { Protocol } from "../ports/allocator.js";
-import { echoPublicIp, type ConnectivityProvider, type Mapping, type OpenResult } from "./provider.js";
+import { echoPublicIp, OWNER_PREFIX, type ConnectivityProvider, type Mapping, type OpenResult } from "./provider.js";
 
 /**
  * No router automation. The panel records the forwarding rules the user must add and treats a rule as
@@ -39,7 +39,7 @@ export class ManualProvider implements ConnectivityProvider {
       .from(schema.manualRules)
       .innerJoin(schema.servers, eq(schema.servers.id, schema.manualRules.serverId))
       .all();
-    return rows.filter((r) => r.confirmed).map((r) => ({ port: r.port, protocol: r.protocol, description: `gamelabs:${r.slug}` }));
+    return rows.filter((r) => r.confirmed).map((r) => ({ port: r.port, protocol: r.protocol, description: `${OWNER_PREFIX}${r.slug}` }));
   }
 
   externalIp(): Promise<string> {

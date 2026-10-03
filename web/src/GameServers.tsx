@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, type Network, type Server, type Stats, type Template } from "./api";
+import { api, type Network, type OtherPanelServer, type Server, type Stats, type Template } from "./api";
 import { Backups } from "./Backups";
 import { CopyButton } from "./CopyButton";
 import { CustomDialog } from "./CustomDialog";
@@ -101,6 +101,7 @@ export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: 
   const [backupsFor, setBackupsFor] = useState<Server | null>(null);
   const [message, setMessage] = useState("");
   const [stats, setStats] = useState<Stats | null>(null);
+  const [others, setOthers] = useState<OtherPanelServer[]>([]);
   const [tab, setTab] = useState<Tab>("all");
   const [query, setQuery] = useState("");
   const templatesRef = useRef<HTMLElement>(null);
@@ -108,6 +109,7 @@ export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: 
   const refresh = useCallback(async () => {
     setServers(await api<Server[]>("/servers"));
     api<Network>("/network").then(setNetwork).catch(() => undefined);
+    api<OtherPanelServer[]>("/other-panels").then(setOthers).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -364,6 +366,25 @@ export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: 
               <p className="note warn">
                 <Icon name="shield" size={15} /> {problems.length === 1 ? problems[0] : `${problems.length} things need attention. See the Network panel.`}
               </p>
+            )}
+
+            {others.length > 0 && (
+              <section className="others">
+                <h2>Run by another panel</h2>
+                <p className="muted">These belong to a different Game Labs panel on this machine. You can see them here, but this panel never starts, stops, changes or deletes them.</p>
+                <ul>
+                  {others.map((o) => (
+                    <li key={o.name}>
+                      <strong>{o.slug || o.name}</strong> <span className="instance-badge">{o.instance}</span>
+                      <span className="muted">
+                        {" "}
+                        {o.state === "running" ? "Running" : o.state === "paused" ? "Paused" : "Stopped"} · {o.image}
+                        {o.ports.length > 0 && ` · ${[...new Set(o.ports.map((p) => `${p.port}/${p.protocol}`))].join(", ")}`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
             )}
 
             <section ref={templatesRef} className="deploy">
