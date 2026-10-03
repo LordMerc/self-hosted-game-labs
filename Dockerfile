@@ -1,7 +1,9 @@
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+# --ignore-scripts: better-sqlite3 and argon2 ship prebuilt binaries; without it npm tries to compile better-sqlite3,
+# which fails on the slim image (no python or compiler).
+RUN npm ci --ignore-scripts
 COPY . .
 RUN npm run build && npm prune --omit=dev
 

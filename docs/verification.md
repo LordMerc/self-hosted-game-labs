@@ -44,3 +44,9 @@ These need real infrastructure and are **unproven**; the matching Milestone 1 ac
 - First real deploy attempt by the maintainer, as a Dockhand "From Git" stack, failed with `Compose file not found: compose.yaml`: Dockhand looks for `compose.yaml` and the repo had `docker-compose.yml`. Fixed by renaming to `compose.yaml`.
 - Also changed so a stack deploy needs no `.env` file: settings are passed through `environment:` with defaults, and data lives in a named volume instead of `./data`.
 - `docker compose config` validates the file (with and without variables set); the server starts with the resulting empty-string values. The image build itself is still unrun.
+
+## Image build fix (2026-10-03)
+
+- Dockhand build failed at `RUN npm ci` (exit 1). Reproduced locally by running `npm ci` with no C toolchain on PATH, like `node:22-bookworm-slim`: `better-sqlite3` has a `binding.gyp` and no install script, so npm runs `node-gyp rebuild`, which needs Python and a compiler.
+- Fix: `npm ci --ignore-scripts` (Dockerfile and CI). Verified with no toolchain on PATH: `better-sqlite3` and `argon2` load from their bundled prebuilds, `npm run build` passes, and all 62 tests pass.
+- The Docker image build itself is still not run end to end (no Docker daemon in the sandbox).
