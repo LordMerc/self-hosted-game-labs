@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type Network, type Server, type Stats, type Template } from "./api";
+import { Backups } from "./Backups";
 import { CopyButton } from "./CopyButton";
 import { DeployDialog } from "./DeployDialog";
 import { HiddenIp, isIpAddress } from "./HiddenIp";
@@ -95,6 +96,7 @@ export function GameServers({ onLogout, onNavigate }: { onLogout: () => void; on
   const [network, setNetwork] = useState<Network | null>(null);
   const [deploying, setDeploying] = useState<Template | null>(null);
   const [logsFor, setLogsFor] = useState<Server | null>(null);
+  const [backupsFor, setBackupsFor] = useState<Server | null>(null);
   const [message, setMessage] = useState("");
   const [stats, setStats] = useState<Stats | null>(null);
   const [tab, setTab] = useState<Tab>("all");
@@ -323,6 +325,7 @@ export function GameServers({ onLogout, onNavigate }: { onLogout: () => void; on
                               )}
                               <IconButton icon="restart" label="Restart" disabled={s.status !== "online"} onClick={() => act(api(`/servers/${s.id}/restart`, { method: "POST" }))} />
                               <IconButton icon="terminal" label="Logs" disabled={locked} onClick={() => setLogsFor(s)} />
+                              <IconButton icon="archive" label="Backups" disabled={locked} onClick={() => setBackupsFor(s)} />
                               {s.secrets.length === 0 && <span className="icon-slot" />}
                               {s.secrets.length > 0 && (
                                 <details className="menu">
@@ -385,6 +388,7 @@ export function GameServers({ onLogout, onNavigate }: { onLogout: () => void; on
           }}
         />
       )}
+      {backupsFor && <Backups id={backupsFor.id} name={backupsFor.name} running={backupsFor.status === "online"} onClose={() => setBackupsFor(null)} onChange={() => void refresh()} />}
       {logsFor && <LogViewer id={logsFor.id} name={logsFor.name} onClose={() => setLogsFor(null)} />}
     </div>
   );

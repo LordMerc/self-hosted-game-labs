@@ -4,6 +4,8 @@ const schema = z.object({
   PANEL_PORT: z.coerce.number().int().min(1).max(65535).default(8090),
   DATA_DIR: z.string().default("/data"),
   GAMESERVERS_DIR: z.string().startsWith("/", "GAMESERVERS_DIR must be an absolute path").default("/srv/gameservers"),
+  /** How many backups to keep per server; older ones are removed after each new backup. */
+  BACKUP_KEEP: z.coerce.number().int().min(1).max(100).default(7),
   TEMPLATES_DIR: z.string().default("templates"),
   SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters"),
   PUBLIC_HOST: z.string().optional(),

@@ -13,6 +13,7 @@ import type { ConnectivityProvider } from "../connectivity/provider.js";
 import type { DnsClient } from "../dns/cloudflare.js";
 import { allocatePorts, checkPorts, portKey, type Allocation, type PortKey } from "../ports/allocator.js";
 import { listHostPorts } from "../ports/host.js";
+import { BackupStore, type BackupInfo } from "../backups.js";
 import { queryA2s, type PlayerCount } from "../players/a2s.js";
 import { slugify, uniqueSlug } from "../slug.js";
 
@@ -519,6 +520,68 @@ export class ServerService {
       }),
     );
     return out;
+  }
+
+  // --------------------------------------------------------------- backups
+
+  private backups?: BackupStore;
+  private busyBackups = new Set<string>();
+
+  private store() {
+    return (this.backups ??= new BackupStore(this.d.config.GAMESERVERS_DIR, this.d.config.BACKUP_KEEP));
+  }
+
+  /** One backup or restore at a time per server. */
+  private async exclusive<T>(slug: string, fn: () => Promise<T>): Promise<T> {
+    if (this.busyBackups.has(slug)) throw new UserError("A backup or restore is already running for this server", 409);
+    this.busyBackups.add(slug);
+    try {
+      return await fn();
+    } catch (e) {
+      throw e instanceof UserError ? e : new UserError(e instanceof Error ? e.message : String(e), 500);
+    } finally {
+      this.busyBackups.delete(slug);
+    }
+  }
+
+  listBackups(id: string): BackupInfo[] {
+    return this.store().list(this.row(id).slug);
+  }
+
+  /** Back up while the server keeps running. For a fully consistent copy, stop the server first. */
+  async backup(id: string): Promise<BackupInfo> {
+    const row = this.row(id);
+    return this.exclusive(row.slug, async () => {
+      const info = await this.store().create(row.slug);
+      this.event(id, "info", `Backup ${info.name} created`);
+      return info;
+    });
+  }
+
+  deleteBackup(id: string, name: string) {
+    const row = this.row(id);
+    try {
+      this.store().remove(row.slug, name);
+    } catch (e) {
+      throw new UserError((e as Error).message, 404);
+    }
+  }
+
+  /** Stop the server, take a safety backup of what is there now, swap in the chosen backup, start again if it was running. */
+  async restoreBackup(id: string, name: string): Promise<void> {
+    const row = this.row(id);
+    if (!this.store().list(row.slug).some((b) => b.name === name)) throw new UserError("Backup not found", 404);
+    return this.exclusive(row.slug, async () => {
+      const wasRunning = row.containerId ? (await this.d.docker.state(row.containerId)) === "running" : false;
+      if (wasRunning) await this.d.docker.stop(row.containerId!);
+      try {
+        const safety = await this.store().create(row.slug, { prune: false });
+        await this.store().restore(row.slug, name);
+        this.event(id, "info", `Restored ${name} (the previous state was saved as ${safety.name})`);
+      } finally {
+        if (wasRunning) await this.d.docker.start(row.containerId!);
+      }
+    });
   }
 
   secret(id: string, key: string): string {
