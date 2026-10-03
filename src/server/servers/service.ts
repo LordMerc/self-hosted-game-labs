@@ -495,6 +495,22 @@ export class ServerService {
     });
   }
 
+  /** CPU and memory for each running server, keyed by server id. A server whose stats fail is left out. */
+  async usage(): Promise<Record<string, { cpuPercent: number | null; memBytes: number }>> {
+    const rows = this.d.db.select().from(schema.servers).all().filter((r) => r.containerId && r.status === "online");
+    const out: Record<string, { cpuPercent: number | null; memBytes: number }> = {};
+    await Promise.all(
+      rows.map(async (r) => {
+        try {
+          out[r.id] = await this.d.docker.usage(r.containerId!);
+        } catch {
+          /* container gone or Docker busy: show nothing rather than a wrong number */
+        }
+      }),
+    );
+    return out;
+  }
+
   secret(id: string, key: string): string {
     const row = this.row(id);
     const def = this.template(row.templateId).env[key];

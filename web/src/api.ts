@@ -79,3 +79,13 @@ export interface DnsStatus {
 }
 
 export type TokenCheck = { valid: false; error: string } | { valid: true; zones: string[]; zonesError: string | null };
+
+export interface Stats {
+  host: {
+    cpu: { percent: number | null; cores: number };
+    memory: { usedBytes: number; totalBytes: number } | null;
+    storage: { usedBytes: number; totalBytes: number } | null;
+    network: { rxPerSec: number; txPerSec: number } | null;
+  };
+  servers: Record<string, { cpuPercent: number | null; memBytes: number }>;
+}

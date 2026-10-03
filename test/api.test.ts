@@ -89,3 +89,13 @@ describe("api", () => {
     expect(bad.statusCode).toBe(400);
   });
 });
+
+describe("stats", () => {
+  it("requires a session and returns host figures and per-server usage", async () => {
+    expect((await app.inject("/api/stats")).statusCode).toBe(401);
+    const setup = await app.inject({ method: "POST", url: "/api/auth/setup", payload: { password: "correct horse battery" } });
+    const res = await app.inject({ url: "/api/stats", headers: { cookie: cookieOf(setup) } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ host: { cpu: { cores: expect.any(Number) } }, servers: {} });
+  });
+});

@@ -64,3 +64,27 @@ A throwaway `dockerd` (vfs storage, no bridge networking) was started in the san
 Not covered: port bindings (no bridge networking in the sandbox), the Palworld image, UPnP, Cloudflare. The maintainer's own homelab run showed Palworld deploying and reporting Online on Docker 29.6.0.
 
 The maintainer then reported that clicking Logs showed a blank screen on their homelab. It did not reproduce here, including with messy and very fast log output. The log viewer is now hardened (batched updates, ANSI/NUL/carriage-return cleanup, connection status) and the app shows an error message instead of a blank page if a component throws.
+
+## First real hardware run (maintainer's homelab, 2026-10-03)
+
+Host: Ubuntu desktop, Docker 29.6.0, deployed as a Dockhand "From Git" stack. Router: TP-Link Deco X55 (WAN IP is the public IP, no double NAT). Domain on Cloudflare.
+
+| Check | Result |
+|---|---|
+| Image build and deploy (Dockhand) | Pass after the fixes above (compose file name, `--ignore-scripts`, `pull_policy: build`) |
+| Palworld deploy from the panel, data on an external drive via `GAME_DATA_DIR` | Pass; container runs, player joined over the LAN |
+| Live logs | Pass after the viewer hardening; the earlier blank screen was a stale image, not a code bug |
+| UPnP on the Deco | Pass after a fix: `upnpc -l` finds the router at `http://192.168.68.1:1900/pwpmr/rootDesc.xml` but prints "Found a (not connected?) IGD" and stops, so the panel now retries with `-u <that URL>`. Then `GetExternalIPAddress`, adding and listing mappings all work. `GetStatusInfo failed` in the output is harmless on this router. Mappings appear as `gamelabs: palworld` for 8211/udp and 27015/udp |
+| Cloudflare DDNS and per-server name | Pass: A record and `palworld.<domain>` created, DNS only |
+| Friend connecting from the internet | Not yet confirmed |
+
+Also found on the way: `upnpc` prints its useful lines on stderr, so the panel keeps stderr too; the router's own address is also reachable when `-m <LAN IP>` pins discovery to the right interface.
+
+## Host stats and per-server usage (2026-10-03)
+
+| Check | Result |
+|---|---|
+| Typecheck and tests | Pass, 94 tests (`/proc` parsing, rate averaging, Docker stats maths, API) |
+| Dashboard in headless Chromium against the real server on a Linux host | CPU, memory, storage and network tiles show live values (screenshot reviewed) |
+
+Not run: per-server CPU and memory against a real container (the Docker stats call is unit-tested with a recorded-format reply only). The CPU figure is a share of the whole host, not per core. Players online is still not reported.

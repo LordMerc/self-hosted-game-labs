@@ -11,6 +11,7 @@ import { DnsSettings } from "./dns/settings.js";
 import { DockerodeDriver } from "./docker/driver.js";
 import { ServerService } from "./servers/service.js";
 import { detectLanIp } from "./lan-ip.js";
+import { HostStats } from "./host-stats.js";
 import { loadTemplates } from "./templates/loader.js";
 
 /** Sessions need a stable secret. Use SESSION_SECRET if given, otherwise generate one once and keep it in the data dir. */
@@ -34,7 +35,9 @@ const connectivity = config.CONNECTIVITY === "upnp" ? new UpnpProvider(undefined
 const dnsSettings = new DnsSettings(db, config);
 
 const service = new ServerService({ config, db, templates, docker, connectivity, dnsProvider: () => dnsSettings.current() });
-const app = buildApp({ config, db, templates, service, docker, dnsSettings, webRoot: "dist/web" });
+const hostStats = new HostStats([config.GAMESERVERS_DIR, config.DATA_DIR]);
+hostStats.snapshot(); // first sample, so CPU and network rates exist by the time the page asks
+const app = buildApp({ config, db, templates, service, docker, dnsSettings, hostStats, webRoot: "dist/web" });
 
 const RECONCILE_MS = 5 * 60 * 1000;
 let reconciling = false;
