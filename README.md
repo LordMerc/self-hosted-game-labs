@@ -4,7 +4,18 @@
 
 ![The Game Labs dashboard: host stats with small charts, a table of game servers with status, address, ports and an Access column, and the Network health checklist on the right](docs/images/dashboard.png)
 
-> **Early release (v0.1.0).** Palworld and RuneScape: Dragonwilds are running on a real homelab, with friends joining over the internet. The other games are built and tested against fakes and throwaway containers but not played on yet. See [Supported games](#supported-games) and [docs/verification.md](docs/verification.md) for exactly what has and has not been tried.
+> **Early release (v0.2.0).** Palworld and RuneScape: Dragonwilds are running on a real homelab, with friends joining over the internet. The other games are built and tested against fakes and throwaway containers but not played on yet. See [Supported games](#supported-games) and [docs/verification.md](docs/verification.md) for exactly what has and has not been tried.
+
+## What's new in 0.2.0
+
+- **A new look.** The whole panel is redesigned in a lighter, free-floating style: no heavy boxes, one calm theme across the server list, Backups, Network health and Settings.
+- **A condensed server page** that fits what you need on one screen.
+- **Player counts for Palworld** through the game's own API, shown in the server row and the Players tile.
+- **Port checks are remembered.** The result of "Run check" is saved with the server, so it is still there after a restart, and the panel says when it has gone stale (for example, your public IP changed).
+- **Palworld console fixed.** RCON is now switched on for new Palworld servers, and an older server tells you in the console that it needs to be recreated.
+- **Backups restyled** to match the rest of the panel.
+- **CPU and memory sparklines** in every server row, from the panel's own sample history.
+- **Faster navigation.** Moving between pages shows what was there last time straight away and refreshes it in the background, next pages are fetched when you point at the link, and the first load shows placeholders instead of empty boxes. The template cards no longer flash oversized while the page fills in.
 
 ## What you get
 
@@ -64,7 +75,7 @@ Everything below is optional. Set variables in a `.env` file next to the compose
 | `CONNECTIVITY=upnp` | Let the panel open and close router ports itself. The default, `manual`, shows you the rules to add instead. |
 | `PANEL_PORT` | Port for the panel itself. Default `8090`. |
 | `HOST_LAN_IP` | Only if the panel guesses your machine's LAN address wrong. |
-| `IMAGE_TAG` | `latest` follows every release; pin a version such as `0.1.0` to stay put. |
+| `IMAGE_TAG` | `latest` follows every release; pin a version such as `0.2.0` to stay put. |
 | `BACKUP_KEEP` | Backups kept per server. Default `7`; a backup is never removed before it is 7 days old. |
 | `UPDATE_CHECK=off` | Stops the daily check that asks GitHub whether a newer release exists (it only shows a notice and never updates anything). Also a checkbox in Settings. |
 | `TRUST_PROXY`, `PANEL_HOST` | Only if you put the panel behind a reverse proxy; see the guide below. |
