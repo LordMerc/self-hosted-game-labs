@@ -20,9 +20,11 @@ Node 22 + TypeScript, Fastify API, React + Vite frontend served by the same proc
 ## Quick start
 
 ```bash
-cp .env.example .env     # set HOST_LAN_IP, PUBLIC_HOST, and the Cloudflare values if you want DNS
+cp .env.example .env     # optional: set HOST_LAN_IP, PUBLIC_HOST, and the Cloudflare values if you want DNS
 docker compose up -d --build
 ```
+
+The compose file is `compose.yaml`, so Git-based stack deploys (Dockhand, Portainer, and similar) work too. Set the same variables from `.env.example` as environment variables on the stack instead of using a `.env` file.
 
 Open `http://<server-lan-ip>:8090` and set the admin password on first run.
 

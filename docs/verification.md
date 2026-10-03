@@ -38,3 +38,9 @@ These need real infrastructure and are **unproven**; the matching Milestone 1 ac
 - Real Cloudflare zone and real UPnP router.
 - The Palworld image's env var names and ports, taken from the template as written; verify against the image's current docs.
 - A friend connecting from outside the LAN.
+
+## Compose file (2026-10-03)
+
+- First real deploy attempt by the maintainer, as a Dockhand "From Git" stack, failed with `Compose file not found: compose.yaml`: Dockhand looks for `compose.yaml` and the repo had `docker-compose.yml`. Fixed by renaming to `compose.yaml`.
+- Also changed so a stack deploy needs no `.env` file: settings are passed through `environment:` with defaults, and data lives in a named volume instead of `./data`.
+- `docker compose config` validates the file (with and without variables set); the server starts with the resulting empty-string values. The image build itself is still unrun.
