@@ -226,7 +226,7 @@ export function ServerDetail({ id, onBack, onLogout, onNavigate }: { id: string;
                     </button>
                   </div>
                   {activeTab === "console" && detail.console ? (
-                    <Console id={id} examples={detail.console.examples} running={s.status === "online"} />
+                    <Console id={id} examples={detail.console.examples} offNotice={detail.console.offNotice} running={s.status === "online"} disabled={locked} onApplied={load} />
                   ) : detail.events.length === 0 ? (
                     <p className="muted">Nothing yet.</p>
                   ) : (
@@ -436,8 +436,10 @@ function SettingsForm({ detail, disabled, onSaved, onAccess }: { detail: Detail;
   );
 }
 
-function Console({ id, examples, running }: { id: string; examples: string[]; running: boolean }) {
+function Console({ id, examples, offNotice, running, disabled, onApplied }: { id: string; examples: string[]; offNotice: string | null; running: boolean; disabled: boolean; onApplied: () => Promise<void> }) {
   const [command, setCommand] = useState("");
+  const [applying, setApplying] = useState(false);
+  const [applyError, setApplyError] = useState("");
   const [history, setHistory] = useState<{ command: string; output: string; ok: boolean }[]>([]);
   const [busy, setBusy] = useState(false);
   const end = useRef<HTMLDivElement>(null);
@@ -456,6 +458,33 @@ function Console({ id, examples, running }: { id: string; examples: string[]; ru
       setHistory((h) => [...h, { command: c, output: (e as Error).message, ok: false }]);
     }
     setBusy(false);
+  }
+
+  // An older server whose container was made before the panel turned the console's backend on: one click recreates it (the world is kept).
+  async function apply() {
+    setApplying(true);
+    setApplyError("");
+    try {
+      await api(`/servers/${id}/apply`, { method: "POST" });
+      await onApplied();
+    } catch (e) {
+      setApplyError((e as Error).message);
+    }
+    setApplying(false);
+  }
+
+  if (offNotice) {
+    return (
+      <div className="console">
+        <p className="muted small-text">{offNotice}</p>
+        {applyError && <p className="error">{applyError}</p>}
+        <div className="row">
+          <button type="button" className="primary" onClick={apply} disabled={applying || disabled}>
+            {applying ? "Applying…" : "Apply settings"}
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (

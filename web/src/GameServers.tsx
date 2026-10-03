@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, loadTemplates, type ActivityItem, type Network, type OtherPanelServer, type Server, type Stats, type Template } from "./api";
+import { api, type ActivityItem, type Network, type OtherPanelServer, type Server, type Stats, type Template } from "./api";
 import { Backups } from "./Backups";
 import { ConnectDialog } from "./ConnectDialog";
 import { CustomDialog } from "./CustomDialog";
@@ -11,12 +11,19 @@ import { LogViewer } from "./LogViewer";
 import { Nav, type Page } from "./Nav";
 import { NetworkPanel } from "./NetworkPanel";
 import { ServersTable } from "./ServersTable";
+import { ServersSkeleton } from "./Skeleton";
+import { revalidate, useApi } from "./store";
 import { StatTiles } from "./StatTiles";
 import { UpdateBanner } from "./UpdateNotice";
 
 export { GameIcon } from "./GameIcon";
 
 type Tab = "all" | "online" | "paused" | "offline" | "error";
+/** How often the lists are re-read; faster while a server is being deployed or updated. */
+const POLL_MS = 15000;
+const BUSY_MS = 2500;
+const isBusy = (list: Server[] | undefined) => (list ?? []).some((s) => s.status === "deploying" || s.status === "updating");
+
 const tabLabel: Record<Tab, string> = { all: "All", online: "Running", paused: "Paused", offline: "Stopped", error: "Problems" };
 
 /** "homelab-01 · 8 cores · Docker 27.3 · up 23 days": whatever of that the host and Docker could tell us. */
@@ -32,60 +39,38 @@ function hostLine(stats: Stats | null) {
 }
 
 export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: () => void; onNavigate: (p: Page) => void; onOpenServer: (id: string) => void }) {
-  const [servers, setServers] = useState<Server[] | null>(null);
-  const [templates, setTemplates] = useState<Template[]>([]);
-  const [network, setNetwork] = useState<Network | null>(null);
-  const [activity, setActivity] = useState<ActivityItem[]>([]);
+  // Each of these is the last answer kept from the previous visit (if any), refreshed in the background.
+  const { data: serversData } = useApi<Server[]>("/servers", (d) => (isBusy(d) ? BUSY_MS : POLL_MS));
+  const servers = serversData ?? null;
   const [deploying, setDeploying] = useState<Template | null>(null);
   const [customOpen, setCustomOpen] = useState(false);
   const [logsFor, setLogsFor] = useState<Server | null>(null);
   const [backupsFor, setBackupsFor] = useState<Server | null>(null);
   const [connectFor, setConnectFor] = useState<Server | null>(null);
   const [message, setMessage] = useState("");
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [others, setOthers] = useState<OtherPanelServer[]>([]);
   const [tab, setTab] = useState<Tab>("all");
   const [query, setQuery] = useState("");
   const templatesRef = useRef<HTMLElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  const refresh = useCallback(async () => {
-    setServers(await api<Server[]>("/servers"));
-    api<Network>("/network").then(setNetwork).catch(() => undefined);
-    api<OtherPanelServer[]>("/other-panels").then(setOthers).catch(() => undefined);
-    api<ActivityItem[]>("/activity").then(setActivity).catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-    loadTemplates().then(setTemplates);
-  }, [refresh]);
-
   const list = servers ?? [];
-  const busy = list.some((s) => s.status === "deploying" || s.status === "updating");
-  useEffect(() => {
-    const t = setInterval(() => void refresh(), busy ? 2500 : 15000);
-    return () => clearInterval(t);
-  }, [busy, refresh]);
+  const pollMs = isBusy(servers ?? undefined) ? BUSY_MS : POLL_MS;
+  // Keep the last numbers on a failed poll; the page-level poll reports real outages. Stats are asked one request at a time, since Docker takes a second or two to answer.
+  const { data: statsData } = useApi<Stats>("/stats", 5000);
+  const stats = statsData ?? null;
+  const { data: templatesData } = useApi<Template[]>("/templates");
+  const templates = templatesData ?? [];
+  const { data: networkData } = useApi<Network>("/network", pollMs);
+  const network = networkData ?? null;
+  const others = useApi<OtherPanelServer[]>("/other-panels", pollMs).data ?? [];
+  const activity = useApi<ActivityItem[]>("/activity", pollMs).data ?? [];
 
-  // Poll one request at a time: Docker takes a second or two to answer a stats call.
-  useEffect(() => {
-    let stop = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const tick = async () => {
-      try {
-        const next = await api<Stats>("/stats");
-        if (!stop) setStats(next);
-      } catch {
-        /* keep the last numbers; the page-level poll reports real outages */
-      }
-      if (!stop) timer = setTimeout(tick, 5000);
-    };
-    void tick();
-    return () => {
-      stop = true;
-      clearTimeout(timer);
-    };
+  /** Re-reads what a change can have touched. */
+  const refresh = useCallback(async () => {
+    void revalidate("/network");
+    void revalidate("/other-panels");
+    void revalidate("/activity");
+    await revalidate("/servers");
   }, []);
 
   // "/" jumps to the search box, as the hint in it says (unless you are already typing somewhere).
@@ -163,11 +148,11 @@ export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: 
         <div className="layout">
           <div className="main-col">
             {!first && (
-              <div className="toolbar">
+              <div className="toolbar" aria-busy={servers === null}>
                 <div className="tabs" role="tablist">
                   {tabs.map((t) => (
                     <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
-                      {tabLabel[t]} <span className="count">{counts[t]}</span>
+                      {tabLabel[t]} <span className="count">{servers === null ? "–" : counts[t]}</span>
                     </button>
                   ))}
                 </div>
@@ -187,7 +172,9 @@ export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: 
                 <h2>No servers yet</h2>
                 <p className="muted">Your first one is a few clicks away. Pick a template below.</p>
               </div>
-            ) : shown.length === 0 && servers !== null ? (
+            ) : servers === null ? (
+              <ServersSkeleton />
+            ) : shown.length === 0 ? (
               <p className="empty">No servers match.</p>
             ) : (
               <ServersTable

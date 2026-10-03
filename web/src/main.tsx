@@ -1,6 +1,7 @@
 import { Component, StrictMode, useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { api, type AuthStatus } from "./api";
+import { clearCache, pageData, prefetch } from "./store";
 import { Login } from "./Login";
 import { BackupsPage } from "./BackupsPage";
 import { GameServers } from "./GameServers";
@@ -18,10 +19,17 @@ function App() {
   const openServer = (id: string | null) => (setServerId(id), history.replaceState(null, "", id ? `#server/${id}` : "#servers"));
   const refresh = () => api<AuthStatus>("/auth/status").then(setStatus);
   useEffect(() => void refresh(), []);
+  const signedIn = status?.authenticated === true;
+  // Signed out: forget every cached list. Signed in: start fetching the pages before they are opened.
+  useEffect(() => {
+    if (!status) return;
+    if (!signedIn) clearCache();
+    else prefetch([...pageData.servers, ...pageData.backups]);
+  }, [status, signedIn]);
 
   if (!status) return null;
   if (!status.authenticated) return <Login setup={status.setupRequired} onDone={refresh} />;
-  const logout = () => api("/auth/logout", { method: "POST" }).then(refresh);
+  const logout = () => api("/auth/logout", { method: "POST" }).then(() => (clearCache(), refresh()));
   if (page === "settings") return <Settings onLogout={logout} onNavigate={navigate} />;
   if (page === "backups") return <BackupsPage onLogout={logout} onNavigate={navigate} />;
   if (serverId) return <ServerDetail id={serverId} onBack={() => openServer(null)} onLogout={logout} onNavigate={navigate} />;

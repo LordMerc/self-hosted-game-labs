@@ -71,6 +71,8 @@ export const templateSchema = z
       .default({ method: "direct" }),
     ports: z.array(portSchema).min(1),
     env: z.record(envName, envVarSchema).default({}),
+    /** Settings the panel always sets itself: not shown in any form, and applied to every new container (for example turning RCON on for the console). */
+    fixedEnv: z.record(envName, z.string()).default({}),
     /**
      * For games whose query port does not work: a program run inside the container that prints the player count, and how to read
      * what it prints. It is run as given (no shell added), so a template that needs variables wraps it in `sh -c`.
@@ -87,6 +89,8 @@ export const templateSchema = z
       .object({
         exec: z.array(z.string().min(1)).min(1),
         examples: z.array(z.string()).default([]),
+        /** Shown when a running container was made without the template's `fixedEnv` (an older server): the console cannot work until its container is recreated. */
+        offNotice: z.string().optional(),
         /** How to say something to the players in the game (used to warn before a scheduled restart). `${MESSAGE}` is the text. */
         broadcast: z
           .object({
@@ -136,6 +140,9 @@ export const templateSchema = z
       seenPorts.add(key);
       if (p.env) portEnvs.add(p.env);
     });
+    for (const name of Object.keys(t.fixedEnv)) {
+      if (name in t.env || portEnvs.has(name)) ctx.addIssue({ code: "custom", path: ["fixedEnv", name], message: "is already a setting or a port and cannot also be fixed" });
+    }
     for (const name of Object.keys(t.env)) {
       if (portEnvs.has(name)) ctx.addIssue({ code: "custom", path: ["env", name], message: "is set from a port and cannot also be a user input" });
     }

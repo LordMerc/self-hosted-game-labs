@@ -152,7 +152,7 @@ Click a server's name in the table to open its page: overview (address, ports, a
 |---|---|
 | Tests | 134 pass: detail without leaking secrets, name-only change, recreate with new value keeping data and ports, unset/clear/regenerate rules, validation, no pull on apply, console argument handling, stopped server, game without console, route auth and validation |
 | Page in headless Chromium against a fake Docker | Pass: open from the table, edit and save, run a console command (screenshots reviewed) |
-| Palworld `rcon-cli` on the real image | Not run: the `rcon-cli` name, and that it works with the image's default RCON settings, are from the image's documentation |
+| Palworld `rcon-cli` on the real image | The template now sets `RCON_ENABLED=true` (the image ships with it off, which made every console command fail with "connection refused"); RCON stays inside the container and is never published. Servers made before this show a notice in the console with one Apply settings button that recreates the container |
 | Recreate on a real container with a real data folder | Not run |
 
 ## More templates, custom images and the browser test (2026-10-03)
