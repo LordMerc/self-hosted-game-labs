@@ -175,7 +175,11 @@ Without a domain, public servers are reached by your IP address. To get names li
 
 Players connect directly to your home internet connection. Anyone who looks up your server's name (or joins by IP address) can see your home public IP. The Cloudflare records are DNS-only, not a proxy, so they do not hide it. Cloudflare's proxy and Cloudflare Tunnel cannot carry game traffic, so they are no help here either; the Tunnel in [Exposing the panel safely](docs/exposing-the-panel.md) is only for the panel's own web page.
 
-This is how any game server hosted at home with port forwarding works. What the panel does to limit the exposure: it only opens the game ports of servers you set to Public, it never forwards the panel itself, and servers set to Private have no router rules at all. Game Labs does not include a relay, VPN or DDoS protection. If you do not want players to learn your IP, keep servers Private and have friends join over a VPN such as Tailscale (each friend installs it), or put a relay you run yourself in front of the game ports.
+This is how any game server hosted at home with port forwarding works. What the panel does to limit the exposure: it only opens the game ports of servers you set to Public, it never forwards the panel itself, and servers set to Private have no router rules at all. Game Labs has no VPN or DDoS protection. If you do not want players to learn your IP, turn on **Hide my IP** for the server (a free playit.gg relay, see [Hide my IP (optional)](#hide-my-ip-optional); friends install nothing). The other ways are to keep servers Private and have friends join over a VPN such as Tailscale (each friend installs it), or to put a relay you run yourself in front of the game ports.
+
+## Hide my IP (optional)
+
+A direct public server shows your home IP to anyone who joins. In **Settings → Hide my IP (playit.gg)** you can paste the secret key of a free [playit.gg](https://playit.gg) agent and then turn on **Hide my IP** for a server. Players get a playit.gg address instead, nothing is opened on your router, and friends install nothing. It works with an agent you already run, or the panel can run one. Custom domains need playit.gg premium, so the Cloudflare name is not used for these servers. Details, limits and what is still untested are in [docs/relay-playit.md](docs/relay-playit.md).
 
 ## Notifications (optional)
 

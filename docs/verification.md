@@ -227,3 +227,16 @@ Built against fakes (fake Docker, fake Docker Hub list, fake clock) and the brow
 - The header line (host name, Docker version, uptime) comes from Docker's `info` call and `/proc/uptime`. Check that the host name is your machine's, not a container id.
 - The "..." row menu is drawn on the page rather than inside the table. Check it on a phone and with the keyboard (Enter opens it, arrows move, Escape closes).
 
+## Hide my IP through playit.gg (not yet run on real hardware)
+
+Covered by tests against a fake playit.gg API and a fake Docker: the client's headers and body, both `rundata` shapes, tunnel planning (one per host port, TCP and UDP on one port merged), saving the key encrypted and never returning it, creating tunnels against an existing agent, the guided fallback when creation is refused, adopting a hand-made tunnel, the managed agent container (host networking, no privileged mode, only the key in its environment), and the access change (public to relay closes the router rules and the DNS record; relay to private or delete removes only the tunnels the panel made; an unconfigured relay leaves a public server public). The tests ran on Windows for this change; the backup and update tests need Linux `tar` and were not meaningful there, so CI is the real run.
+
+Not run, and needs the maintainer's homelab and a playit.gg account:
+
+- **Whether an agent secret key may create tunnels.** A forum post says agent keys are read-only. If playit.gg refuses, the panel falls back to listing the tunnels to create in the dashboard. Check which happens, and that the address then appears by itself within about 30 seconds.
+- **The `/tunnels/create` body** was written from the agent's source, not from a recorded call.
+- **The free-plan numbers** (about 4 TCP and 4 UDP tunnels) come from reviews, not from the account.
+- **A UDP game through the relay.** Palworld joined by a friend using the relay address, including whether the server list or query port matters.
+- **The address the agent uses to reach this machine** when the agent runs in another container (for example Dockhand): the saved address or `HOST_LAN_IP` must be reachable from that container.
+- **Managed mode** (the panel runs `ghcr.io/playit-cloud/playit-agent:1.0.10`) on a host with no agent yet, and that it is removed when the last relay server leaves.
+- That the direct path (router rules, Cloudflare) is untouched when a server is moved back from the relay to public.

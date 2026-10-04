@@ -19,7 +19,9 @@ A self-hosted web app that deploys and manages game servers as Docker containers
 | Admin access | LAN at home, Tailscale when away. Friends never join the tailnet |
 | Players | Connect directly over the internet |
 
-**Out of scope:** VPS/relay, Tailscale Funnel, playit.gg, friend tailnet invites, multi-host, paid services, a host shell (Dockhand already has one).
+**Out of scope:** VPS relays you run yourself, Tailscale Funnel, friend tailnet invites, multi-host, paid services, a host shell (Dockhand already has one).
+
+**Optional relay (added later):** a server can be set to "Hide my IP", which routes players through a free playit.gg tunnel instead of your router and DNS, so your home IP is never shown. It is a third access state (`relay`) beside `private` and `public`; `public` stays the default and is unchanged. See [relay-playit.md](relay-playit.md).
 
 ---
 
@@ -284,7 +286,7 @@ Each milestone ends with its acceptance criteria met **and** a verification log 
 
 ## 10. Known caveats
 
-- Players see the home public IP; only game ports are ever exposed. Anyone who resolves a server's name (`dig palworld.example.com`) gets the IP, because the Cloudflare records are DNS only and never proxied. Cloudflare's proxy and Tunnel cannot carry game traffic, and Spectrum needs an Enterprise plan for custom games. Hiding the IP would need a relay (playit.gg or a self-run VPS), which is out of scope for now; see the README section "Your home IP is visible to players".
+- Players see the home public IP; only game ports are ever exposed. Anyone who resolves a server's name (`dig palworld.example.com`) gets the IP, because the Cloudflare records are DNS only and never proxied. Cloudflare's proxy and Tunnel cannot carry game traffic, and Spectrum needs an Enterprise plan for custom games. Hiding the IP needs a relay. A server set to "Hide my IP" goes through playit.gg (see [relay-playit.md](relay-playit.md)); a self-run VPS relay is out of scope. See the README section "Your home IP is visible to players".
 - At home, connect to the LAN address; the public address may fail inside the LAN (NAT hairpinning).
 - Dragonwilds needs the owner's in-game Player ID, caps at 6 players, joins via the in-game browser, and its server version must match clients.
 - UPnP lets any LAN device open ports. Accepted trade-off; `manual` mode exists for anyone who wants it off.

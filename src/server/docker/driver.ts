@@ -6,6 +6,8 @@ import { names } from "../instance.js";
 export const LABEL_MANAGED = `${names.labelPrefix}.managed`;
 export const LABEL_ID = `${names.labelPrefix}.id`;
 export const LABEL_SLUG = `${names.labelPrefix}.slug`;
+/** Set on the playit.gg agent container, which is not a game server. */
+export const LABEL_RELAY = `${names.labelPrefix}.relay`;
 
 export interface ContainerSpec {
   name: string;
@@ -22,6 +24,8 @@ export interface ContainerSpec {
   ports: { port: number; protocol: Protocol }[];
   binds: { host: string; container: string }[];
   labels: Record<string, string>;
+  /** `host` shares the Docker host's network (used only by the relay agent); omitted = Docker's own bridge network with `ports` published. */
+  networkMode?: "host";
 }
 
 export type ContainerState = "running" | "paused" | "exited" | "missing";
@@ -175,6 +179,7 @@ export class DockerodeDriver implements ContainerDriver {
         PortBindings: bindings,
         Binds: spec.binds.map((b) => `${b.host}:${b.container}`),
         RestartPolicy: { Name: "unless-stopped" },
+        ...(spec.networkMode ? { NetworkMode: spec.networkMode } : {}),
         ...(spec.nanoCpus ? { NanoCpus: spec.nanoCpus } : {}),
         // MemorySwap equal to Memory means no swap, so the cap is a real one instead of "RAM plus the same again in swap".
         ...(spec.memoryBytes ? { Memory: spec.memoryBytes, MemorySwap: spec.memoryBytes } : {}),
@@ -258,7 +263,7 @@ export class DockerodeDriver implements ContainerDriver {
       const labels = c.Labels ?? {};
       // Another instance tags its containers `<instance>.managed=true`; skip our own and anything untagged.
       const key = Object.keys(labels).find((k) => k.endsWith(".managed") && labels[k] === "true");
-      if (!key || key === LABEL_MANAGED) continue;
+      if (!key || key === LABEL_MANAGED || key === LABEL_RELAY) continue;
       const instance = key.slice(0, -".managed".length);
       out.push({
         name: (c.Names?.[0] ?? c.Id).replace(/^\//, ""),

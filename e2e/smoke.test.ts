@@ -15,6 +15,7 @@ import { openDb } from "../src/server/db/index.js";
 import { DnsSettings } from "../src/server/dns/settings.js";
 import { UpdateChecker } from "../src/server/updates.js";
 import { Notifier } from "../src/server/notifications/notifier.js";
+import { RelayManager } from "../src/server/relay/manager.js";
 import { ServerService } from "../src/server/servers/service.js";
 import { loadTemplates } from "../src/server/templates/loader.js";
 import { FakeConnectivity, FakeDocker } from "../test/helpers/fakes.js";
@@ -33,12 +34,13 @@ beforeAll(async () => {
   const { db } = openDb(":memory:");
   const templates = loadTemplates(path.resolve("templates"));
   const docker = new FakeDocker();
-  const service = new ServerService({ config, db, templates, docker, connectivity: new FakeConnectivity(), hostPorts: () => new Set(), background: false, stableMs: 0, tagLister: async () => ["v2.8.0", "v2.9.0", "latest"], portProbe: { name: "fake-checker", check: async () => ({ state: "open", detail: "Connected from 3 of 3 locations" }) }, queryPlayers: async () => ({ online: 2, max: 32 }) });
+  const relay = new RelayManager(db, config, docker);
+  const service = new ServerService({ config, db, templates, docker, relay, connectivity: new FakeConnectivity(), hostPorts: () => new Set(), background: false, stableMs: 0, tagLister: async () => ["v2.8.0", "v2.9.0", "latest"], portProbe: { name: "fake-checker", check: async () => ({ state: "open", detail: "Connected from 3 of 3 locations" }) }, queryPlayers: async () => ({ online: 2, max: 32 }) });
   // A newer release is "out there", so the update notice has something to show.
   const release = { tag_name: "v0.2.0", name: "v0.2.0", html_url: "https://github.com/LordMerc/self-hosted-game-labs/releases/tag/v0.2.0" };
   const updates = new UpdateChecker(db, { current: "0.1.0", envEnabled: true, fetchFn: (async () => new Response(JSON.stringify(release))) as unknown as typeof fetch });
   await updates.checkIfDue();
-  const app = buildApp({ config, db, templates, service, docker, dnsSettings: new DnsSettings(db, config), updates, notifier: new Notifier(db, config), webRoot: path.resolve("dist/web") });
+  const app = buildApp({ config, db, templates, service, docker, dnsSettings: new DnsSettings(db, config), relay, updates, notifier: new Notifier(db, config), webRoot: path.resolve("dist/web") });
   await app.listen({ port: 0, host: "127.0.0.1" });
   url = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
   close = () => app.close();
