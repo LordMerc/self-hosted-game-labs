@@ -277,7 +277,7 @@ export function ServerDetail({ id, onBack, onLogout, onNavigate }: { id: string;
           </>
         )}
       </main>
-      {connect && s && <ConnectDialog server={s} onClose={() => setConnect(false)} onSettings={() => openRelaySettings(onNavigate)} />}
+      {connect && s && <ConnectDialog server={s} onClose={() => setConnect(false)} onSettings={() => openRelaySettings(onNavigate)} onChanged={() => void load()} />}
       {logs && s && <LogViewer id={id} name={s.name} onClose={() => setLogs(false)} />}
       {backups && s && <Backups id={id} name={s.name} running={s.status === "online"} onClose={() => setBackups(false)} onChange={() => void load()} />}
     </div>
