@@ -1,6 +1,7 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, type DnsStatus, type NotificationStatus, type RelayStatus, type NotifyKind, type TokenCheck } from "./api";
 import { Nav, type Page } from "./Nav";
+import { takeRelayFocus } from "./relayFocus";
 import { UpdatesSettings } from "./UpdateNotice";
 
 export function Settings({ onLogout, onNavigate }: { onLogout: () => void; onNavigate: (p: Page) => void }) {
@@ -335,15 +336,26 @@ function HideMyIp() {
   const [localHost, setLocalHost] = useState("");
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const cardRef = useRef<HTMLElement>(null);
+  const focused = useRef(false);
+  // Arriving from "Open Settings" or "Finish setup": scroll here once the card exists.
+  useEffect(() => {
+    if (status && !focused.current && takeRelayFocus()) {
+      focused.current = true;
+      cardRef.current?.scrollIntoView({ block: "start" });
+    }
+  }, [status]);
 
   const load = () =>
     api<RelayStatus>("/settings/relay")
       .then((s) => {
         setStatus(s);
+        setLoadError("");
         setMode(s.mode);
         setLocalHost(s.localHost ?? "");
       })
-      .catch(() => setStatus(null));
+      .catch((e: Error) => (setStatus(null), setLoadError(e.message)));
   useEffect(() => void load(), []);
 
   async function save(e: FormEvent) {
@@ -368,10 +380,18 @@ function HideMyIp() {
     await load();
   }
 
-  if (!status) return null;
+  if (!status) {
+    // Nothing at all would look like the option is missing, so say what happened.
+    return loadError ? (
+      <section className="settings-card">
+        <h2>Hide my IP (playit.gg)</h2>
+        <p className="error">Could not load these settings: {loadError}. If this panel was updated recently, restart it and reload this page.</p>
+      </section>
+    ) : null;
+  }
   const asking = !status.configured || editing;
   return (
-    <section className="settings-card">
+    <section className="settings-card" ref={cardRef}>
       <h2>Hide my IP (playit.gg)</h2>
       <p className="muted">
         With a plain public server, players see your home IP address. Hide my IP sends them through a free relay from playit.gg instead: your friends install nothing, and you open no router ports. Turn it on per server from the server's
@@ -387,6 +407,8 @@ function HideMyIp() {
           {status.account.problem && <p className="error">playit.gg: {status.account.problem}</p>}
           {status.agent.state === "stopped" && <p className="error">The agent container is not running.</p>}
           {status.warning && <p className="warn">{status.warning}</p>}
+          {status.localNote && <p className="warn">{status.localNote}</p>}
+          {status.mode === "existing" && status.localHost && <p className="muted small-text">The agent reaches this machine at <span className="mono">{status.localHost}</span>.</p>}
           <div className="row">
             <button className="ghost small" onClick={() => setEditing(true)}>
               Change
@@ -420,7 +442,15 @@ function HideMyIp() {
           {mode === "existing" && (
             <>
               <input type="text" autoComplete="off" placeholder="Address the agent uses to reach this machine, e.g. 192.168.1.20" value={localHost} onChange={(e) => setLocalHost(e.target.value)} />
-              <p className="muted small-text">Leave it empty to use HOST_LAN_IP. If the agent runs on this machine with host networking, 127.0.0.1 works.</p>
+              <p className="muted small-text">
+                This is where the playit.gg agent sends players' traffic: this machine's home network address{status.lanIp ? <> (<span className="mono">{status.lanIp}</span>)</> : ""}. Do not use <span className="mono">127.0.0.1</span> when the agent runs in its own Docker
+                container, for example from Dockhand: inside that container it means the agent itself, not this machine. Leave it empty to use HOST_LAN_IP.
+              </p>
+              {status.lanIp && localHost !== status.lanIp && (
+                <button type="button" className="ghost small" onClick={() => setLocalHost(status.lanIp ?? "")}>
+                  Use {status.lanIp}
+                </button>
+              )}
             </>
           )}
           <div className="row">

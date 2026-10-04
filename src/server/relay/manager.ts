@@ -29,6 +29,10 @@ export interface RelayStatus {
   mode: RelayMode;
   /** Where the agent should send traffic to reach this machine (existing agent only). */
   localHost: string | null;
+  /** This machine's LAN address as the panel knows it (HOST_LAN_IP), offered as the usual value for `localHost`. */
+  lanIp: string | null;
+  /** Why the saved `localHost` is probably wrong for an agent in its own container; null when it looks fine. */
+  localNote: string | null;
   /** Free-plan tunnels the servers in relay mode need, against what the plan allows. */
   needs: { tcp: number; udp: number; limit: number };
   warning: string | null;
@@ -53,6 +57,10 @@ export interface RelayInfo {
   address: string | null;
   tunnels: RelayTunnelInfo[];
   problem: string | null;
+  /** What the person has to do next: `settings` (no key or no agent address saved) or `tunnels` (create them in the playit.gg dashboard). */
+  fix: "settings" | "tunnels" | null;
+  /** Set when the tunnels' local address is probably wrong for an agent running in its own container. */
+  localNote: string | null;
 }
 
 export interface RelayServer {
@@ -68,6 +76,18 @@ export class RelayError extends Error {
   ) {
     super(message);
   }
+}
+
+/**
+ * 127.0.0.1 only reaches this machine's game ports when the agent shares its network. An agent in its own container (for example one
+ * deployed from Dockhand) would reach itself instead, and 172.17.x.x is Docker's internal network, which does not have the published ports.
+ */
+export function localHostNote(local: string | null, lanIp: string | null): string | null {
+  if (!local) return null;
+  const loopback = /^(127\.|localhost$|::1$)/i.test(local);
+  if (!loopback && !/^172\.17\./.test(local)) return null;
+  const use = lanIp && !/^(127\.|172\.17\.)/.test(lanIp) ? ` (${lanIp})` : "";
+  return `${local} only works when the playit.gg agent shares this machine's network. If the agent runs in its own Docker container, for example from Dockhand, set the agent's address to this machine's home network address${use} in Settings.`;
 }
 
 /** One tunnel per host port: a port used for both TCP and UDP shares one `both` tunnel, which keeps a server inside the free plan. */
@@ -299,6 +319,19 @@ export class RelayManager {
     }
   }
 
+  private refreshing: Promise<void> | null = null;
+
+  /**
+   * Re-read playit.gg in the background when what `info()` would show is older than `maxAgeMs`. The server list asks for this on every
+   * poll, so tunnels added in the playit.gg dashboard show up within seconds instead of waiting for the next timer tick. The answer is
+   * never awaited: callers keep showing what they have, and the next poll sees the new one.
+   */
+  refreshSoon(maxAgeMs: number): void {
+    if (this.refreshing || !this.configured()) return;
+    if (this.cache && Date.now() - this.cache.at < maxAgeMs) return;
+    this.refreshing = this.refresh().finally(() => (this.refreshing = null));
+  }
+
   /** Whether any server uses the relay, so a background check is worth making. */
   inUse(): boolean {
     return this.configured() && this.relayServers().length > 0;
@@ -308,14 +341,15 @@ export class RelayManager {
   info(server: RelayServer): RelayInfo {
     const local = this.localHost();
     const plan = planTunnels(server.slug, server.ports);
-    if (!this.configured() || !local) return { state: "error", address: null, tunnels: plan.map((t) => ({ ...t, local: `${local ?? "?"}:${t.port}`, address: null })), problem: !this.configured() ? "Add your playit.gg secret key under Settings" : "The agent's address for this machine is not set" };
+    const localNote = this.mode() === "existing" ? localHostNote(local, this.config.HOST_LAN_IP ?? null) : null;
+    if (!this.configured() || !local) return { state: "error", address: null, tunnels: plan.map((t) => ({ ...t, local: `${local ?? "?"}:${t.port}`, address: null })), problem: !this.configured() ? "Add your playit.gg secret key under Settings" : "The agent's address for this machine is not set", fix: "settings", localNote: null };
     const data = this.cache?.data ?? null;
     const have = data ? this.matches(server, data) : new Map<string, { address: string | null }>();
     const tunnels = plan.map((t) => ({ ...t, local: `${local}:${t.port}`, address: have.get(t.name)?.address ?? null }));
     const address = tunnels[0]?.address ?? null;
     const allThere = tunnels.length > 0 && tunnels.every((t) => t.address);
-    if (this.cache?.error && !allThere) return { state: "error", address, tunnels, problem: this.cache.error };
-    return { state: allThere ? "ready" : "setup", address, tunnels, problem: this.createRefused && !allThere ? "playit.gg does not let the panel create tunnels with this key, so create them in the playit.gg dashboard" : null };
+    if (this.cache?.error && !allThere) return { state: "error", address, tunnels, problem: this.cache.error, fix: null, localNote };
+    return { state: allThere ? "ready" : "setup", address, tunnels, problem: this.createRefused && !allThere ? "playit.gg does not let Game Labs create tunnels with this key, so add them once by hand in the playit.gg dashboard" : null, fix: allThere ? null : "tunnels", localNote: allThere ? null : localNote };
   }
 
   async status(): Promise<RelayStatus> {
@@ -334,6 +368,8 @@ export class RelayManager {
       configured: this.configured(),
       mode,
       localHost: this.get(K_LOCAL) ?? (mode === "existing" ? (this.config.HOST_LAN_IP ?? null) : null),
+      lanIp: this.config.HOST_LAN_IP ?? null,
+      localNote: mode === "existing" ? localHostNote(this.localHost(), this.config.HOST_LAN_IP ?? null) : null,
       needs,
       warning: over ? `The free playit.gg plan allows about ${FREE_TUNNELS} TCP and ${FREE_TUNNELS} UDP tunnels, and the servers on the relay need ${needs.tcp} TCP and ${needs.udp} UDP.` : null,
       agent,

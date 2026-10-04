@@ -9,6 +9,7 @@ import { uptime } from "./format";
 import { Icon } from "./Icons";
 import { LogViewer } from "./LogViewer";
 import { Nav, type Page } from "./Nav";
+import { openRelaySettings } from "./relayFocus";
 import { NetworkPanel } from "./NetworkPanel";
 import { ServersTable } from "./ServersTable";
 import { ServersSkeleton } from "./Skeleton";
@@ -46,7 +47,8 @@ export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: 
   const [customOpen, setCustomOpen] = useState(false);
   const [logsFor, setLogsFor] = useState<Server | null>(null);
   const [backupsFor, setBackupsFor] = useState<Server | null>(null);
-  const [connectFor, setConnectFor] = useState<Server | null>(null);
+  // Only the id is kept, so the connect window shows the latest answer (for example the relay address appearing) rather than a snapshot.
+  const [connectId, setConnectId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [tab, setTab] = useState<Tab>("all");
   const [query, setQuery] = useState("");
@@ -54,6 +56,7 @@ export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: 
   const searchRef = useRef<HTMLInputElement>(null);
 
   const list = servers ?? [];
+  const connectFor = list.find((s) => s.id === connectId) ?? null;
   const pollMs = isBusy(servers ?? undefined) ? BUSY_MS : POLL_MS;
   // Keep the last numbers on a failed poll; the page-level poll reports real outages. Stats are asked one request at a time, since Docker takes a second or two to answer.
   const { data: statsData } = useApi<Stats>("/stats", 5000);
@@ -87,12 +90,15 @@ export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: 
 
   async function act(promise: Promise<unknown>) {
     setMessage("");
+    let ok = true;
     try {
       await promise;
     } catch (e) {
+      ok = false;
       setMessage((e as Error).message);
     }
     await refresh();
+    return ok;
   }
 
   async function remove(s: Server) {
@@ -186,7 +192,8 @@ export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: 
                 onOpenServer={onOpenServer}
                 onLogs={setLogsFor}
                 onBackups={setBackupsFor}
-                onConnect={setConnectFor}
+                onSettings={() => openRelaySettings(onNavigate)}
+                onConnect={(s) => setConnectId(s.id)}
                 onDelete={remove}
                 onReveal={reveal}
               />
@@ -246,7 +253,7 @@ export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: 
         />
       )}
       {backupsFor && <Backups id={backupsFor.id} name={backupsFor.name} running={backupsFor.status === "online"} onClose={() => setBackupsFor(null)} onChange={() => void refresh()} />}
-      {connectFor && <ConnectDialog server={connectFor} onClose={() => setConnectFor(null)} />}
+      {connectFor && <ConnectDialog server={connectFor} onClose={() => setConnectId(null)} onSettings={() => openRelaySettings(onNavigate)} />}
       {logsFor && <LogViewer id={logsFor.id} name={logsFor.name} onClose={() => setLogsFor(null)} />}
     </div>
   );
