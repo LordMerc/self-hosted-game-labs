@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { api, type ServerDetail as Detail, type Stats } from "./api";
+import { api, type RelayStatus, type ServerDetail as Detail, type Stats } from "./api";
 import { Backups } from "./Backups";
 import { PortField, ScheduleFields, useUpkeep } from "./Care";
+import { ConnectDialog } from "./ConnectDialog";
 import { CopyButton } from "./CopyButton";
 import { Hint } from "./Hint";
 import { HiddenIp, isIpAddress } from "./HiddenIp";
@@ -9,6 +10,7 @@ import { Icon } from "./Icons";
 import { LimitFields, limitInputFrom, limitText, limitsFromInput, memoryWarning } from "./Limits";
 import { LogViewer } from "./LogViewer";
 import { Nav, type Page } from "./Nav";
+import { openRelaySettings } from "./relayFocus";
 
 const statusLabel = { online: "Running", paused: "Paused", offline: "Stopped", deploying: "Deploying", updating: "Restarting to apply changes", error: "Error" } as const;
 
@@ -25,6 +27,7 @@ export function ServerDetail({ id, onBack, onLogout, onNavigate }: { id: string;
   const [error, setError] = useState("");
   const [logs, setLogs] = useState(false);
   const [backups, setBackups] = useState(false);
+  const [connect, setConnect] = useState(false);
   const [tab, setTab] = useState<"console" | "activity">("console");
 
   const load = useCallback(async () => {
@@ -64,12 +67,27 @@ export function ServerDetail({ id, onBack, onLogout, onNavigate }: { id: string;
 
   async function act(path: string, method = "POST", body?: unknown) {
     setError("");
+    let ok = true;
     try {
       await api(path, { method, body });
     } catch (e) {
+      ok = false;
       setError((e as Error).message);
     }
     await load();
+    return ok;
+  }
+
+  /** Hide my IP needs a saved playit.gg key; without one this goes to Settings. Otherwise the connect window opens straight away, since that is where the next steps are. */
+  async function setAccess(access: "private" | "public" | "relay") {
+    if (access === "relay") {
+      const configured = await api<RelayStatus>("/settings/relay").then((r) => r.configured, () => null);
+      if (configured === false) {
+        if (confirm("Hide my IP needs your playit.gg secret key first. Open Settings to add it?")) openRelaySettings(onNavigate);
+        return;
+      }
+    }
+    if ((await act(`/servers/${id}/access`, "PUT", { access })) && access === "relay") setConnect(true);
   }
 
   async function remove() {
@@ -168,7 +186,17 @@ export function ServerDetail({ id, onBack, onLogout, onNavigate }: { id: string;
                       </div>
                     </dd>
                     <dt>Access</dt>
-                    <dd>{s.access === "public" ? "Public" : s.access === "relay" ? "Hidden IP (playit.gg)" : "Private"}</dd>
+                    <dd>
+                      {s.access === "public" ? "Public" : s.access === "relay" ? "Hidden IP (playit.gg)" : "Private"}
+                      {s.access === "relay" && s.relay && s.relay.state !== "ready" && (
+                        <div className="small-text">
+                          <span className="warn">{s.relay.fix === "settings" ? "Needs a playit.gg key." : "Relay needs setup."}</span>{" "}
+                          <button className="text-btn" onClick={() => (s.relay?.fix === "settings" ? openRelaySettings(onNavigate) : setConnect(true))}>
+                            {s.relay.fix === "settings" ? "Open Settings" : "Finish setup"}
+                          </button>
+                        </div>
+                      )}
+                    </dd>
                     <dt>Version</dt>
                     <dd>
                       <span className="mono wrap">{detail.care.image.name}</span>
@@ -212,7 +240,7 @@ export function ServerDetail({ id, onBack, onLogout, onNavigate }: { id: string;
               </div>
 
               <div className="detail-main">
-                <SettingsForm key={id} detail={detail} disabled={locked} onSaved={load} onAccess={(access) => act(`/servers/${id}/access`, "PUT", { access })} />
+                <SettingsForm key={id} detail={detail} disabled={locked} onSaved={load} onAccess={setAccess} />
 
                 <section className="settings-card">
                   <div className="tabs-bar" role="tablist">
@@ -244,6 +272,7 @@ export function ServerDetail({ id, onBack, onLogout, onNavigate }: { id: string;
           </>
         )}
       </main>
+      {connect && s && <ConnectDialog server={s} onClose={() => setConnect(false)} onSettings={() => openRelaySettings(onNavigate)} />}
       {logs && s && <LogViewer id={id} name={s.name} onClose={() => setLogs(false)} />}
       {backups && s && <Backups id={id} name={s.name} running={s.status === "online"} onClose={() => setBackups(false)} onChange={() => void load()} />}
     </div>

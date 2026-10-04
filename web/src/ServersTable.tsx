@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, type Network, type Server, type Stats, type Template } from "./api";
+import { api, type Network, type RelayStatus, type Server, type Stats, type Template } from "./api";
 import { ago, bytes } from "./format";
 import { CopyButton } from "./CopyButton";
 import { GameIcon } from "./GameIcon";
@@ -37,7 +37,7 @@ export const checkedAgo = (at: string) => {
 
 const staleWhy = { "ip-changed": "Your public IP changed since, so this may be out of date.", old: "More than a day old, so this may be out of date." } as const;
 
-function Access({ s, canTest, testing, onTest, onSetup }: { s: Server; canTest: boolean; testing: boolean; onTest: () => void; onSetup: () => void }) {
+function Access({ s, canTest, testing, onTest, onSetup, onSettings }: { s: Server; canTest: boolean; testing: boolean; onTest: () => void; onSetup: () => void; onSettings: () => void }) {
   const pub = s.access === "public";
   const relay = s.access === "relay";
   const r = s.reachability;
@@ -56,7 +56,12 @@ function Access({ s, canTest, testing, onTest, onSetup }: { s: Server; canTest: 
           </button>
         </>
       )}
-      {relay && s.relay?.state === "error" && <span className="access-line bad" title={s.relay.problem ?? undefined}>Relay problem</span>}
+      {relay && s.relay?.state === "error" && <span className="access-line bad" title={s.relay.problem ?? undefined}>{s.relay.fix === "settings" ? "Relay needs a key" : "Relay problem"}</span>}
+      {relay && s.relay?.state === "error" && (
+        <button className="text-btn" onClick={s.relay.fix === "settings" ? onSettings : onSetup}>
+          {s.relay.fix === "settings" ? "Open Settings" : "Details"}
+        </button>
+      )}
       {pub && s.pendingRules.length > 0 && <span className="access-line warn">Waiting for router rule</span>}
       {pub && s.pendingRules.length === 0 && r && (
         <span className={`access-line ${r.state === "problem" ? "bad" : r.state === "unknown" ? "warn" : "good"}`} title={`${r.text}. Checked ${new Date(r.at).toLocaleTimeString()}.`}>
@@ -83,6 +88,7 @@ export function ServersTable({
   stats,
   network,
   act,
+  onSettings,
   onOpenServer,
   onLogs,
   onBackups,
@@ -94,7 +100,9 @@ export function ServersTable({
   templates: Template[];
   stats: Stats | null;
   network: Network | null;
-  act: (p: Promise<unknown>) => Promise<void>;
+  /** Runs a request, shows its error if it fails, refreshes the list, and says whether it worked. */
+  act: (p: Promise<unknown>) => Promise<boolean>;
+  onSettings: () => void;
   onOpenServer: (id: string) => void;
   onLogs: (s: Server) => void;
   onBackups: (s: Server) => void;
@@ -109,6 +117,16 @@ export function ServersTable({
   const noPlayerCount = (s: Server) => templates.find((t) => t.id === s.templateId)?.reportsPlayers === false;
 
   const setAccess = (s: Server, access: Server["access"]) => act(api(`/servers/${s.id}/access`, { method: "PUT", body: { access } }));
+
+  /** Hide my IP needs a saved playit.gg key; without one this goes to Settings. Otherwise the connect window opens straight away, since that is where the next steps are. */
+  async function hideIp(s: Server) {
+    const configured = await api<RelayStatus>("/settings/relay").then((r) => r.configured, () => null);
+    if (configured === false) {
+      if (confirm("Hide my IP needs your playit.gg secret key first. Open Settings to add it?")) onSettings();
+      return;
+    }
+    if (await setAccess(s, "relay")) onConnect(s);
+  }
 
   async function test(s: Server) {
     setTesting(s.id);
@@ -151,7 +169,7 @@ export function ServersTable({
                 ? []
                 : [{ label: "Make private", icon: "lock" as const, disabled: locked, onSelect: () => void setAccess(s, "private") }]),
               ...(s.access === "public" ? [] : [{ label: "Make public", icon: "globe" as const, disabled: locked || s.status === "error", onSelect: () => void setAccess(s, "public") }]),
-              ...(s.access === "relay" ? [] : [{ label: "Hide my IP (playit.gg)", icon: "shield" as const, disabled: locked || s.status === "error", onSelect: () => void setAccess(s, "relay") }]),
+              ...(s.access === "relay" ? [] : [{ label: "Hide my IP (playit.gg)", icon: "shield" as const, disabled: locked || s.status === "error", onSelect: () => void hideIp(s) }]),
               { label: "Delete server…", icon: "trash", danger: true, separated: true, onSelect: () => onDelete(s) },
             ];
             return (
@@ -227,7 +245,7 @@ export function ServersTable({
                   </div>
                 </td>
                 <td data-label="Access">
-                  <Access s={s} canTest={network?.portCheck.enabled ?? false} testing={testing === s.id} onTest={() => void test(s)} onSetup={() => onConnect(s)} />
+                  <Access s={s} canTest={network?.portCheck.enabled ?? false} testing={testing === s.id} onTest={() => void test(s)} onSetup={() => onConnect(s)} onSettings={onSettings} />
                 </td>
                 <td className="col-actions">
                   <div className="actions">

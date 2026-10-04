@@ -38,9 +38,19 @@ Read from the agent's own API client: https://github.com/playit-cloud/playit-age
 
 **Unverified, and possibly not with an agent key.** A playit.gg forum answer says agent keys are read-only and that account-level API keys are not offered: https://discuss.playit.gg/t/account-level-api-key/5704. The auth error enum includes `NotAllowedWithReadOnly`, `AgentNotSelfManaged` and `SelfManagedAgentCanOnlyAffectSelf`, which fits that.
 
-So the panel tries once, and if playit.gg refuses it stops asking (until the settings change) and falls back to **guided mode**: the "How to connect" dialog and the server page list each tunnel to create in the playit.gg dashboard (type, local address, local port), and the panel polls `/agents/rundata` until the address appears. A tunnel the person made by hand is adopted when its name is `gl-<server>-<port>` or when it forwards the same local port.
+So the panel tries once, and if playit.gg refuses it stops asking (until the settings change) and falls back to **guided mode**: the "How to connect" dialog and the server page list each tunnel to create in the playit.gg dashboard (type, local address, local port), and the panel polls `/agents/rundata` until the address appears. A tunnel the person made by hand is adopted when its name is exactly `gl-<server>-<port>` (the tunnel type is ignored), or, for a tunnel not named `gl-*`, when it forwards the same local port.
+
+The dialog opens by itself when Hide my IP is turned on and tunnels are missing. It walks through playit.gg's "Add Tunnel" form field by field, one card per tunnel with copy buttons, and links to the Tunnels page. It reads the live server list rather than a snapshot, so the address appears in it without reopening it. When all tunnels exist it shows the relay address as the one to share, with the home address labelled "At home only".
+
+**How fast a new tunnel is noticed.** The panel remembers what playit.gg last said. A timer refreshes that about every half minute while a server uses the relay, and each time the server list is fetched it also refreshes in the background if a relay server is still missing a tunnel and the answer is older than 4 seconds (60 seconds once all are there). So a tunnel added by hand shows up within a few seconds while the dialog or Servers page is open.
+
+**The agent's address for this machine.** A tunnel's local address must be one the agent can reach. `127.0.0.1` is right only when the agent shares this machine's network. An agent in its own Docker container (Dockhand, Portainer) would reach itself, and `172.17.x.x` is Docker's internal network, which has no published ports. So Settings defaults it to `HOST_LAN_IP`, warns when it is loopback or `172.17.x.x`, and offers a button to use the home network address.
 
 A claim flow (`/claim/setup`, `/claim/exchange`) exists in the client but was not tried. It could replace pasting a key in a later version.
+
+## Why not Cloudflare
+
+Cloudflare's proxy carries only web traffic on the free plan, so it cannot front a game port. Cloudflare Tunnel can carry other traffic, but each player would need Cloudflare's WARP app. Spectrum, which proxies TCP and UDP, is an Enterprise product. playit.gg is free and the player installs nothing. The README says the same in two sentences.
 
 ## One tunnel per host port
 

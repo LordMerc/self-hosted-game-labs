@@ -836,11 +836,14 @@ export class ServerService {
     const rules = this.d.db.select().from(schema.manualRules).all();
     const checks = this.d.db.select().from(schema.portChecks).all();
     const t = (id: string) => this.d.templates.find((x) => x.id === id);
+    const relayInfos = new Map(rows.filter((r) => r.access === "relay" && this.d.relay).map((r) => [r.id, this.d.relay!.info({ id: r.id, slug: r.slug, ports: ports.filter((p) => p.serverId === r.id).map((p) => ({ port: p.port, protocol: p.protocol })) })]));
+    // While a relay server is still waiting for its tunnels, look at playit.gg again every few seconds; once all is well, a minute is plenty.
+    if (relayInfos.size > 0) this.d.relay!.refreshSoon([...relayInfos.values()].some((i) => i.state !== "ready") ? 4_000 : 60_000);
     return rows.map((r) => {
       const check = this.careStore().state(r.id).check;
       const sp = ports.filter((p) => p.serverId === r.id);
       const tpl = t(r.templateId);
-      const relayInfo = r.access === "relay" && this.d.relay ? this.d.relay.info({ id: r.id, slug: r.slug, ports: sp.map((p) => ({ port: p.port, protocol: p.protocol })) }) : null;
+      const relayInfo = relayInfos.get(r.id) ?? null;
       const gamePort = sp[0];
       const dnsC = this.dnsCtx();
       const host = dnsC ? dnsC.client.fqdn(r.slug) : this.d.config.PUBLIC_HOST;

@@ -129,12 +129,16 @@ export interface RelayInfo {
   address: string | null;
   tunnels: { name: string; port: number; protocol: "tcp" | "udp" | "both"; local: string; address: string | null }[];
   problem: string | null;
+  fix: "settings" | "tunnels" | null;
+  localNote: string | null;
 }
 
 export interface RelayStatus {
   configured: boolean;
   mode: "existing" | "managed";
   localHost: string | null;
+  lanIp: string | null;
+  localNote: string | null;
   needs: { tcp: number; udp: number; limit: number };
   warning: string | null;
   agent: { state: "running" | "stopped" | "missing" | "external"; problem: string | null };

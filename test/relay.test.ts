@@ -181,11 +181,88 @@ describe("RelayManager", () => {
     const info = mgr.info(server);
     expect(info.state).toBe("setup");
     expect(info.tunnels).toEqual([{ name: "gl-our-palworld-8211", port: 8211, protocol: "udp", local: "192.168.1.20:8211", address: null }]);
-    expect(info.problem).toMatch(/create them in the playit.gg dashboard/);
+    expect(info.problem).toMatch(/add them once by hand in the playit.gg dashboard/);
+    expect(info.fix).toBe("tunnels");
     // once the person adds it by hand, the next refresh picks the address up
     fake.tunnels.push({ id: "hand", name: "gl-our-palworld-8211", port_type: "udp", local_port: 8211, local_ip: "192.168.1.20" });
     await mgr.refresh();
-    expect(mgr.info(server).state).toBe("ready");
+    expect(mgr.info(server)).toMatchObject({ state: "ready", fix: null, address: "t0.gl.at.ply.gg:20000" });
+  });
+
+  it("points at Settings when there is no key or no agent address, and at the tunnels while they are missing", async () => {
+    expect(mgr.info(server)).toMatchObject({ state: "error", fix: "settings" });
+    await mgr.save({ secret: SECRET, mode: "existing" });
+    fake.refuseCreate = true;
+    await mgr.enable(server);
+    expect(mgr.info(server).fix).toBe("tunnels");
+    const bare = new RelayManager(db, loadConfig({ SESSION_SECRET: "s".repeat(40), DATA_DIR: "/tmp/x" }), docker, (s) => new PlayitClient(s, fake.fetch));
+    db.delete(schema.settings).run();
+    await bare.save({ secret: SECRET, mode: "existing" });
+    expect(bare.info(server)).toMatchObject({ state: "error", fix: "settings" });
+  });
+
+  it("uses a tunnel made by hand with the exact name, whatever type it was given", async () => {
+    await mgr.save({ secret: SECRET, mode: "existing" });
+    fake.refuseCreate = true;
+    await mgr.enable(server);
+    fake.tunnels.push({ id: "hand", name: "gl-our-palworld-8211", port_type: "tcp", local_port: 1, local_ip: "127.0.0.1" });
+    await mgr.refresh();
+    expect(mgr.info(server)).toMatchObject({ state: "ready", address: "t0.gl.at.ply.gg:20000" });
+  });
+
+  describe("the agent's address for this machine", () => {
+    it("explains why 127.0.0.1 only suits an agent on the same network, and suggests the home network address", async () => {
+      await mgr.save({ secret: SECRET, mode: "existing", localHost: "127.0.0.1" });
+      fake.refuseCreate = true;
+      await mgr.enable(server);
+      const note = mgr.info(server).localNote;
+      expect(note).toMatch(/own Docker container/);
+      expect(note).toContain("192.168.1.20");
+      expect((await mgr.status()).localNote).toBe(note);
+      expect((await mgr.status()).lanIp).toBe("192.168.1.20");
+    });
+
+    it("also flags Docker's internal 172.17.x.x addresses, but not a normal home network address", async () => {
+      await mgr.save({ secret: SECRET, mode: "existing", localHost: "172.17.0.1" });
+      fake.refuseCreate = true;
+      await mgr.enable(server);
+      expect(mgr.info(server).localNote).toMatch(/own Docker container/);
+      await mgr.save({ mode: "existing", localHost: "192.168.68.61" });
+      expect(mgr.info(server).localNote).toBeNull();
+    });
+
+    it("defaults to the host's home network address and says nothing about it", async () => {
+      await mgr.save({ secret: SECRET, mode: "existing" });
+      expect(mgr.localHost()).toBe("192.168.1.20");
+      expect((await mgr.status()).localNote).toBeNull();
+    });
+  });
+
+  describe("noticing tunnels added by hand", () => {
+    it("re-reads playit.gg when what it knows is old, and only once at a time", async () => {
+      await mgr.save({ secret: SECRET, mode: "existing" });
+      fake.refuseCreate = true;
+      await mgr.enable(server);
+      fake.tunnels.push({ id: "hand", name: "gl-our-palworld-8211", port_type: "udp", local_port: 8211, local_ip: "192.168.1.20" });
+      const before = fake.calls.length;
+      mgr.refreshSoon(0);
+      mgr.refreshSoon(0); // one is already on its way
+      await new Promise((r) => setTimeout(r, 20));
+      expect(fake.calls.length - before).toBe(1);
+      expect(mgr.info(server).state).toBe("ready");
+    });
+
+    it("leaves a fresh answer alone, and does nothing without a key", async () => {
+      const idle = fake.calls.length;
+      mgr.refreshSoon(0);
+      expect(fake.calls.length).toBe(idle);
+      await mgr.save({ secret: SECRET, mode: "existing" });
+      await mgr.refresh();
+      const before = fake.calls.length;
+      mgr.refreshSoon(60_000);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(fake.calls.length).toBe(before);
+    });
   });
 
   it("needs somewhere for the agent to reach this machine", async () => {

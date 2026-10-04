@@ -472,3 +472,7 @@ button.ghost.danger { color: var(--bad); }
 
 .relay-setup { margin: 0.75rem 0; padding: 0.75rem 1rem; border: 1px solid var(--border, #2a2f3a); border-radius: 8px; }
 .relay-setup ul { margin: 0.5rem 0 0; padding-left: 1.2rem; }
+.relay-setup .steps { margin: 0.5rem 0; }
+.relay-card { margin: 0.75rem 0 0; padding: 0.5rem 0.75rem; border: 1px solid var(--border, #2a2f3a); border-radius: 8px; display: grid; gap: 0.35rem; }
+.relay-field { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr) 2rem; align-items: center; gap: 0.6rem; }
+.relay-field .mono { overflow-wrap: anywhere; }
