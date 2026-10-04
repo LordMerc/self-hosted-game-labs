@@ -227,7 +227,7 @@ describe("RelayManager", () => {
       fake.refuseCreate = true;
       await mgr.enable(server);
       expect(mgr.info(server).localNote).toMatch(/own Docker container/);
-      await mgr.save({ mode: "existing", localHost: "192.168.68.61" });
+      await mgr.save({ mode: "existing", localHost: "192.168.50.61" });
       expect(mgr.info(server).localNote).toBeNull();
     });
 

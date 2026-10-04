@@ -2,9 +2,19 @@
 
 **Run game servers at home without becoming a sysadmin.** Game Labs is an open-source control panel for your own hardware. Pick a game, click deploy, and the panel starts the container, opens the ports on your router, keeps a friendly name pointed at your home IP, and backs up your world. Friends join from the internet; you never touch Docker commands, your router's admin page or a DNS dashboard after first-time setup. Players connect straight to your home internet connection, so they can see your home IP (see [Your home IP is visible to players](#your-home-ip-is-visible-to-players)).
 
-![The Game Labs dashboard: host stats with small charts, a table of game servers with status, address, ports and an Access column, and the Network health checklist on the right](docs/images/dashboard.png)
+![The Game Labs dashboard: host stats with small charts, a table of game servers with artwork tiles, status, address, ports and an Access column with Public and Hidden IP badges, a template picker with store artwork below, and the Network health checklist on the right](docs/images/dashboard.png)
 
-> **Early release (v0.2.1).** Palworld and RuneScape: Dragonwilds are running on a real homelab, with friends joining over the internet. The other games are built and tested against fakes and throwaway containers but not played on yet. See [Supported games](#supported-games) and [docs/verification.md](docs/verification.md) for exactly what has and has not been tried.
+> **Early release (v0.3.0).** Palworld and RuneScape: Dragonwilds are running on a real homelab, with friends joining over the internet. The other games are built and tested against fakes and throwaway containers but not played on yet. See [Supported games](#supported-games) and [docs/verification.md](docs/verification.md) for exactly what has and has not been tried.
+
+## What's new in 0.3.0
+
+- **An honest note about your home IP.** Players who join a public server connect straight to your home internet connection, so they can see your home IP. The README and the panel now say so plainly (see [Your home IP is visible to players](#your-home-ip-is-visible-to-players)).
+- **Hide my IP, through playit.gg.** Turn it on for a server and strangers get a playit.gg address instead of yours. It uses the playit.gg agent you already run, with tunnels named `gl-<server>-<port>`. The panel finds them by that name and shows what is left to do if one is missing (see [Hide my IP](#hide-my-ip-optional)).
+- **Public and Hide my IP together.** Hide my IP is its own switch, so a server can be both. The server list then shows two addresses: the playit.gg one to give strangers, and your own name for friends. The Access column marks each server **Public**, **Private** or **Hidden IP**.
+- **Store artwork in the server list.** Each server's row, and its entry on the Backups page, now shows the game's artwork as a small tile, the same picture as on its template card.
+- **A Connect dialog that matches Settings.** "How to connect…" lists every address a player might need (relay, public and home network), with a copy button for each, and walks you through any tunnel that is still missing.
+
+![The Connect dialog for a server that is both Public and behind Hide my IP, showing the relay, public and home network addresses](docs/images/connect-dialog.png)
 
 ## What's new in 0.2.1
 
@@ -40,7 +50,7 @@ These are generated from the real app against a fake Docker and router with demo
 
 ### The server list
 
-Each row has a Stop/Start button, logs and a **...** menu (restart, backups, passwords, settings, make public or private, delete). The charts show the last 15 minutes the panel measured, and the player peak is today's highest count. The Network health panel sits beside the table, and moves under it on narrower windows; on a phone each server is a card.
+Each row shows the game's artwork, its address (two of them when a public server also uses Hide my IP: one for strangers, one for friends) and an Access badge, with a Stop/Start button, logs and a **...** menu (restart, backups, how to connect, passwords, settings, make public or private, hide my IP, delete). The charts show the last 15 minutes the panel measured, and the player peak is today's highest count. The Network health panel sits beside the table, and moves under it on narrower windows; on a phone each server is a card.
 
 ![The "..." menu open on a server row](docs/images/row-menu.png)
 ![The dashboard in a 1440 pixel wide window](docs/images/dashboard-1440.png)
@@ -55,7 +65,7 @@ Rename it, edit its game settings (changing one recreates the container; the wor
 
 Every backup in one place, including those of servers you have deleted. Pick one and press **Set up again** to bring a deleted world back.
 
-![The Backups page listing each server's backups with Restore and Delete buttons, and a deleted server with a Set up again button](docs/images/backups.png)
+![The Backups page listing each server's backups under its artwork tile with Restore and Delete buttons, and a deleted server with a Set up again button](docs/images/backups.png)
 
 ### Network health
 

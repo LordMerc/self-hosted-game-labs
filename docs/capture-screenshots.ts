@@ -1,6 +1,8 @@
 /**
- * Regenerates the screenshots in docs/images from the real web app, running against a fake Docker, router and DNS
- * with a few demo servers (no real containers, and the public IP is a documentation address, 203.0.113.7).
+ * Regenerates the screenshots in docs/images from the real web app, running against a fake Docker, router, DNS and
+ * playit.gg with a few demo servers (no real containers, the public IP is a documentation address, 203.0.113.7, and the
+ * domain is example.com). The game pictures on the cards are the real store pictures the templates link to, fetched once
+ * from the internet like the panel does; without a connection the cards keep their gradient.
  *
  *   npm run build:web && npx tsx docs/capture-screenshots.ts
  *
@@ -15,6 +17,9 @@ import { chromium, type Page } from "playwright";
 import { buildApp } from "../src/server/app.js";
 import { type HostStats, type HostSnapshot } from "../src/server/host-stats.js";
 import { StatsHistory, type PeakStore } from "../src/server/history.js";
+import { PlayitClient, type FetchFn } from "../src/server/relay/playit.js";
+import { RelayManager } from "../src/server/relay/manager.js";
+import { ArtworkCache } from "../src/server/templates/artwork.js";
 import { loadConfig } from "../src/server/config.js";
 import { openDb } from "../src/server/db/index.js";
 import { DnsSettings } from "../src/server/dns/settings.js";
@@ -26,13 +31,39 @@ const out = path.resolve("docs/images");
 mkdirSync(out, { recursive: true });
 
 const dir = mkdtempSync(path.join(os.tmpdir(), "gl-shots-"));
-const config = loadConfig({ SESSION_SECRET: "x".repeat(40), DATA_DIR: dir, GAMESERVERS_DIR: path.join(dir, "games"), HOST_LAN_IP: "192.168.1.50", PUBLIC_HOST: "play.example.com" });
+const config = loadConfig({ SESSION_SECRET: "x".repeat(40), DATA_DIR: dir, GAMESERVERS_DIR: path.join(dir, "games").replace(/^[A-Za-z]:/, "").replaceAll("\\", "/"), HOST_LAN_IP: "192.168.50.20", PUBLIC_HOST: "play.example.com" });
 const { db } = openDb(":memory:");
 const templates = loadTemplates(path.resolve("templates"));
 const docker = new FakeDocker();
+// Palworld reports its player count through a command run inside the container; the console shows what other commands print.
+docker.execReply = (cmd) => (cmd.join(" ").includes("/v1/api/metrics") ? JSON.stringify({ currentplayernum: 3, maxplayernum: 32 }) : `ran ${cmd.join(" ")}`);
+/** A pretend playit.gg account with one agent: it accepts the demo key and hands out an address for every tunnel the panel asks for. */
+const PLAYIT_KEY = "demo-agent-secret-key-0123456789";
+const tunnels: { id: string; name: string; port_type: string; local_port: number; local_ip: string }[] = [];
+const playit: FetchFn = async (url, init) => {
+  const p = url.replace("https://api.playit.gg", "");
+  const body = JSON.parse(init.body) as Record<string, unknown>;
+  const reply = (json: unknown) => ({ ok: true, status: 200, json: async () => json });
+  if (init.headers.authorization !== `Agent-Key ${PLAYIT_KEY}`) return reply({ status: "error", data: { type: "auth", message: "InvalidAgentKey" } });
+  if (p === "/agents/rundata") {
+    const data = { agent_id: "agent-demo", account_status: "verified", tunnels: tunnels.map((t, i) => ({ id: t.id, name: t.name, proto: t.port_type, port: { from: 21000 + i * 111, to: 21000 + i * 111 }, assigned_domain: "demo-fox-4821.gl.at.ply.gg", local_ip: t.local_ip, local_port: t.local_port })) };
+    return reply({ status: "success", data });
+  }
+  if (p === "/tunnels/create") {
+    const origin = (body.origin as { data: { local_ip: string; local_port: number } }).data;
+    tunnels.push({ id: `tun-${tunnels.length + 1}`, name: body.name as string, port_type: body.port_type as string, local_port: origin.local_port, local_ip: origin.local_ip });
+    return reply({ status: "success", data: { id: `tun-${tunnels.length}` } });
+  }
+  return reply({ status: "fail", data: "Unknown" });
+};
+
 const players: Record<number, number> = { 27015: 3, 25565: 5 };
+const relay = new RelayManager(db, config, docker, (key) => new PlayitClient(key, playit));
+const artwork = new ArtworkCache(dir, { log: (m) => console.log(m) });
+artwork.load(templates);
+await artwork.refresh(templates);
 const service = new ServerService({
-  config, db, templates, docker, dns: new FakeDns(), connectivity: new FakeConnectivity(), hostPorts: () => new Set(), background: false, stableMs: 0,
+  config, db, templates, docker, dns: new FakeDns(), connectivity: new FakeConnectivity(), relay, hostPorts: () => new Set(), background: false, stableMs: 0,
   portProbe: { name: "check-host.net", check: async () => ({ state: "open", detail: "Connected from 3 of 3 locations" }) },
   queryPlayers: async (_h, port) => ({ online: players[port] ?? 0, max: port === 25565 ? 20 : 32 }),
 });
@@ -52,7 +83,7 @@ for (let i = 0; i < 45; i++) {
     { demo: { cpuPercent: null, memBytes: 0, players: { online, max: 40 } } },
   );
 }
-const app = buildApp({ config, db, templates, service, docker, dnsSettings: new DnsSettings(db, config), hostStats, history, webRoot: path.resolve("dist/web") });
+const app = buildApp({ config, db, templates, service, docker, dnsSettings: new DnsSettings(db, config), relay, artwork, hostStats, history, webRoot: path.resolve("dist/web") });
 await app.listen({ port: 0, host: "127.0.0.1" });
 const url = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
 
@@ -105,6 +136,16 @@ await row("Valheim").getByText(/Running|Starting/).waitFor();
 
 // Palworld and Minecraft go public; Dragonwilds stays untested so the Access column shows both states. Valheim is stopped.
 for (const n of ["Palworld", "RuneScape", "Minecraft"]) await choose(n, "Make public");
+
+// Palworld also hides the home IP through playit.gg, so it is public and relayed at once and its row shows both addresses.
+await relay.save({ secret: PLAYIT_KEY, mode: "existing" });
+await choose("Palworld", "Hide my IP (playit.gg)");
+const connect = page.locator(".dialog.connect");
+await connect.waitFor();
+await page.getByText("For strangers (relay)").waitFor();
+await page.waitForTimeout(500);
+await connect.screenshot({ path: path.join(out, "connect-dialog.png") });
+await connect.getByRole("button", { name: "Close" }).click();
 await row("Valheim").getByRole("button", { name: /^Stop/ }).click();
 await row("Valheim").getByText("Stopped").waitFor();
 await row("Palworld").getByRole("button", { name: /^Test / }).click();
