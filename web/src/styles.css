@@ -107,7 +107,8 @@ td { padding: 1.05rem 0.75rem; border-top: 1px solid var(--divider); vertical-al
 th:first-child, td:first-child { padding-left: 1.4rem; }
 th:last-child, td:last-child { padding-right: 1.4rem; }
 .server-cell { min-width: 190px; display: flex; align-items: center; gap: 0.9rem; }
-.game-icon { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; flex: none; font-weight: 700; font-size: 1.15rem; color: var(--tone); background: var(--tone-bg); }
+.game-icon { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; flex: none; font-weight: 700; font-size: 1.15rem; color: var(--tone); background: var(--tone-bg); overflow: hidden; }
+.game-icon img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .status { font-weight: 500; white-space: nowrap; }
 .status.online { color: var(--ok); }
 .status.paused, .status.deploying, .status.updating { color: var(--warn); }
