@@ -135,6 +135,8 @@ th:last-child, td:last-child { padding-right: 1.4rem; }
 .address { display: flex; align-items: flex-start; gap: 0.5rem; }
 .addr-main { color: var(--text); overflow-wrap: anywhere; min-width: 150px; }
 .addr-main.dim { color: var(--muted); }
+.address + .address { margin-top: 0.4rem; }
+.addr-tag { color: var(--muted); font-size: 0.75rem; letter-spacing: 0.02em; }
 .small-text { font-size: 0.8125rem; max-width: 280px; }
 .wrap { white-space: normal; }
 .chips { display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem; }
@@ -287,8 +289,11 @@ dd { margin: 0; text-align: right; display: flex; justify-content: flex-end; ali
 .backup-section { margin: 0.5rem 0 -1.25rem; font-size: 1.15rem; }
 .dialog.logs { width: min(900px, 100%); }
 .dialog.connect { width: min(520px, 100%); }
-.connect-row { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr) auto; align-items: center; gap: 0.6rem; }
-.connect-row .mono { overflow-wrap: anywhere; }
+.dialog.connect.wide { width: min(760px, 100%); }
+.connect-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.75rem 1.25rem; }
+.connect-cell { display: grid; gap: 0.15rem; min-width: 0; }
+.connect-value { display: flex; align-items: center; gap: 0.5rem; }
+.connect-value .mono { overflow-wrap: anywhere; }
 .dialog.connect .chips { flex-direction: row; flex-wrap: wrap; }
 pre.mono { margin: 0; background: var(--bg); border-radius: 10px; padding: 1rem; height: 55vh; overflow: auto; white-space: pre-wrap; word-break: break-all; }
 
@@ -474,6 +479,15 @@ button.ghost.danger { color: var(--bad); }
 .relay-setup { margin: 0.75rem 0; padding: 0.75rem 1rem; border: 1px solid var(--border, #2a2f3a); border-radius: 8px; }
 .relay-setup ul { margin: 0.5rem 0 0; padding-left: 1.2rem; }
 .relay-setup .steps { margin: 0.5rem 0; }
-.relay-card { margin: 0.75rem 0 0; padding: 0.5rem 0.75rem; border: 1px solid var(--border, #2a2f3a); border-radius: 8px; display: grid; gap: 0.35rem; }
-.relay-field { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr) 2rem; align-items: center; gap: 0.6rem; }
-.relay-field .mono { overflow-wrap: anywhere; }
+.relay-setup { display: grid; gap: 0.7rem; }
+.relay-setup p { margin: 0; }
+.relay-const { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.3rem 1.25rem; margin: 0; padding: 0.6rem 0.85rem; border-radius: 8px; background: var(--control-bg); }
+.relay-const dt { color: var(--muted); }
+.relay-const dd { margin: 0; text-align: left; justify-content: flex-start; flex-wrap: wrap; }
+.relay-table { width: 100%; border-collapse: collapse; }
+.relay-table th { text-align: left; font-weight: 500; color: var(--muted); font-size: 0.8125rem; padding: 0 0.5rem 0.35rem 0; }
+.relay-table td { padding: 0.35rem 0.5rem 0.35rem 0; border-top: 1px solid var(--divider); }
+.relay-table .mono { overflow-wrap: anywhere; }
+.agent-address { display: grid; gap: 0.4rem; }
+.agent-address .row { align-items: center; flex-wrap: wrap; }
+.agent-address input { flex: 1; min-width: 12rem; }

@@ -253,7 +253,7 @@ export function GameServers({ onLogout, onNavigate, onOpenServer }: { onLogout: 
         />
       )}
       {backupsFor && <Backups id={backupsFor.id} name={backupsFor.name} running={backupsFor.status === "online"} onClose={() => setBackupsFor(null)} onChange={() => void refresh()} />}
-      {connectFor && <ConnectDialog server={connectFor} onClose={() => setConnectId(null)} onSettings={() => openRelaySettings(onNavigate)} />}
+      {connectFor && <ConnectDialog server={connectFor} onClose={() => setConnectId(null)} onSettings={() => openRelaySettings(onNavigate)} onChanged={() => void refresh()} />}
       {logsFor && <LogViewer id={logsFor.id} name={logsFor.name} onClose={() => setLogsFor(null)} />}
     </div>
   );

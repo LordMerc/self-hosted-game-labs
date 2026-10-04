@@ -374,6 +374,20 @@ function HideMyIp() {
     setBusy(false);
   }
 
+  /** Saves the machine's home network address as the agent's address in one click, keeping the saved key. */
+  async function useLan(ip: string) {
+    setMessage(null);
+    setBusy(true);
+    try {
+      await api("/settings/relay", { method: "PUT", body: { mode: "existing", localHost: ip } });
+      await load();
+      setMessage({ ok: true, text: `Saved. The agent now reaches this machine at ${ip}.` });
+    } catch (err) {
+      setMessage({ ok: false, text: (err as Error).message });
+    }
+    setBusy(false);
+  }
+
   async function remove() {
     if (!confirm("Forget the playit.gg key? Servers set to Hide my IP stay set that way, but they need it again before players can connect.")) return;
     await api("/settings/relay", { method: "DELETE" });
@@ -409,6 +423,13 @@ function HideMyIp() {
           {status.warning && <p className="warn">{status.warning}</p>}
           {status.localNote && <p className="warn">{status.localNote}</p>}
           {status.mode === "existing" && status.localHost && <p className="muted small-text">The agent reaches this machine at <span className="mono">{status.localHost}</span>.</p>}
+          {status.mode === "existing" && status.localNote && status.lanIp && !/^(127.|172.17.)/.test(status.lanIp) && status.localHost !== status.lanIp && (
+            <div className="row">
+              <button className="primary small" disabled={busy} onClick={() => void useLan(status.lanIp ?? "")}>
+                Use {status.lanIp}
+              </button>
+            </div>
+          )}
           <div className="row">
             <button className="ghost small" onClick={() => setEditing(true)}>
               Change

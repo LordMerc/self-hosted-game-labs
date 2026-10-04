@@ -158,6 +158,14 @@ export function ServersTable({
         <tbody>
           {servers.map((s) => {
             const primary = s.connect.relay ?? s.connect.public ?? s.connect.lan;
+            // With both a relay and a public name, show both, each labelled by who it is for.
+            const lines: { key: string; label: string | null; text: string | null }[] =
+              s.connect.relay && s.connect.public
+                ? [
+                    { key: "relay", label: "Strangers", text: s.connect.relay },
+                    { key: "public", label: "Friends", text: s.connect.public },
+                  ]
+                : [{ key: "one", label: null, text: primary }];
             const max = maxPlayers(s);
             const live = stats?.servers[s.id]?.players;
             const use = stats?.servers[s.id];
@@ -229,18 +237,25 @@ export function ServersTable({
                   {s.lastError && <div className="error small-text">{s.lastError}</div>}
                 </td>
                 <td data-label="Address">
-                  <div className="address">
-                    <div>
-                      <div className={`mono addr-main${s.access === "private" ? " dim" : ""}`}>{primary && isIpAddress(primary) && primary === s.connect.public ? <HiddenIp value={primary} /> : (primary ?? "—")}</div>
-                      <div className="chips inline-ports">
-                        {s.ports.map((p) => (
-                          <span key={`${p.port}${p.protocol}`} className="chip mono">
-                            {p.port} <span className="proto">{p.protocol.toUpperCase()}</span>
-                          </span>
-                        ))}
+                  {lines.map((l) => (
+                    <div className="address" key={l.key}>
+                      <div>
+                        {l.label && (
+                          <div className="addr-tag" title={l.key === "relay" ? "Goes through playit.gg, so your home IP stays hidden" : "Goes straight to your home connection, so players can see your IP"}>
+                            For {l.label.toLowerCase()}
+                          </div>
+                        )}
+                        <div className={`mono addr-main${s.access === "private" && !l.label ? " dim" : ""}`}>{l.text && isIpAddress(l.text) && l.text === s.connect.public ? <HiddenIp value={l.text} /> : (l.text ?? "—")}</div>
                       </div>
+                      {l.text && <CopyButton text={l.text} label={`Copy ${s.name} ${l.label ? `address for ${l.label.toLowerCase()}` : "address"}`} />}
                     </div>
-                    {primary && <CopyButton text={primary} label={`Copy ${s.name} address`} />}
+                  ))}
+                  <div className="chips inline-ports">
+                    {s.ports.map((p) => (
+                      <span key={`${p.port}${p.protocol}`} className="chip mono">
+                        {p.port} <span className="proto">{p.protocol.toUpperCase()}</span>
+                      </span>
+                    ))}
                   </div>
                 </td>
                 <td data-label="Ports" className="col-ports">
