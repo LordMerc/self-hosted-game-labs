@@ -195,13 +195,19 @@ export interface ActivityItem {
 }
 
 const accents = new Map<string, string>();
-/** Loads the templates and remembers each game's colour, so its icon looks the same on every page. */
+const artworks = new Map<string, { url: string; position: number }>();
+/** Loads the templates and remembers each game's colour and picture, so its icon looks the same on every page. */
 export async function loadTemplates(): Promise<Template[]> {
   const list = await api<Template[]>("/templates");
-  for (const t of list) if (t.accent) accents.set(t.id, t.accent);
+  for (const t of list) {
+    if (t.accent) accents.set(t.id, t.accent);
+    if (t.artwork) artworks.set(t.id, { url: t.artwork, position: t.artworkPosition });
+  }
   return list;
 }
 export const accentFor = (templateId: string) => accents.get(templateId) ?? null;
+/** The picture the panel serves for a game, or null (custom images, or the download has not arrived). */
+export const artworkFor = (templateId: string) => artworks.get(templateId) ?? null;
 
 export interface Backup {
   name: string;
