@@ -8,6 +8,7 @@ import { echoPublicIp } from "./connectivity/provider.js";
 import { UpnpProvider } from "./connectivity/upnp.js";
 import { openDb } from "./db/index.js";
 import { DnsSettings } from "./dns/settings.js";
+import { RelayManager } from "./relay/manager.js";
 import { Notifier } from "./notifications/notifier.js";
 import { DockerodeDriver } from "./docker/driver.js";
 import { ServerService } from "./servers/service.js";
@@ -42,13 +43,14 @@ const docker = new DockerodeDriver();
 const connectivity = config.CONNECTIVITY === "upnp" ? new UpnpProvider(undefined, () => echoPublicIp(config.IP_ECHO_URL), config.HOST_LAN_IP || undefined) : new ManualProvider(db, config.IP_ECHO_URL);
 const dnsSettings = new DnsSettings(db, config);
 const notifier = new Notifier(db, config);
+const relay = new RelayManager(db, config, docker);
 
-const service = new ServerService({ config, db, templates, docker, connectivity, dnsProvider: () => dnsSettings.current(), notifier, portProbe: config.PORT_CHECK === "on" ? new CheckHostProbe() : null });
+const service = new ServerService({ config, db, templates, docker, connectivity, dnsProvider: () => dnsSettings.current(), notifier, relay, portProbe: config.PORT_CHECK === "on" ? new CheckHostProbe() : null });
 const hostStats = new HostStats([config.GAMESERVERS_DIR, config.DATA_DIR]);
 hostStats.snapshot(); // first sample, so CPU and network rates exist by the time the page asks
 const updates = new UpdateChecker(db, { current: runningVersion(config.APP_VERSION), envEnabled: config.UPDATE_CHECK === "on" });
 const history = new StatsHistory({ store: settingsPeakStore(db) });
-const app = buildApp({ config, db, templates, service, docker, dnsSettings, notifier, hostStats, history, updates, artwork, webRoot: "dist/web" });
+const app = buildApp({ config, db, templates, service, docker, dnsSettings, relay, notifier, hostStats, history, updates, artwork, webRoot: "dist/web" });
 
 const RECONCILE_MS = 5 * 60 * 1000;
 let reconciling = false;
@@ -58,6 +60,8 @@ const reconcile = async () => {
   try {
     const actions = await service.reconcile();
     if (actions.length > 0) console.log(`reconcile: ${actions.join("; ")}`);
+    await relay.reconfigure(); // the agent container (managed mode) matches what the servers need
+    await relay.refresh();
   } catch (e) {
     console.error("reconcile failed:", e);
   } finally {

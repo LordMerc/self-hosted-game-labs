@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { api, type DnsStatus, type NotificationStatus, type NotifyKind, type TokenCheck } from "./api";
+import { api, type DnsStatus, type NotificationStatus, type RelayStatus, type NotifyKind, type TokenCheck } from "./api";
 import { Nav, type Page } from "./Nav";
 import { UpdatesSettings } from "./UpdateNotice";
 
@@ -53,6 +53,8 @@ export function Settings({ onLogout, onNavigate }: { onLogout: () => void; onNav
             status && <DnsForm status={status} onSaved={() => (setEditing(false), load())} onCancel={status.configured ? () => setEditing(false) : undefined} />
           )}
         </section>
+
+        <HideMyIp />
 
         <Notifications />
 
@@ -321,5 +323,119 @@ function EventToggles({ events, onChange }: { events: Record<NotifyKind, boolean
         </label>
       ))}
     </div>
+  );
+}
+
+/** Settings for the playit.gg relay behind the per-server "Hide my IP" option. The secret key is sent once and never shown again. */
+function HideMyIp() {
+  const [status, setStatus] = useState<RelayStatus | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [secret, setSecret] = useState("");
+  const [mode, setMode] = useState<"existing" | "managed">("existing");
+  const [localHost, setLocalHost] = useState("");
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = () =>
+    api<RelayStatus>("/settings/relay")
+      .then((s) => {
+        setStatus(s);
+        setMode(s.mode);
+        setLocalHost(s.localHost ?? "");
+      })
+      .catch(() => setStatus(null));
+  useEffect(() => void load(), []);
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setMessage(null);
+    setBusy(true);
+    try {
+      await api("/settings/relay", { method: "PUT", body: { secret: secret || undefined, mode, localHost: localHost || undefined } });
+      setSecret("");
+      setEditing(false);
+      await load();
+      setMessage({ ok: true, text: "Saved. The key works." });
+    } catch (err) {
+      setMessage({ ok: false, text: (err as Error).message });
+    }
+    setBusy(false);
+  }
+
+  async function remove() {
+    if (!confirm("Forget the playit.gg key? Servers set to Hide my IP stay set that way, but they need it again before players can connect.")) return;
+    await api("/settings/relay", { method: "DELETE" });
+    await load();
+  }
+
+  if (!status) return null;
+  const asking = !status.configured || editing;
+  return (
+    <section className="settings-card">
+      <h2>Hide my IP (playit.gg)</h2>
+      <p className="muted">
+        With a plain public server, players see your home IP address. Hide my IP sends them through a free relay from playit.gg instead: your friends install nothing, and you open no router ports. Turn it on per server from the server's
+        menu. You need a free playit.gg account and an agent; if you already run one, paste its secret key here.
+      </p>
+
+      {status.configured && !editing && (
+        <div className="dns-status">
+          <p>
+            <span className="dot online" /> Key saved · {status.mode === "managed" ? "Game Labs runs the agent" : "using the agent you already run"}
+            {status.account.tunnels !== null && <> · {status.account.tunnels} tunnel{status.account.tunnels === 1 ? "" : "s"} on the account</>}
+          </p>
+          {status.account.problem && <p className="error">playit.gg: {status.account.problem}</p>}
+          {status.agent.state === "stopped" && <p className="error">The agent container is not running.</p>}
+          {status.warning && <p className="warn">{status.warning}</p>}
+          <div className="row">
+            <button className="ghost small" onClick={() => setEditing(true)}>
+              Change
+            </button>
+            <button className="ghost small danger" onClick={remove}>
+              Remove
+            </button>
+          </div>
+        </div>
+      )}
+
+      {asking && (
+        <form onSubmit={save} className="dns-form notify-form">
+          <h3>1. Get the agent's secret key</h3>
+          <ol className="steps">
+            <li>
+              Sign in at <span className="mono">playit.gg</span> (a free account is enough) and open your agent. If you have none yet, <strong>Add agent</strong> and choose Docker.
+            </li>
+            <li>Copy the agent's <strong>secret key</strong>.</li>
+          </ol>
+          <h3>2. Paste it here</h3>
+          <input type="password" autoComplete="off" placeholder={status.configured ? "Key saved (paste a new one to replace it)" : "Secret key"} value={secret} onChange={(e) => setSecret(e.target.value)} />
+          <p className="muted small-text">The key works like a password, so the panel stores it encrypted and never shows it again.</p>
+          <h3>3. Who runs the agent?</h3>
+          <label className="check">
+            <input type="radio" name="relay-mode" checked={mode === "existing"} onChange={() => setMode("existing")} /> I already run it (for example in Dockhand or Docker). Game Labs only reads it.
+          </label>
+          <label className="check">
+            <input type="radio" name="relay-mode" checked={mode === "managed"} onChange={() => setMode("managed")} /> Game Labs runs the agent for me, in a container next to the servers.
+          </label>
+          {mode === "existing" && (
+            <>
+              <input type="text" autoComplete="off" placeholder="Address the agent uses to reach this machine, e.g. 192.168.1.20" value={localHost} onChange={(e) => setLocalHost(e.target.value)} />
+              <p className="muted small-text">Leave it empty to use HOST_LAN_IP. If the agent runs on this machine with host networking, 127.0.0.1 works.</p>
+            </>
+          )}
+          <div className="row">
+            <button className="primary" disabled={(!secret && !status.configured) || busy}>
+              {busy ? "Checking…" : "Check and save"}
+            </button>
+            {status.configured && (
+              <button type="button" className="ghost" onClick={() => (setEditing(false), setSecret(""))}>
+                Cancel
+              </button>
+            )}
+          </div>
+        </form>
+      )}
+      {message && <p className={message.ok ? "ok" : "error"}>{message.text}</p>}
+    </section>
   );
 }

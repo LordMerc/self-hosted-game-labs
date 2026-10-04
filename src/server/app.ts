@@ -13,6 +13,7 @@ import type { ContainerDriver } from "./docker/driver.js";
 import { ServerService, UserError } from "./servers/service.js";
 import { CloudflareClient } from "./dns/cloudflare.js";
 import type { DnsSettings } from "./dns/settings.js";
+import { RelayError, type RelayManager } from "./relay/manager.js";
 import { NOTIFY_KINDS, WebhookDeliveryError, WebhookError, type Notifier } from "./notifications/notifier.js";
 import { hasAdminPassword, setAdminPassword, verifyAdminPassword } from "./auth/password.js";
 import { LoginGuard, visitorKey, type LoginGuardOptions } from "./auth/rate-limit.js";
@@ -32,6 +33,8 @@ export interface AppDeps {
   service: ServerService;
   docker: ContainerDriver;
   dnsSettings: DnsSettings;
+  /** The playit.gg relay. Absent: its settings routes are not served. */
+  relay?: RelayManager;
   notifier: Notifier;
   /** Injectable for tests. */
   inspectToken?: typeof CloudflareClient.inspect;
@@ -49,7 +52,7 @@ export interface AppDeps {
 const passwordBody = z.object({ password: z.string().min(1) });
 const newPasswordBody = z.object({ password: z.string().min(10, "Use at least 10 characters") });
 
-export function buildApp({ config, db, templates, service, docker, dnsSettings, notifier, inspectToken = CloudflareClient.inspect, hostStats = new HostStats([config.GAMESERVERS_DIR, config.DATA_DIR]), history = new StatsHistory({ store: settingsPeakStore(db) }), webRoot, artwork, updates = new UpdateChecker(db, { current: runningVersion(config.APP_VERSION), envEnabled: config.UPDATE_CHECK === "on" }), loginGuard }: AppDeps): FastifyInstance {
+export function buildApp({ config, db, templates, service, docker, dnsSettings, relay, notifier, inspectToken = CloudflareClient.inspect, hostStats = new HostStats([config.GAMESERVERS_DIR, config.DATA_DIR]), history = new StatsHistory({ store: settingsPeakStore(db) }), webRoot, artwork, updates = new UpdateChecker(db, { current: runningVersion(config.APP_VERSION), envEnabled: config.UPDATE_CHECK === "on" }), loginGuard }: AppDeps): FastifyInstance {
   // Behind a reverse proxy the connection comes from the proxy; TRUST_PROXY says whose word to take for the visitor's address and HTTPS.
   const app = Fastify({ logger: false, trustProxy: parseTrustProxy(config.TRUST_PROXY) });
   const guard = new LoginGuard(loginGuard);
@@ -219,7 +222,7 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
     name: z.string(),
     env: z.record(z.string(), z.string()).optional(),
     ports: z.record(z.string(), z.number()).optional(),
-    access: z.enum(["private", "public"]).optional(),
+    access: z.enum(["private", "public", "relay"]).optional(),
     cpus: z.number().nullable().optional(),
     memoryMb: z.number().nullable().optional(),
   });
@@ -237,7 +240,7 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
     env: z.record(z.string(), z.string()).optional(),
     dataPath: z.string().trim().optional(),
     dataOwner: z.string().trim().optional(),
-    access: z.enum(["private", "public"]).optional(),
+    access: z.enum(["private", "public", "relay"]).optional(),
     cpus: z.number().nullable().optional(),
     memoryMb: z.number().nullable().optional(),
   });
@@ -256,7 +259,7 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
   }
 
   app.put("/api/servers/:id/access", async (req) => {
-    const body = z.object({ access: z.enum(["private", "public"]) }).safeParse(req.body);
+    const body = z.object({ access: z.enum(["private", "public", "relay"]) }).safeParse(req.body);
     if (!body.success) throw new UserError("access must be private or public");
     await service.setAccess(idParam(req), body.data.access);
     return { ok: true };
@@ -277,7 +280,7 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
     name: z.string().optional(),
     templateId: z.string().optional(),
     env: z.record(z.string(), z.string()).optional(),
-    access: z.enum(["private", "public"]).optional(),
+    access: z.enum(["private", "public", "relay"]).optional(),
   });
   app.post("/api/backups/:slug/:name/redeploy", async (req, reply) => {
     const { slug, name } = req.params as { slug: string; name: string };
@@ -373,6 +376,37 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
     dnsSettings.clear();
     return { ok: true };
   });
+
+  // Hide my IP (playit.gg). The secret key is only ever accepted here, never returned.
+  if (relay) {
+    const asUserError = (e: unknown) => (e instanceof RelayError ? new UserError(e.message, e.status) : e);
+    app.get("/api/settings/relay", async () => {
+      await relay.refresh();
+      return relay.status();
+    });
+    app.put("/api/settings/relay", async (req) => {
+      const body = z.object({ secret: z.string().max(500).optional(), mode: z.enum(["existing", "managed"]), localHost: z.string().max(253).optional() }).safeParse(req.body);
+      if (!body.success) throw new UserError("Choose how the playit.gg agent runs");
+      try {
+        await relay.save(body.data);
+      } catch (e) {
+        throw asUserError(e);
+      }
+      return relay.status();
+    });
+    app.delete("/api/settings/relay", async () => {
+      try {
+        await relay.clear();
+      } catch (e) {
+        throw asUserError(e);
+      }
+      return { ok: true };
+    });
+    app.post("/api/settings/relay/refresh", async () => {
+      await relay.refresh();
+      return relay.status();
+    });
+  }
 
   // "New version available" notice. Reading this never touches the network; the daily check runs from index.ts.
   app.get("/api/updates", async () => updates.state());

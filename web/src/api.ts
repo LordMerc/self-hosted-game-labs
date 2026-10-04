@@ -43,11 +43,13 @@ export interface Server {
   starting: boolean;
   /** Caps on what the game may use; null = no limit. */
   limits: { cpus: number | null; memoryMb: number | null; warnings: string[] };
-  access: "private" | "public";
+  access: "private" | "public" | "relay";
+  /** For a server on the playit.gg relay: which tunnels it needs and what players type. */
+  relay: RelayInfo | null;
   lastError: string | null;
   ports: { name: string; port: number; protocol: "tcp" | "udp" }[];
   secrets: string[];
-  connect: { lan: string | null; public: string | null; instructions: string | null };
+  connect: { lan: string | null; public: string | null; relay: string | null; instructions: string | null };
   pendingRules: { id: number; port: number; protocol: "tcp" | "udp" }[];
   reachability: Reachability | null;
   /** A newer version of the game's image was found by the last check. */
@@ -120,6 +122,23 @@ export async function api<T>(path: string, init?: { method?: string; body?: unkn
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new ApiError((data as { error?: string }).error ?? res.statusText, data as Record<string, unknown>);
   return data as T;
+}
+
+export interface RelayInfo {
+  state: "ready" | "setup" | "error";
+  address: string | null;
+  tunnels: { name: string; port: number; protocol: "tcp" | "udp" | "both"; local: string; address: string | null }[];
+  problem: string | null;
+}
+
+export interface RelayStatus {
+  configured: boolean;
+  mode: "existing" | "managed";
+  localHost: string | null;
+  needs: { tcp: number; udp: number; limit: number };
+  warning: string | null;
+  agent: { state: "running" | "stopped" | "missing" | "external"; problem: string | null };
+  account: { checkedAt: string | null; tunnels: number | null; status: string | null; problem: string | null };
 }
 
 export interface DnsStatus {
@@ -200,7 +219,7 @@ export interface BackupGroup {
   templateName: string | null;
   backups: Backup[];
   totalBytes: number;
-  saved: { name: string; templateId: string | null; env: Record<string, string>; savedSecrets: string[]; access: "private" | "public" } | null;
+  saved: { name: string; templateId: string | null; env: Record<string, string>; savedSecrets: string[]; access: "private" | "public" | "relay" } | null;
 }
 
 export interface ServerDetail {

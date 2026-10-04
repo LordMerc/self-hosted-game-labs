@@ -19,7 +19,9 @@ A self-hosted web app that deploys and manages game servers as Docker containers
 | Admin access | LAN at home, Tailscale when away. Friends never join the tailnet |
 | Players | Connect directly over the internet |
 
-**Out of scope:** VPS/relay, Tailscale Funnel, playit.gg, friend tailnet invites, multi-host, paid services, a host shell (Dockhand already has one).
+**Out of scope:** VPS relays you run yourself, Tailscale Funnel, friend tailnet invites, multi-host, paid services, a host shell (Dockhand already has one).
+
+**Optional relay (added later):** a server can be set to "Hide my IP", which routes players through a free playit.gg tunnel instead of your router and DNS, so your home IP is never shown. It is a third access state (`relay`) beside `private` and `public`; `public` stays the default and is unchanged. See [relay-playit.md](relay-playit.md).
 
 ---
 

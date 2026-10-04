@@ -1,5 +1,8 @@
 import { sqliteTable, text, integer, real, uniqueIndex, primaryKey } from "drizzle-orm/sqlite-core";
 
+/** `private`: home network only. `public`: reached directly (router rules, DNS). `relay`: reached through the playit.gg relay, so the home IP stays hidden. */
+export type Access = "private" | "public" | "relay";
+
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
@@ -17,7 +20,7 @@ export const servers = sqliteTable(
     })
       .notNull()
       .default("deploying"),
-    access: text("access", { enum: ["private", "public"] }).notNull().default("private"),
+    access: text("access", { enum: ["private", "public", "relay"] }).notNull().default("private"),
     env: text("env", { mode: "json" }).$type<Record<string, string>>().notNull().default({}),
     containerId: text("container_id"),
     /** Most CPU cores the game may use; null = no limit. */

@@ -37,15 +37,26 @@ export const checkedAgo = (at: string) => {
 
 const staleWhy = { "ip-changed": "Your public IP changed since, so this may be out of date.", old: "More than a day old, so this may be out of date." } as const;
 
-function Access({ s, canTest, testing, onTest }: { s: Server; canTest: boolean; testing: boolean; onTest: () => void }) {
+function Access({ s, canTest, testing, onTest, onSetup }: { s: Server; canTest: boolean; testing: boolean; onTest: () => void; onSetup: () => void }) {
   const pub = s.access === "public";
+  const relay = s.access === "relay";
   const r = s.reachability;
   return (
     <div className="access">
-      <span className={`access-chip ${pub ? "public" : "private"}`}>
-        <Icon name={pub ? "globe" : "lock"} size={13} /> {pub ? "Public" : "Private"}
+      <span className={`access-chip ${pub || relay ? "public" : "private"}`} title={relay ? "Players connect through the playit.gg relay, so your home IP address is not shown" : undefined}>
+        <Icon name={pub ? "globe" : relay ? "shield" : "lock"} size={13} /> {pub ? "Public" : relay ? "Hidden IP" : "Private"}
       </span>
-      {!pub && <span className="access-line muted">LAN only</span>}
+      {!pub && !relay && <span className="access-line muted">LAN only</span>}
+      {relay && s.relay?.state === "ready" && <span className="access-line good">Relay ready</span>}
+      {relay && s.relay?.state === "setup" && (
+        <>
+          <span className="access-line warn">Relay needs setup</span>
+          <button className="text-btn" onClick={onSetup}>
+            Finish setup
+          </button>
+        </>
+      )}
+      {relay && s.relay?.state === "error" && <span className="access-line bad" title={s.relay.problem ?? undefined}>Relay problem</span>}
       {pub && s.pendingRules.length > 0 && <span className="access-line warn">Waiting for router rule</span>}
       {pub && s.pendingRules.length === 0 && r && (
         <span className={`access-line ${r.state === "problem" ? "bad" : r.state === "unknown" ? "warn" : "good"}`} title={`${r.text}. Checked ${new Date(r.at).toLocaleTimeString()}.`}>
@@ -97,6 +108,8 @@ export function ServersTable({
   /** Known only for the shipped templates; a custom server's template is not in the list, so it says nothing either way. */
   const noPlayerCount = (s: Server) => templates.find((t) => t.id === s.templateId)?.reportsPlayers === false;
 
+  const setAccess = (s: Server, access: Server["access"]) => act(api(`/servers/${s.id}/access`, { method: "PUT", body: { access } }));
+
   async function test(s: Server) {
     setTesting(s.id);
     await act(api("/network/port-check", { method: "POST", body: { serverId: s.id } }));
@@ -120,7 +133,7 @@ export function ServersTable({
         </thead>
         <tbody>
           {servers.map((s) => {
-            const primary = s.connect.public ?? s.connect.lan;
+            const primary = s.connect.relay ?? s.connect.public ?? s.connect.lan;
             const max = maxPlayers(s);
             const live = stats?.servers[s.id]?.players;
             const use = stats?.servers[s.id];
@@ -134,9 +147,11 @@ export function ServersTable({
               { label: "How to connect…", icon: "info", onSelect: () => onConnect(s) },
               ...s.secrets.map((k) => ({ label: `Show ${k.toLowerCase().replace(/_/g, " ")}`, icon: "key" as const, onSelect: () => onReveal(s, k) })),
               { label: "Settings and console", icon: "settings2", onSelect: () => onOpenServer(s.id) },
-              s.access === "public"
-                ? { label: "Make private", icon: "lock", disabled: locked, onSelect: () => void act(api(`/servers/${s.id}/access`, { method: "PUT", body: { access: "private" } })) }
-                : { label: "Make public", icon: "globe", disabled: locked || s.status === "error", onSelect: () => void act(api(`/servers/${s.id}/access`, { method: "PUT", body: { access: "public" } })) },
+              ...(s.access === "private"
+                ? []
+                : [{ label: "Make private", icon: "lock" as const, disabled: locked, onSelect: () => void setAccess(s, "private") }]),
+              ...(s.access === "public" ? [] : [{ label: "Make public", icon: "globe" as const, disabled: locked || s.status === "error", onSelect: () => void setAccess(s, "public") }]),
+              ...(s.access === "relay" ? [] : [{ label: "Hide my IP (playit.gg)", icon: "shield" as const, disabled: locked || s.status === "error", onSelect: () => void setAccess(s, "relay") }]),
               { label: "Delete server…", icon: "trash", danger: true, separated: true, onSelect: () => onDelete(s) },
             ];
             return (
@@ -212,7 +227,7 @@ export function ServersTable({
                   </div>
                 </td>
                 <td data-label="Access">
-                  <Access s={s} canTest={network?.portCheck.enabled ?? false} testing={testing === s.id} onTest={() => void test(s)} />
+                  <Access s={s} canTest={network?.portCheck.enabled ?? false} testing={testing === s.id} onTest={() => void test(s)} onSetup={() => onConnect(s)} />
                 </td>
                 <td className="col-actions">
                   <div className="actions">

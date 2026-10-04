@@ -469,3 +469,6 @@ button.ghost.danger { color: var(--bad); }
 .skel-value { height: 2.1rem; margin: 0.15rem 0; }
 @media (min-width: 1181px) { tr.skeleton td { height: 150px; vertical-align: middle; } }
 .template-card.skeleton { pointer-events: none; }
+
+.relay-setup { margin: 0.75rem 0; padding: 0.75rem 1rem; border: 1px solid var(--border, #2a2f3a); border-radius: 8px; }
+.relay-setup ul { margin: 0.5rem 0 0; padding-left: 1.2rem; }

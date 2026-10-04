@@ -32,7 +32,7 @@ export interface ServerMeta {
   name: string;
   templateId: string;
   env: Record<string, string>;
-  access: "private" | "public";
+  access: "private" | "public" | "relay";
 }
 
 const SLUG = /^[a-z0-9][a-z0-9-]*$/;
@@ -109,7 +109,7 @@ export class BackupStore {
       const o = JSON.parse(readFileSync(path.join(this.dir(slug), "server.json"), "utf8")) as Partial<ServerMeta>;
       if (typeof o.name !== "string" || typeof o.templateId !== "string") return null;
       const env = Object.fromEntries(Object.entries(o.env ?? {}).filter(([, v]) => typeof v === "string")) as Record<string, string>;
-      return { name: o.name, templateId: o.templateId, env, access: o.access === "public" ? "public" : "private" };
+      return { name: o.name, templateId: o.templateId, env, access: o.access === "public" || o.access === "relay" ? o.access : "private" };
     } catch {
       return null;
     }

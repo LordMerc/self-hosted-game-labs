@@ -98,7 +98,7 @@ export function ServerDetail({ id, onBack, onLogout, onNavigate }: { id: string;
   const s = detail?.server;
   const locked = s?.status === "deploying" || s?.status === "updating";
   const activeTab = detail?.console ? tab : "activity";
-  const primary = s ? (s.connect.public ?? s.connect.lan) : null;
+  const primary = s ? (s.connect.relay ?? s.connect.public ?? s.connect.lan) : null;
 
   return (
     <div className="shell">
@@ -168,7 +168,7 @@ export function ServerDetail({ id, onBack, onLogout, onNavigate }: { id: string;
                       </div>
                     </dd>
                     <dt>Access</dt>
-                    <dd>{s.access === "public" ? "Public" : "Private"}</dd>
+                    <dd>{s.access === "public" ? "Public" : s.access === "relay" ? "Hidden IP (playit.gg)" : "Private"}</dd>
                     <dt>Version</dt>
                     <dd>
                       <span className="mono wrap">{detail.care.image.name}</span>
@@ -250,7 +250,7 @@ export function ServerDetail({ id, onBack, onLogout, onNavigate }: { id: string;
   );
 }
 
-function SettingsForm({ detail, disabled, onSaved, onAccess }: { detail: Detail; disabled: boolean; onSaved: () => Promise<void>; onAccess: (access: "private" | "public") => Promise<void> }) {
+function SettingsForm({ detail, disabled, onSaved, onAccess }: { detail: Detail; disabled: boolean; onSaved: () => Promise<void>; onAccess: (access: "private" | "public" | "relay") => Promise<void> }) {
   const [name, setName] = useState(detail.server.name);
   const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(detail.env.map((e) => [e.key, e.value ?? ""])));
   const [reset, setReset] = useState<Set<string>>(new Set());
@@ -392,7 +392,7 @@ function SettingsForm({ detail, disabled, onSaved, onAccess }: { detail: Detail;
           <div className="field">
             <span>
               Who can join
-              <Hint label="About access">Private servers can only be joined from your home network. Public servers are opened on your router. This takes effect straight away, without Save.</Hint>
+              <Hint label="About access">Private servers can only be joined from your home network. Public servers are opened on your router, so players see your home IP. "Hide my IP" sends players through the free playit.gg relay instead. This takes effect straight away, without Save.</Hint>
             </span>
             <div className="seg">
               <button type="button" className={s.access === "private" ? "on" : ""} disabled={disabled || s.access === "private"} onClick={() => void onAccess("private")}>
@@ -405,6 +405,15 @@ function SettingsForm({ detail, disabled, onSaved, onAccess }: { detail: Detail;
                 onClick={() => void onAccess("public")}
               >
                 <Icon name="globe" size={13} /> Public
+              </button>
+              <button
+                type="button"
+                className={s.access === "relay" ? "on public" : ""}
+                disabled={disabled || s.status === "error" || s.access === "relay"}
+                title="Players connect through playit.gg, so your home IP stays hidden"
+                onClick={() => void onAccess("relay")}
+              >
+                <Icon name="shield" size={13} /> Hide my IP
               </button>
             </div>
           </div>

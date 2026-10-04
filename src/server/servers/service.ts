@@ -7,6 +7,7 @@ import { desc, eq } from "drizzle-orm";
 import type { Config } from "../config.js";
 import type { Db } from "../db/index.js";
 import { schema } from "../db/index.js";
+import type { Access } from "../db/schema.js";
 import { templateSchema, type GameTemplate } from "../../shared/template.js";
 import type { ContainerDriver, ContainerState } from "../docker/driver.js";
 import { LABEL_ID, LABEL_MANAGED, LABEL_SLUG } from "../docker/driver.js";
@@ -24,6 +25,7 @@ import { queryMinecraft } from "../players/minecraft.js";
 import { parsePalworldMetrics } from "../players/palworld.js";
 import type { NotifyEvent, NotifySink } from "../notifications/notifier.js";
 import { slugify, uniqueSlug } from "../slug.js";
+import { RELAY_SLUG, RelayError, type RelayManager, type RelayServer } from "../relay/manager.js";
 import { checkCpus, checkMemory, limitWarnings, type Limits } from "./limits.js";
 
 export class UserError extends Error {
@@ -42,7 +44,7 @@ export interface DeployRequest {
   env?: Record<string, string>;
   /** Optional manual port choices keyed by template port name. */
   ports?: Record<string, number>;
-  access?: "private" | "public";
+  access?: Access;
   /** Most CPU cores the game may use (e.g. 1.5). Empty or null: no limit. */
   cpus?: number | null;
   /** Most memory the game may use, in MB. Empty or null: no limit. */
@@ -63,7 +65,7 @@ export interface BackupGroup {
   backups: BackupInfo[];
   totalBytes: number;
   /** What was saved about the server, for setting it up again. Passwords are listed by name only. */
-  saved: { name: string; templateId: string | null; env: Record<string, string>; savedSecrets: string[]; access: "private" | "public" } | null;
+  saved: { name: string; templateId: string | null; env: Record<string, string>; savedSecrets: string[]; access: Access } | null;
 }
 
 export interface ServiceDeps {
@@ -94,6 +96,8 @@ export interface ServiceDeps {
   queryPlayers?: (host: string, port: number, kind: "a2s" | "minecraft") => Promise<PlayerCount | null>;
   /** Told when a server comes up, goes down, gains or loses players, or a backup fails. Absent: nobody is told. */
   notifier?: NotifySink;
+  /** The playit.gg relay behind the "Hide my IP" option. Absent: the option is not offered. */
+  relay?: RelayManager;
 }
 
 export interface DnsContext {
@@ -207,7 +211,7 @@ export class ServerService {
   }
 
   /** Set up a server from any Docker image. Ports are used exactly as given, because the image decides where it listens. */
-  async deployCustom(req: CustomInput & { access?: "private" | "public"; cpus?: number | null; memoryMb?: number | null }): Promise<string> {
+  async deployCustom(req: CustomInput & { access?: Access; cpus?: number | null; memoryMb?: number | null }): Promise<string> {
     const name = req.name.trim();
     if (!name || name.length > 60) throw new UserError("Give the server a name (up to 60 characters)");
     const problem = checkCustomInput(req);
@@ -370,7 +374,7 @@ export class ServerService {
     }
 
     const existingSlugs = new Set(this.d.db.select({ slug: schema.servers.slug }).from(schema.servers).all().map((r) => r.slug));
-    const slug = uniqueSlug(slugify(name), existingSlugs);
+    const slug = uniqueSlug(slugify(name), new Set([...existingSlugs, RELAY_SLUG]));
     const id = randomUUID();
 
     if (req.restoreFrom) {
@@ -405,7 +409,7 @@ export class ServerService {
     else void job;
   }
 
-  private async runDeploy(id: string, wantAccess: "private" | "public", opts: { pull?: boolean } = {}): Promise<void> {
+  private async runDeploy(id: string, wantAccess: Access, opts: { pull?: boolean } = {}): Promise<void> {
     const row = this.row(id);
     const t = this.template(row.templateId);
     const ports = this.ports(id);
@@ -456,7 +460,7 @@ export class ServerService {
       this.setStatus(id, "online");
       this.event(id, "info", "Server is online");
 
-      if (wantAccess === "public") await this.applyAccess(id, "public");
+      if (wantAccess !== "private") await this.applyAccess(id, wantAccess);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       this.setStatus(id, "error", message);
@@ -538,6 +542,7 @@ export class ServerService {
     }
     this.saveBackupMeta(row);
     await this.closeAccess(row, errors);
+    if (row.access === "relay") await this.leaveRelay(row, errors, id);
     if (row.containerId) await this.d.docker.remove(row.containerId);
     if (opts.deleteData) rmSync(path.join(this.d.config.GAMESERVERS_DIR, row.slug), { recursive: true, force: true });
     this.d.db.delete(schema.servers).where(eq(schema.servers.id, id)).run();
@@ -550,9 +555,9 @@ export class ServerService {
 
   // ---------------------------------------------------------------- access
 
-  async setAccess(id: string, access: "private" | "public") {
+  async setAccess(id: string, access: Access) {
     const row = this.row(id);
-    if (access === "public" && row.status === "error") throw new UserError("Fix the server error before making it public", 409);
+    if (access !== "private" && row.status === "error") throw new UserError(`Fix the server error before making it ${access === "relay" ? "reachable through the relay" : "public"}`, 409);
     await this.applyAccess(id, access);
     return row;
   }
@@ -563,10 +568,24 @@ export class ServerService {
     return ip;
   }
 
-  private async applyAccess(id: string, access: "private" | "public") {
+  private async applyAccess(id: string, access: Access) {
     const row = this.row(id);
     const ports = this.ports(id);
-    if (access === "public") {
+    if (access === "relay") {
+      const relay = this.d.relay;
+      if (!relay) throw new UserError("Hide my IP is not available here", 409);
+      // Ask the relay first: if it is not set up, a public server keeps working as it was.
+      try {
+        await relay.enable(this.relayServer(row));
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        this.event(id, "error", `Could not hide the IP: ${message}`);
+        throw new UserError(message, e instanceof RelayError ? e.status : 502);
+      }
+      const errors: string[] = [];
+      await this.closeAccess(row, errors); // the direct route (router rules, DNS record) is closed
+      if (errors.length > 0) this.event(id, "warn", `Closing the direct route had problems: ${errors.join("; ")}`);
+    } else if (access === "public") {
       const lan = this.lanIp();
       try {
         for (const p of ports) await this.d.connectivity.ensureOpen(id, row.slug, p.port, p.protocol, lan);
@@ -590,6 +609,11 @@ export class ServerService {
       }
     }
     this.d.db.update(schema.servers).set({ access }).where(eq(schema.servers.id, id)).run();
+    if (row.access === "relay" && access !== "relay") {
+      const errors: string[] = [];
+      await this.leaveRelay(row, errors);
+      if (errors.length > 0) this.event(id, "warn", `Left the relay with problems: ${errors.join("; ")}`);
+    }
     this.resetReach(id);
     this.event(id, "info", `Access set to ${access}`);
   }
@@ -610,6 +634,22 @@ export class ServerService {
       } catch (e) {
         errors.push(e instanceof Error ? e.message : String(e));
       }
+    }
+  }
+
+  private relayServer(row: typeof schema.servers.$inferSelect): RelayServer {
+    return { id: row.id, slug: row.slug, ports: this.ports(row.id).map((p) => ({ port: p.port, protocol: p.protocol })) };
+  }
+
+  /** Remove a server's tunnels (and the agent when it was the last user). `excluding`: a server about to be deleted, which no longer counts. */
+  private async leaveRelay(row: typeof schema.servers.$inferSelect, errors: string[], excluding?: string) {
+    const relay = this.d.relay;
+    if (!relay) return;
+    const others = this.d.db.select().from(schema.servers).where(eq(schema.servers.access, "relay")).all().filter((r) => r.id !== row.id && r.id !== excluding).length;
+    try {
+      await relay.disable(this.relayServer(row), others);
+    } catch (e) {
+      errors.push(e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -800,6 +840,7 @@ export class ServerService {
       const check = this.careStore().state(r.id).check;
       const sp = ports.filter((p) => p.serverId === r.id);
       const tpl = t(r.templateId);
+      const relayInfo = r.access === "relay" && this.d.relay ? this.d.relay.info({ id: r.id, slug: r.slug, ports: sp.map((p) => ({ port: p.port, protocol: p.protocol })) }) : null;
       const gamePort = sp[0];
       const dnsC = this.dnsCtx();
       const host = dnsC ? dnsC.client.fqdn(r.slug) : this.d.config.PUBLIC_HOST;
@@ -814,13 +855,15 @@ export class ServerService {
         starting: starting.has(r.id),
         limits: { cpus: r.cpus, memoryMb: r.memoryMb, warnings: tpl ? limitWarnings(tpl, { cpus: r.cpus, memoryMb: r.memoryMb }) : [] },
         access: r.access,
+        relay: relayInfo,
         lastError: r.lastError,
         ports: sp.map((p) => ({ name: p.name, port: p.port, protocol: p.protocol })),
         secrets,
         connect: {
           lan: this.d.config.HOST_LAN_IP && gamePort ? `${this.d.config.HOST_LAN_IP}:${gamePort.port}` : null,
           public: r.access === "public" && host && gamePort ? `${host}:${gamePort.port}` : null,
-          instructions: r.access === "public" && tpl?.join.method === "server-browser" ? (tpl.join.instructions ?? null) : null,
+          relay: r.access === "relay" ? (relayInfo?.address ?? null) : null,
+          instructions: r.access !== "private" && tpl?.join.method === "server-browser" ? (tpl.join.instructions ?? null) : null,
         },
         reachability: r.access === "public" ? this.reachabilityOf(r.id, sp, checks) : null,
         update: check?.available ? { to: check.latest ?? "a newer build" } : null,
@@ -891,6 +934,7 @@ export class ServerService {
   async watch(): Promise<void> {
     await this.refreshStatuses();
     await this.pollPlayers();
+    if (this.d.relay?.inUse()) await this.d.relay.refresh();
   }
 
   // ---------------------------------------------------------- detail page
@@ -1201,6 +1245,14 @@ export class ServerService {
         }
       }
     }
+    if (row.access === "relay" && this.d.relay) {
+      // The tunnels are per port, so the old ones go; the redeploy below makes the new ones.
+      try {
+        await this.d.relay.disable(this.relayServer(row), 1);
+      } catch (e) {
+        this.event(id, "warn", `Could not remove the old relay tunnels: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
     this.d.db.transaction((tx) => {
       tx.delete(schema.serverPorts).where(eq(schema.serverPorts.serverId, id)).run();
       for (const a of next) tx.insert(schema.serverPorts).values({ serverId: id, name: a.name, port: a.port, protocol: a.protocol }).run();
@@ -1367,7 +1419,7 @@ export class ServerService {
    * Set a deleted server up again from one of its backups: same game, the saved settings (passwords included unless
    * replaced), and its world put in place before the first start. Settings that were not saved come from the request or the template's defaults.
    */
-  async redeployFromBackup(slug: string, backupName: string, req: { name?: string; templateId?: string; env?: Record<string, string>; access?: "private" | "public" } = {}): Promise<string> {
+  async redeployFromBackup(slug: string, backupName: string, req: { name?: string; templateId?: string; env?: Record<string, string>; access?: Access } = {}): Promise<string> {
     if (this.d.db.select().from(schema.servers).where(eq(schema.servers.slug, slug)).get()) throw new UserError("That server still exists. Use Restore on it instead.", 409);
     if (!this.store().list(slug).some((b) => b.name === backupName)) throw new UserError("Backup not found", 404);
     const meta = this.store().meta(slug);
