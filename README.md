@@ -179,7 +179,18 @@ This is how any game server hosted at home with port forwarding works. What the 
 
 ## Hide my IP (optional)
 
-A direct public server shows your home IP to anyone who joins. In **Settings → Hide my IP (playit.gg)** you can paste the secret key of a free [playit.gg](https://playit.gg) agent and then turn on **Hide my IP** for a server. Players get a playit.gg address instead, nothing is opened on your router, and friends install nothing. It works with an agent you already run, or the panel can run one. Custom domains need playit.gg premium, so the Cloudflare name is not used for these servers. Details, limits and what is still untested are in [docs/relay-playit.md](docs/relay-playit.md).
+A direct public server shows your home IP to anyone who joins. In **Settings → Hide my IP (playit.gg)** you can paste the secret key of a free [playit.gg](https://playit.gg) agent and then turn on **Hide my IP** for a server. Players get a playit.gg address, which goes through the relay instead of your router, and friends install nothing. It works with an agent you already run, or the panel can run one. Details, limits and what is still untested are in [docs/relay-playit.md](docs/relay-playit.md).
+
+**Hide my IP is a switch of its own, beside Private and Public.** You can use both at once:
+
+| Access | Hide my IP | What it gives you |
+| --- | --- | --- |
+| Private | off | Home network only. |
+| Private | on | The playit.gg address only (plus the home network address for you). Nothing is opened on your router and there is no DNS record. |
+| Public | off | The Cloudflare name, straight to your home connection. |
+| Public | on | Both: the Cloudflare name for friends you trust with your IP, and the playit.gg address for strangers. The router rules, the DNS record and the port checks stay as they are. |
+
+Turning **Hide my IP** off only removes the relay address. Tunnels you made by hand stay in your playit.gg account, so turning it back on brings the same address back. (Tunnels the panel created itself are removed and recreated.) Servers saved by an earlier version as "Hide my IP" become Private with Hide my IP on.
 
 **If playit.gg will not let the panel create tunnels** (agent keys can be read-only, so it may refuse), the panel tells you and opens a step-by-step window instead. You add the tunnels yourself, once per server, in the [playit.gg Tunnels page](https://playit.gg/account/tunnels):
 

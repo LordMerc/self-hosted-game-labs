@@ -23,7 +23,7 @@ export function RedeployDialog({ group, backup, templates, onClose, onDone }: { 
     setError("");
     const env = Object.fromEntries(template.env.map((v) => [v.key, value(v.key, v.default)]));
     try {
-      await api(`/backups/${group.slug}/${backup.name}/redeploy`, { method: "POST", body: { name, templateId, env, access: pub ? "public" : "private" } });
+      await api(`/backups/${group.slug}/${backup.name}/redeploy`, { method: "POST", body: { name, templateId, env, access: pub ? "public" : "private", hideIp: saved?.hideIp === true } });
       onDone();
     } catch (err) {
       setError((err as Error).message);

@@ -6,7 +6,15 @@ How the "Hide my IP" relay works, and what we learned about playit.gg while buil
 
 The Cloudflare integration only writes a DNS record, so players still resolve to the home IP. A relay gives players an address that belongs to the relay provider. The home connection makes an outbound connection to the relay, so no router rule is needed and friends install nothing.
 
-A server on the relay has a third access state, `relay`, next to `private` and `public`. It has no router mappings, no DNS record and no port check. It stays reachable on the LAN. The direct path (`public`) is the default and is unchanged.
+"Hide my IP" is a switch of its own (`servers.hide_ip`), not a third access value. Access stays `private` or `public`, and the relay is added on top:
+
+- **Private + Hide my IP:** no router mappings, no DNS record and no port check. Players use the relay address; the LAN address still works at home.
+- **Public + Hide my IP:** the router rules, the Cloudflare record and the port checks stay exactly as they are, and the tunnels are kept too. The Connect dialog gives the relay address "for strangers" and the Cloudflare name "for friends".
+- Making a server public or private never touches its tunnels, and turning Hide my IP off or on never touches its router rules or DNS record.
+
+Servers stored by the earlier version with `access = relay` are converted on startup (migration `0003_hide_ip`): `access` becomes `private` and `hide_ip` becomes true. The API still accepts `access: "relay"` as that same pair, and `PUT /api/servers/:id/hide-ip` with `{ "on": true | false }` is the switch.
+
+Turning Hide my IP off removes only the tunnels the panel created. Tunnels you added by hand stay in playit.gg, so turning it back on finds them again by name and brings the same address back.
 
 ## The agent
 
@@ -62,7 +70,7 @@ From playit.gg's own pages, with the numbers taken from secondary reviews and **
 
 - Pricing and premium features: https://playit.gg/pricing and https://playit.gg/support/playit-premium/
 - About 4 TCP and 4 UDP tunnels on the free plan. Global anycast, no region choice. No bandwidth cap is stated.
-- Custom domains, `.playit.plus` names and regional tunnels need premium (about $3 a month). This is why the relay path leaves the Cloudflare record alone: a CNAME cannot be pointed at a free address and keep the player's port.
+- Custom domains, `.playit.plus` names and regional tunnels need premium (about $3 a month). This is why the relay address is shown beside the Cloudflare name rather than replacing it: a CNAME cannot be pointed at a free address and keep the player's port.
 - Secondary write-ups: https://blog.gedas.dev/playitgg/ and the Pinggy and dev.to reviews.
 
 The panel counts the tunnels it needs and warns on Settings when the servers on the relay would go past 4 of either kind.

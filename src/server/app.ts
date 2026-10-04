@@ -217,12 +217,16 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
   /** The latest things that happened across all servers, for the dashboard's activity list. */
   app.get("/api/activity", async () => service.recentActivity(6));
 
+  /** "relay" is the old spelling of "private, with Hide my IP on" and is still accepted. */
+  const accessValue = z.enum(["private", "public", "relay"]);
+
   const deployBody = z.object({
     templateId: z.string(),
     name: z.string(),
     env: z.record(z.string(), z.string()).optional(),
     ports: z.record(z.string(), z.number()).optional(),
-    access: z.enum(["private", "public", "relay"]).optional(),
+    access: accessValue.optional(),
+    hideIp: z.boolean().optional(),
     cpus: z.number().nullable().optional(),
     memoryMb: z.number().nullable().optional(),
   });
@@ -240,7 +244,8 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
     env: z.record(z.string(), z.string()).optional(),
     dataPath: z.string().trim().optional(),
     dataOwner: z.string().trim().optional(),
-    access: z.enum(["private", "public", "relay"]).optional(),
+    access: accessValue.optional(),
+    hideIp: z.boolean().optional(),
     cpus: z.number().nullable().optional(),
     memoryMb: z.number().nullable().optional(),
   });
@@ -259,9 +264,16 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
   }
 
   app.put("/api/servers/:id/access", async (req) => {
-    const body = z.object({ access: z.enum(["private", "public", "relay"]) }).safeParse(req.body);
+    const body = z.object({ access: accessValue }).safeParse(req.body);
     if (!body.success) throw new UserError("access must be private or public");
     await service.setAccess(idParam(req), body.data.access);
+    return { ok: true };
+  });
+
+  app.put("/api/servers/:id/hide-ip", async (req) => {
+    const body = z.object({ on: z.boolean() }).safeParse(req.body);
+    if (!body.success) throw new UserError("on must be true or false");
+    await service.setHideIp(idParam(req), body.data.on);
     return { ok: true };
   });
 
@@ -280,7 +292,8 @@ export function buildApp({ config, db, templates, service, docker, dnsSettings, 
     name: z.string().optional(),
     templateId: z.string().optional(),
     env: z.record(z.string(), z.string()).optional(),
-    access: z.enum(["private", "public", "relay"]).optional(),
+    access: accessValue.optional(),
+    hideIp: z.boolean().optional(),
   });
   app.post("/api/backups/:slug/:name/redeploy", async (req, reply) => {
     const { slug, name } = req.params as { slug: string; name: string };

@@ -78,16 +78,20 @@ export function ServerDetail({ id, onBack, onLogout, onNavigate }: { id: string;
     return ok;
   }
 
+  async function setAccess(access: "private" | "public") {
+    await act(`/servers/${id}/access`, "PUT", { access });
+  }
+
   /** Hide my IP needs a saved playit.gg key; without one this goes to Settings. Otherwise the connect window opens straight away, since that is where the next steps are. */
-  async function setAccess(access: "private" | "public" | "relay") {
-    if (access === "relay") {
+  async function setHideIp(on: boolean) {
+    if (on) {
       const configured = await api<RelayStatus>("/settings/relay").then((r) => r.configured, () => null);
       if (configured === false) {
         if (confirm("Hide my IP needs your playit.gg secret key first. Open Settings to add it?")) openRelaySettings(onNavigate);
         return;
       }
     }
-    if ((await act(`/servers/${id}/access`, "PUT", { access })) && access === "relay") setConnect(true);
+    if ((await act(`/servers/${id}/hide-ip`, "PUT", { on })) && on) setConnect(true);
   }
 
   async function remove() {
@@ -187,8 +191,9 @@ export function ServerDetail({ id, onBack, onLogout, onNavigate }: { id: string;
                     </dd>
                     <dt>Access</dt>
                     <dd>
-                      {s.access === "public" ? "Public" : s.access === "relay" ? "Hidden IP (playit.gg)" : "Private"}
-                      {s.access === "relay" && s.relay && s.relay.state !== "ready" && (
+                      {s.access === "public" ? "Public" : "Private"}
+                      {s.hideIp ? " + Hide my IP (playit.gg)" : ""}
+                      {s.hideIp && s.relay && s.relay.state !== "ready" && (
                         <div className="small-text">
                           <span className="warn">{s.relay.fix === "settings" ? "Needs a playit.gg key." : "Relay needs setup."}</span>{" "}
                           <button className="text-btn" onClick={() => (s.relay?.fix === "settings" ? openRelaySettings(onNavigate) : setConnect(true))}>
@@ -240,7 +245,7 @@ export function ServerDetail({ id, onBack, onLogout, onNavigate }: { id: string;
               </div>
 
               <div className="detail-main">
-                <SettingsForm key={id} detail={detail} disabled={locked} onSaved={load} onAccess={setAccess} />
+                <SettingsForm key={id} detail={detail} disabled={locked} onSaved={load} onAccess={setAccess} onHideIp={setHideIp} />
 
                 <section className="settings-card">
                   <div className="tabs-bar" role="tablist">
@@ -279,7 +284,7 @@ export function ServerDetail({ id, onBack, onLogout, onNavigate }: { id: string;
   );
 }
 
-function SettingsForm({ detail, disabled, onSaved, onAccess }: { detail: Detail; disabled: boolean; onSaved: () => Promise<void>; onAccess: (access: "private" | "public" | "relay") => Promise<void> }) {
+function SettingsForm({ detail, disabled, onSaved, onAccess, onHideIp }: { detail: Detail; disabled: boolean; onSaved: () => Promise<void>; onAccess: (access: "private" | "public") => Promise<void>; onHideIp: (on: boolean) => Promise<void> }) {
   const [name, setName] = useState(detail.server.name);
   const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(detail.env.map((e) => [e.key, e.value ?? ""])));
   const [reset, setReset] = useState<Set<string>>(new Set());
@@ -421,7 +426,7 @@ function SettingsForm({ detail, disabled, onSaved, onAccess }: { detail: Detail;
           <div className="field">
             <span>
               Who can join
-              <Hint label="About access">Private servers can only be joined from your home network. Public servers are opened on your router, so players see your home IP. "Hide my IP" sends players through the free playit.gg relay instead. This takes effect straight away, without Save.</Hint>
+              <Hint label="About access">Private servers can only be joined from your home network. Public servers are opened on your router, so players who use that address see your home IP. "Hide my IP" is a separate switch: it also gives the server a playit.gg relay address, which you can hand to people you do not know. It works with either choice. Both take effect straight away, without Save.</Hint>
             </span>
             <div className="seg">
               <button type="button" className={s.access === "private" ? "on" : ""} disabled={disabled || s.access === "private"} onClick={() => void onAccess("private")}>
@@ -435,14 +440,22 @@ function SettingsForm({ detail, disabled, onSaved, onAccess }: { detail: Detail;
               >
                 <Icon name="globe" size={13} /> Public
               </button>
+            </div>
+          </div>
+          <div className="field">
+            <span>
+              Relay
+              <Hint label="About hiding your IP">With Hide my IP on, the server also gets a playit.gg address. Give that one to strangers and keep the public address for friends. Turning it off keeps your tunnels in playit.gg, so turning it on again brings the same address back.</Hint>
+            </span>
+            <div className="seg">
               <button
                 type="button"
-                className={s.access === "relay" ? "on public" : ""}
-                disabled={disabled || s.status === "error" || s.access === "relay"}
-                title="Players connect through playit.gg, so your home IP stays hidden"
-                onClick={() => void onAccess("relay")}
+                className={s.hideIp ? "on public" : ""}
+                disabled={disabled || (!s.hideIp && s.status === "error")}
+                title="Also give players a playit.gg address, so they never see your home IP"
+                onClick={() => void onHideIp(!s.hideIp)}
               >
-                <Icon name="shield" size={13} /> Hide my IP
+                <Icon name="shield" size={13} /> {s.hideIp ? "Hide my IP: on" : "Hide my IP: off"}
               </button>
             </div>
           </div>

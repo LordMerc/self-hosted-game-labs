@@ -108,11 +108,14 @@ export function ConnectDialog({ server: s, onClose, onSettings }: { server: Serv
             Close
           </button>
         </div>
-        {s.connect.relay && row("Share this address", s.connect.relay)}
-        {s.connect.public && row("Public address", s.connect.public, true)}
-        {s.connect.lan && row(s.connect.relay ? "At home only" : "Home network", s.connect.lan)}
-        {s.access === "relay" && s.relay && <RelaySetup relay={s.relay} serverName={s.name} onSettings={onSettings} />}
-        {s.access === "relay" && s.connect.lan && <p className="muted small-text">On your own home network you can use the "At home only" address instead; it does not need the relay.</p>}
+        {s.connect.relay && row(s.connect.public ? "For strangers (relay)" : "Share this address", s.connect.relay)}
+        {s.connect.public && row(s.connect.relay ? "For friends (public)" : "Public address", s.connect.public, true)}
+        {s.connect.lan && row(s.connect.relay || s.connect.public ? "At home only" : "Home network", s.connect.lan)}
+        {s.connect.relay && s.connect.public && (
+          <p className="muted small-text">The relay address keeps your home IP hidden, so it is the safe one to give to people you do not know. The public address goes straight to your home connection.</p>
+        )}
+        {s.hideIp && s.relay && <RelaySetup relay={s.relay} serverName={s.name} onSettings={onSettings} />}
+        {s.hideIp && s.access === "private" && s.connect.lan && <p className="muted small-text">On your own home network you can use the "At home only" address instead; it does not need the relay.</p>}
         {s.access === "public" && s.connect.lan && <p className="muted small-text">At home, use the home network address: the public one can fail from inside your own network.</p>}
         <div className="chips">
           {s.ports.map((p) => (

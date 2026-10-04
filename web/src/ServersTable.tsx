@@ -39,13 +39,18 @@ const staleWhy = { "ip-changed": "Your public IP changed since, so this may be o
 
 function Access({ s, canTest, testing, onTest, onSetup, onSettings }: { s: Server; canTest: boolean; testing: boolean; onTest: () => void; onSetup: () => void; onSettings: () => void }) {
   const pub = s.access === "public";
-  const relay = s.access === "relay";
+  const relay = s.hideIp;
   const r = s.reachability;
   return (
     <div className="access">
-      <span className={`access-chip ${pub || relay ? "public" : "private"}`} title={relay ? "Players connect through the playit.gg relay, so your home IP address is not shown" : undefined}>
-        <Icon name={pub ? "globe" : relay ? "shield" : "lock"} size={13} /> {pub ? "Public" : relay ? "Hidden IP" : "Private"}
+      <span className={`access-chip ${pub ? "public" : "private"}`}>
+        <Icon name={pub ? "globe" : "lock"} size={13} /> {pub ? "Public" : "Private"}
       </span>
+      {relay && (
+        <span className="access-chip public" title="Players can also connect through the playit.gg relay, so your home IP address is not shown">
+          <Icon name="shield" size={13} /> Hidden IP
+        </span>
+      )}
       {!pub && !relay && <span className="access-line muted">LAN only</span>}
       {relay && s.relay?.state === "ready" && <span className="access-line good">Relay ready</span>}
       {relay && s.relay?.state === "setup" && (
@@ -117,6 +122,7 @@ export function ServersTable({
   const noPlayerCount = (s: Server) => templates.find((t) => t.id === s.templateId)?.reportsPlayers === false;
 
   const setAccess = (s: Server, access: Server["access"]) => act(api(`/servers/${s.id}/access`, { method: "PUT", body: { access } }));
+  const setHideIp = (s: Server, on: boolean) => act(api(`/servers/${s.id}/hide-ip`, { method: "PUT", body: { on } }));
 
   /** Hide my IP needs a saved playit.gg key; without one this goes to Settings. Otherwise the connect window opens straight away, since that is where the next steps are. */
   async function hideIp(s: Server) {
@@ -125,7 +131,7 @@ export function ServersTable({
       if (confirm("Hide my IP needs your playit.gg secret key first. Open Settings to add it?")) onSettings();
       return;
     }
-    if (await setAccess(s, "relay")) onConnect(s);
+    if (await setHideIp(s, true)) onConnect(s);
   }
 
   async function test(s: Server) {
@@ -169,7 +175,9 @@ export function ServersTable({
                 ? []
                 : [{ label: "Make private", icon: "lock" as const, disabled: locked, onSelect: () => void setAccess(s, "private") }]),
               ...(s.access === "public" ? [] : [{ label: "Make public", icon: "globe" as const, disabled: locked || s.status === "error", onSelect: () => void setAccess(s, "public") }]),
-              ...(s.access === "relay" ? [] : [{ label: "Hide my IP (playit.gg)", icon: "shield" as const, disabled: locked || s.status === "error", onSelect: () => void hideIp(s) }]),
+              s.hideIp
+                ? { label: "Stop hiding my IP", icon: "shield" as const, disabled: locked, onSelect: () => void setHideIp(s, false) }
+                : { label: "Hide my IP (playit.gg)", icon: "shield" as const, disabled: locked || s.status === "error", onSelect: () => void hideIp(s) },
               { label: "Delete server…", icon: "trash", danger: true, separated: true, onSelect: () => onDelete(s) },
             ];
             return (

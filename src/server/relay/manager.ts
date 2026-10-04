@@ -145,7 +145,7 @@ export class RelayManager {
   }
 
   private relayServers(): RelayServer[] {
-    const rows = this.db.select().from(schema.servers).where(eq(schema.servers.access, "relay")).all();
+    const rows = this.db.select().from(schema.servers).where(eq(schema.servers.hideIp, true)).all();
     return rows.map((r) => ({ id: r.id, slug: r.slug, ports: this.db.select().from(schema.serverPorts).where(eq(schema.serverPorts.serverId, r.id)).all().map((p) => ({ port: p.port, protocol: p.protocol })) }));
   }
 
