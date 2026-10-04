@@ -27,7 +27,7 @@ export function Settings({ onLogout, onNavigate }: { onLogout: () => void; onNav
           <h2>Domain &amp; DNS</h2>
           <p className="muted">
             Give each public server a friendly name like <span className="mono">palworld.example.com</span> instead of an IP address. The panel creates the names and keeps them pointed at your home IP using
-            Cloudflare. You need a domain on Cloudflare (free plan is fine).
+            Cloudflare. You need a domain on Cloudflare (free plan is fine). The names are DNS only, not a proxy, so anyone who looks one up can see your home IP.
           </p>
 
           {status?.configured && !editing ? (
