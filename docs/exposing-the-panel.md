@@ -18,7 +18,7 @@ Each game server uses a few ports, shown on its card in the panel (for example P
 
 Private servers have no router rules at all. A server only becomes reachable from outside when you set it to Public.
 
-A domain name for a server (`palworld.example.com`) must be a plain "DNS only" record, which is what the panel creates. Cloudflare's orange-cloud proxy and Cloudflare Tunnel do not carry game traffic. They are only for the panel's web page, if you choose to use one.
+A domain name for a server (`palworld.example.com`) must be a plain "DNS only" record, which is what the panel creates. Cloudflare's orange-cloud proxy and Cloudflare Tunnel do not carry game traffic. They are only for the panel's web page, if you choose to use one. Because the record is DNS only, anyone who looks up the name can see your home IP. That is expected, and it is not hidden by Cloudflare.
 
 ## What the panel already does to protect itself
 

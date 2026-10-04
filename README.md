@@ -1,6 +1,6 @@
 # Self Hosted Game Labs
 
-**Run game servers at home without becoming a sysadmin.** Game Labs is an open-source control panel for your own hardware. Pick a game, click deploy, and the panel starts the container, opens the ports on your router, keeps a friendly name pointed at your home IP, and backs up your world. Friends join from the internet; you never touch Docker commands, your router's admin page or a DNS dashboard after first-time setup.
+**Run game servers at home without becoming a sysadmin.** Game Labs is an open-source control panel for your own hardware. Pick a game, click deploy, and the panel starts the container, opens the ports on your router, keeps a friendly name pointed at your home IP, and backs up your world. Friends join from the internet; you never touch Docker commands, your router's admin page or a DNS dashboard after first-time setup. Players connect straight to your home internet connection, so they can see your home IP (see [Your home IP is visible to players](#your-home-ip-is-visible-to-players)).
 
 ![The Game Labs dashboard: host stats with small charts, a table of game servers with status, address, ports and an Access column, and the Network health checklist on the right](docs/images/dashboard.png)
 
@@ -90,7 +90,7 @@ Everything below is optional. Set variables in a `.env` file next to the compose
 
 The full list, with comments, is in [.env.example](.env.example).
 
-**Do this before exposing anything:** the panel has access to the Docker socket, which is root-equivalent control of the host. Keep it on your LAN or behind a VPN such as Tailscale. Never port forward the panel itself. The first-run password screen is open to anyone who can reach the port until you complete it, so do it right after starting the container. Repeated wrong passwords lock a visitor out. If you want a web address for the panel, [Exposing the panel safely](docs/exposing-the-panel.md) covers HTTPS with Caddy, Nginx or Cloudflare Tunnel, and what the game ports need.
+**Do this before exposing anything:** the panel has access to the Docker socket, which is root-equivalent control of the host. Keep it on your LAN or behind a VPN such as Tailscale. Never port forward the panel itself. The first-run password screen is open to anyone who can reach the port until you complete it, so do it right after starting the container. Repeated wrong passwords lock a visitor out. If you want a web address for the panel, [Exposing the panel safely](docs/exposing-the-panel.md) covers HTTPS with Caddy, Nginx or Cloudflare Tunnel (for the panel's web page only, never for players), and what the game ports need.
 
 ### Prefer to build from source?
 
@@ -169,7 +169,13 @@ Open a server and look for **Restarts and updates** and **Ports**.
 
 ## Domain names (optional)
 
-Without a domain, public servers are reached by your IP address. To get names like `palworld.example.com`, open **Settings** in the panel, paste a Cloudflare API token and pick your domain. The panel lists the steps. In short: create a custom token at Cloudflare with **Zone · Zone · Read** and **Zone · DNS · Edit**, limited to your domain. The panel creates DNS-only records (never proxied) and keeps them pointed at your current IP, and it only ever changes records it created. You can instead set `CF_API_TOKEN`, `CF_ZONE` and `PUBLIC_HOST` as environment variables, which override the Settings page.
+Without a domain, public servers are reached by your IP address. To get names like `palworld.example.com`, open **Settings** in the panel, paste a Cloudflare API token and pick your domain. The panel lists the steps. In short: create a custom token at Cloudflare with **Zone · Zone · Read** and **Zone · DNS · Edit**, limited to your domain. The panel creates DNS-only records (never proxied) and keeps them pointed at your current IP, and it only ever changes records it created. DNS-only means Cloudflare is only the phone book: it is not a proxy and does not hide your home IP, and anyone who looks up the name can see it. You can instead set `CF_API_TOKEN`, `CF_ZONE` and `PUBLIC_HOST` as environment variables, which override the Settings page.
+
+## Your home IP is visible to players
+
+Players connect directly to your home internet connection. Anyone who looks up your server's name (or joins by IP address) can see your home public IP. The Cloudflare records are DNS-only, not a proxy, so they do not hide it. Cloudflare's proxy and Cloudflare Tunnel cannot carry game traffic, so they are no help here either; the Tunnel in [Exposing the panel safely](docs/exposing-the-panel.md) is only for the panel's own web page.
+
+This is how any game server hosted at home with port forwarding works. What the panel does to limit the exposure: it only opens the game ports of servers you set to Public, it never forwards the panel itself, and servers set to Private have no router rules at all. Game Labs does not include a relay, VPN or DDoS protection. If you do not want players to learn your IP, keep servers Private and have friends join over a VPN such as Tailscale (each friend installs it), or put a relay you run yourself in front of the game ports.
 
 ## Notifications (optional)
 
