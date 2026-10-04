@@ -181,6 +181,15 @@ This is how any game server hosted at home with port forwarding works. What the 
 
 A direct public server shows your home IP to anyone who joins. In **Settings → Hide my IP (playit.gg)** you can paste the secret key of a free [playit.gg](https://playit.gg) agent and then turn on **Hide my IP** for a server. Players get a playit.gg address instead, nothing is opened on your router, and friends install nothing. It works with an agent you already run, or the panel can run one. Custom domains need playit.gg premium, so the Cloudflare name is not used for these servers. Details, limits and what is still untested are in [docs/relay-playit.md](docs/relay-playit.md).
 
+**If playit.gg will not let the panel create tunnels** (agent keys can be read-only, so it may refuse), the panel tells you and opens a step-by-step window instead. You add the tunnels yourself, once per server, in the [playit.gg Tunnels page](https://playit.gg/account/tunnels):
+
+1. Click **Add Tunnel** and name it exactly as the window says: `gl-<server>-<port>`, for example `gl-palworld-8211`. The panel finds your tunnel by that name.
+2. Pick the tunnel type (the game's own preset or Custom UDP/TCP) and your agent, with the free network.
+3. Set **Local IP** to your machine's home network address (for example `192.168.1.20`), and **Local Port** to the game port. Do not leave it at `127.0.0.1` if your playit.gg agent runs in its own Docker container (for example one deployed from Dockhand): that container would look for the game inside itself. The panel's setting for this defaults to your home network address.
+4. Add one tunnel for each game port listed. When they exist, the panel picks them up on its own within a few seconds and shows the playit.gg address to share with friends. The dialog lists every field to copy.
+
+**Why not Cloudflare for this?** Cloudflare can hide your IP for websites, but not for game servers on the free plan. Its proxy only carries web traffic. Cloudflare Tunnel needs every friend to install Cloudflare's WARP app. Spectrum, which carries other kinds of game traffic, is an Enterprise product. A playit.gg tunnel is the free option where friends install nothing.
+
 ## Notifications (optional)
 
 Open **Settings → Notifications**, paste a Discord webhook address (the panel lists the steps: Edit Channel, Integrations, Webhooks, New Webhook, Copy Webhook URL) and press **Send test message**. The panel can then post when a server comes online, goes down or crashes (including a game that Docker restarted after a crash), when a player joins or leaves (for games that report player counts), and when a backup fails. Each of those is a checkbox, and player leaves start off because they are chatty. A server you stop or restart from the panel is never reported as a crash. Any other service that accepts a JSON webhook (Slack, Mattermost, n8n, Home Assistant) works too: it receives `content`, `text`, `event`, `server`, `title`, `message` and `at` fields. The address is stored encrypted and is never shown again. A beta panel (`INSTANCE`) puts its name in front of every message so you can tell the copies apart.

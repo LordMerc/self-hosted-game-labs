@@ -48,6 +48,10 @@ The dialog opens by itself when Hide my IP is turned on and tunnels are missing.
 
 A claim flow (`/claim/setup`, `/claim/exchange`) exists in the client but was not tried. It could replace pasting a key in a later version.
 
+## Why not Cloudflare
+
+Cloudflare's proxy carries only web traffic on the free plan, so it cannot front a game port. Cloudflare Tunnel can carry other traffic, but each player would need Cloudflare's WARP app. Spectrum, which proxies TCP and UDP, is an Enterprise product. playit.gg is free and the player installs nothing. The README says the same in two sentences.
+
 ## One tunnel per host port
 
 The panel plans one tunnel per host port named `gl-<server>-<port>`. A port used for both TCP and UDP shares a single `both` tunnel, which keeps a server inside the free plan. The address shown to players is the first (game) port's.
