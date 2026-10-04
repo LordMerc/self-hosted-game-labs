@@ -32,7 +32,8 @@ export interface ServerMeta {
   name: string;
   templateId: string;
   env: Record<string, string>;
-  access: "private" | "public" | "relay";
+  access: "private" | "public";
+  hideIp: boolean;
 }
 
 const SLUG = /^[a-z0-9][a-z0-9-]*$/;
@@ -109,7 +110,9 @@ export class BackupStore {
       const o = JSON.parse(readFileSync(path.join(this.dir(slug), "server.json"), "utf8")) as Partial<ServerMeta>;
       if (typeof o.name !== "string" || typeof o.templateId !== "string") return null;
       const env = Object.fromEntries(Object.entries(o.env ?? {}).filter(([, v]) => typeof v === "string")) as Record<string, string>;
-      return { name: o.name, templateId: o.templateId, env, access: o.access === "public" || o.access === "relay" ? o.access : "private" };
+      // Servers backed up before Hide my IP was its own switch were saved with access "relay".
+      const legacyRelay = (o.access as string) === "relay";
+      return { name: o.name, templateId: o.templateId, env, access: o.access === "public" ? "public" : "private", hideIp: o.hideIp === true || legacyRelay };
     } catch {
       return null;
     }

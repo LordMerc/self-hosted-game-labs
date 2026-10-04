@@ -43,7 +43,9 @@ export interface Server {
   starting: boolean;
   /** Caps on what the game may use; null = no limit. */
   limits: { cpus: number | null; memoryMb: number | null; warnings: string[] };
-  access: "private" | "public" | "relay";
+  access: "private" | "public";
+  /** The playit.gg relay, on top of whatever the access is. */
+  hideIp: boolean;
   /** For a server on the playit.gg relay: which tunnels it needs and what players type. */
   relay: RelayInfo | null;
   lastError: string | null;
@@ -223,7 +225,7 @@ export interface BackupGroup {
   templateName: string | null;
   backups: Backup[];
   totalBytes: number;
-  saved: { name: string; templateId: string | null; env: Record<string, string>; savedSecrets: string[]; access: "private" | "public" | "relay" } | null;
+  saved: { name: string; templateId: string | null; env: Record<string, string>; savedSecrets: string[]; access: "private" | "public"; hideIp: boolean } | null;
 }
 
 export interface ServerDetail {

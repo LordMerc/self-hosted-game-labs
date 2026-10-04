@@ -92,8 +92,11 @@ describe("BackupStore", () => {
     const s = new BackupStore(root);
     await s.create("pal");
     expect(s.meta("pal")).toBeNull();
-    s.setMeta("pal", { name: "Pal", templateId: "palworld", env: { X: "1" }, access: "public" });
-    expect(s.meta("pal")).toEqual({ name: "Pal", templateId: "palworld", env: { X: "1" }, access: "public" });
+    s.setMeta("pal", { name: "Pal", templateId: "palworld", env: { X: "1" }, access: "public", hideIp: true });
+    expect(s.meta("pal")).toEqual({ name: "Pal", templateId: "palworld", env: { X: "1" }, access: "public", hideIp: true });
+    // Saved before Hide my IP was its own switch: access "relay" meant private through the relay.
+    writeFileSync(path.join(root, ".backups/pal/server.json"), JSON.stringify({ name: "Pal", templateId: "palworld", env: {}, access: "relay" }));
+    expect(s.meta("pal")).toMatchObject({ access: "private", hideIp: true });
     expect(statSync(path.join(root, ".backups/pal/server.json")).mode & 0o077).toBe(0);
     expect(s.slugs()).toEqual(["pal"]);
     expect(() => s.list("../etc")).toThrow(/not a valid/);

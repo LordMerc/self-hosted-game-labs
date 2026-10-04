@@ -10,7 +10,7 @@ import { FREE_TUNNELS, PLAYIT_IMAGE, planTunnels, RelayManager } from "../src/se
 import { buildApp } from "../src/server/app.js";
 import { DnsSettings } from "../src/server/dns/settings.js";
 import { Notifier } from "../src/server/notifications/notifier.js";
-import { ServerService } from "../src/server/servers/service.js";
+import { ServerService, splitAccess } from "../src/server/servers/service.js";
 import { loadTemplates } from "../src/server/templates/loader.js";
 import type { TcpProbe } from "../src/server/reachability.js";
 import { FakeConnectivity, FakeDns, FakeDocker } from "./helpers/fakes.js";
@@ -298,7 +298,7 @@ describe("RelayManager", () => {
 
   it("warns when the servers would need more tunnels than the free plan has", async () => {
     await mgr.save({ secret: SECRET, mode: "existing" });
-    db.insert(schema.servers).values({ id: "s9", slug: "big", name: "Big", templateId: "x", access: "relay", createdAt: new Date() }).run();
+    db.insert(schema.servers).values({ id: "s9", slug: "big", name: "Big", templateId: "x", hideIp: true, createdAt: new Date() }).run();
     for (let i = 0; i <= FREE_TUNNELS; i++) db.insert(schema.serverPorts).values({ serverId: "s9", name: `p${i}`, port: 3000 + i, protocol: "udp" }).run();
     const st = await mgr.status();
     expect(st.needs).toEqual({ tcp: 0, udp: FREE_TUNNELS + 1, limit: FREE_TUNNELS });
@@ -337,61 +337,130 @@ describe("access through the relay", () => {
 
   const deploy = (name = "Our Palworld", extra: object = {}) => svc.deploy({ templateId: "palworld", name, ...extra });
 
-  it("is refused with a clear reason until the key is saved, and the server keeps its old access", async () => {
+  it("is refused with a clear reason until the key is saved, and the server keeps its old settings", async () => {
     const id = await deploy();
     await svc.setAccess(id, "public");
-    await expect(svc.setAccess(id, "relay")).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/secret key/) });
-    expect((await svc.list())[0].access).toBe("public");
+    await expect(svc.setHideIp(id, true)).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/secret key/) });
+    const [s] = await svc.list();
+    expect(s.access).toBe("public");
+    expect(s.hideIp).toBe(false);
     expect(net.open.size).toBe(2);
   });
 
-  it("closes the router rules and the DNS record, shows the relay address, and keeps the LAN one", async () => {
+  it("on a public server shows both addresses and keeps the router rules, the DNS record and the port checks", async () => {
     await relay.save({ secret: SECRET, mode: "existing" });
     const id = await deploy();
     await svc.setAccess(id, "public");
+    await svc.setHideIp(id, true);
     expect(net.open.size).toBe(2);
     expect(dns.cnames.get("our-palworld")).toBe("play.example.com");
-    await svc.setAccess(id, "relay");
-    expect(net.open.size).toBe(0);
-    expect(dns.cnames.size).toBe(0);
     const [s] = await svc.list();
-    expect(s.access).toBe("relay");
-    expect(s.connect.public).toBeNull();
+    expect(s.access).toBe("public");
+    expect(s.hideIp).toBe(true);
+    expect(s.connect.public).toBe("our-palworld.example.com:8211");
     expect(s.connect.relay).toBe("t0.gl.at.ply.gg:20000");
     expect(s.connect.lan).toBe("192.168.1.50:8211");
     expect(s.relay?.tunnels.map((t) => t.name)).toEqual(["gl-our-palworld-8211", "gl-our-palworld-27015"]);
+  });
+
+  it("making a server public or private does not touch its relay", async () => {
+    await relay.save({ secret: SECRET, mode: "existing" });
+    const id = await deploy();
+    await svc.setHideIp(id, true);
+    expect(fake.tunnels).toHaveLength(2);
+    await svc.setAccess(id, "public");
+    expect(fake.tunnels).toHaveLength(2);
+    expect((await svc.list())[0].connect.relay).toBe("t0.gl.at.ply.gg:20000");
+    await svc.setAccess(id, "private");
+    expect(fake.tunnels).toHaveLength(2);
+    const [s] = await svc.list();
+    expect(s.hideIp).toBe(true);
+    expect(s.connect.relay).toBe("t0.gl.at.ply.gg:20000");
+    expect(net.open.size).toBe(0);
+    expect(dns.cnames.size).toBe(0);
+  });
+
+  it("turning Hide my IP on for a private server leaves the router and DNS closed and keeps the LAN address", async () => {
+    await relay.save({ secret: SECRET, mode: "existing" });
+    const id = await deploy();
+    await svc.setHideIp(id, true);
+    expect(net.open.size).toBe(0);
+    expect(dns.cnames.size).toBe(0);
+    const [s] = await svc.list();
+    expect(s.access).toBe("private");
+    expect(s.connect.public).toBeNull();
+    expect(s.connect.relay).toBe("t0.gl.at.ply.gg:20000");
+    expect(s.connect.lan).toBe("192.168.1.50:8211");
     expect(s.reachability).toBeNull();
   });
 
-  it("is a separate path: public still opens the router and the DNS record and uses no tunnels", async () => {
+  it("turning Hide my IP off keeps the public side as it was", async () => {
     await relay.save({ secret: SECRET, mode: "existing" });
     const id = await deploy();
     await svc.setAccess(id, "public");
+    await svc.setHideIp(id, true);
+    await svc.setHideIp(id, false);
     expect(net.open.size).toBe(2);
     expect(dns.cnames.get("our-palworld")).toBe("play.example.com");
-    expect(fake.tunnels).toHaveLength(0);
+    const [s] = await svc.list();
+    expect(s.access).toBe("public");
+    expect(s.hideIp).toBe(false);
+    expect(s.connect.relay).toBeNull();
   });
 
-  it("removes its tunnels when the server goes back to private or is deleted", async () => {
+  it("removes the tunnels it made when Hide my IP goes off or the server is deleted", async () => {
     await relay.save({ secret: SECRET, mode: "existing" });
     const id = await deploy();
-    await svc.setAccess(id, "relay");
+    await svc.setHideIp(id, true);
     expect(fake.tunnels).toHaveLength(2);
-    await svc.setAccess(id, "private");
+    await svc.setHideIp(id, false);
     expect(fake.tunnels).toHaveLength(0);
 
-    await svc.setAccess(id, "relay");
+    await svc.setHideIp(id, true);
     expect(fake.tunnels).toHaveLength(2);
     await svc.remove(id);
     expect(fake.tunnels).toHaveLength(0);
   });
 
-  it("can be chosen when the server is first deployed", async () => {
+  it("brings the same relay address back when Hide my IP is turned on again, if the tunnels were made by hand", async () => {
     await relay.save({ secret: SECRET, mode: "existing" });
-    await deploy("Friends", { access: "relay" });
+    fake.refuseCreate = true;
+    fake.tunnels.push(
+      { id: "h1", name: "gl-our-palworld-8211", port_type: "udp", local_port: 8211, local_ip: "192.168.1.50" },
+      { id: "h2", name: "gl-our-palworld-27015", port_type: "udp", local_port: 27015, local_ip: "192.168.1.50" },
+    );
+    const id = await deploy();
+    await svc.setAccess(id, "public");
+    await svc.setHideIp(id, true);
+    expect((await svc.list())[0].connect.relay).toBe("t0.gl.at.ply.gg:20000");
+
+    await svc.setHideIp(id, false);
+    expect((await svc.list())[0].connect.relay).toBeNull();
+    expect(fake.tunnels.map((t) => t.id)).toEqual(["h1", "h2"]);
+
+    await svc.setHideIp(id, true);
+    expect((await svc.list())[0].connect.relay).toBe("t0.gl.at.ply.gg:20000");
+  });
+
+  it("can be chosen when the server is first deployed, beside either access", async () => {
+    await relay.save({ secret: SECRET, mode: "existing" });
+    await deploy("Friends", { access: "public", hideIp: true });
     const [s] = await svc.list();
-    expect(s.access).toBe("relay");
+    expect(s.access).toBe("public");
+    expect(s.hideIp).toBe(true);
     expect(s.connect.relay).toBe("t0.gl.at.ply.gg:20000");
+    expect(s.connect.public).toBe("friends.example.com:8211");
+  });
+
+  it("still accepts the old access value relay as private with Hide my IP on", async () => {
+    await relay.save({ secret: SECRET, mode: "existing" });
+    await deploy("Old", { access: "relay" });
+    const [s] = await svc.list();
+    expect(s.access).toBe("private");
+    expect(s.hideIp).toBe(true);
+    expect(splitAccess("relay")).toEqual({ access: "private", hideIp: true });
+    expect(splitAccess("public", true)).toEqual({ access: "public", hideIp: true });
+    expect(splitAccess()).toEqual({ access: "private", hideIp: false });
   });
 
   it("keeps a server named playit from taking the agent's container name", async () => {

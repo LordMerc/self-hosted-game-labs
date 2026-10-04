@@ -38,13 +38,21 @@ export class UserError extends Error {
   }
 }
 
+/** The old API had three access values; `relay` meant "private, through the relay". */
+export function splitAccess(access?: Access | "relay", hideIp?: boolean): { access: Access; hideIp: boolean } {
+  return access === "relay" ? { access: "private", hideIp: true } : { access: access ?? "private", hideIp: hideIp === true };
+}
+
 export interface DeployRequest {
   templateId: string;
   name: string;
   env?: Record<string, string>;
   /** Optional manual port choices keyed by template port name. */
   ports?: Record<string, number>;
-  access?: Access;
+  /** `relay` is the old spelling of "private, with Hide my IP on" and is still accepted. */
+  access?: Access | "relay";
+  /** Also reach the server through the playit.gg relay. */
+  hideIp?: boolean;
   /** Most CPU cores the game may use (e.g. 1.5). Empty or null: no limit. */
   cpus?: number | null;
   /** Most memory the game may use, in MB. Empty or null: no limit. */
@@ -65,7 +73,7 @@ export interface BackupGroup {
   backups: BackupInfo[];
   totalBytes: number;
   /** What was saved about the server, for setting it up again. Passwords are listed by name only. */
-  saved: { name: string; templateId: string | null; env: Record<string, string>; savedSecrets: string[]; access: Access } | null;
+  saved: { name: string; templateId: string | null; env: Record<string, string>; savedSecrets: string[]; access: Access; hideIp: boolean } | null;
 }
 
 export interface ServiceDeps {
@@ -211,7 +219,7 @@ export class ServerService {
   }
 
   /** Set up a server from any Docker image. Ports are used exactly as given, because the image decides where it listens. */
-  async deployCustom(req: CustomInput & { access?: Access; cpus?: number | null; memoryMb?: number | null }): Promise<string> {
+  async deployCustom(req: CustomInput & { access?: Access | "relay"; hideIp?: boolean; cpus?: number | null; memoryMb?: number | null }): Promise<string> {
     const name = req.name.trim();
     if (!name || name.length > 60) throw new UserError("Give the server a name (up to 60 characters)");
     const problem = checkCustomInput(req);
@@ -225,6 +233,7 @@ export class ServerService {
         env: req.env,
         ports: Object.fromEntries(t.ports.map((p) => [p.name, p.default])),
         access: req.access,
+        hideIp: req.hideIp,
         cpus: req.cpus,
         memoryMb: req.memoryMb,
       });
@@ -393,7 +402,8 @@ export class ServerService {
     this.event(id, "info", `Deploy started from template ${t.id}${req.restoreFrom ? `, with the world from backup ${req.restoreFrom.name}` : ""}`);
     for (const w of limitWarnings(t, limits)) this.event(id, "warn", w);
 
-    const job = this.runDeploy(id, req.access ?? "private");
+    const want = splitAccess(req.access, req.hideIp);
+    const job = this.runDeploy(id, want.access, { hideIp: want.hideIp });
     if (this.d.background === false) await job;
     else void job;
     return id;
@@ -404,12 +414,12 @@ export class ServerService {
     const row = this.row(id);
     if (row.status !== "error") throw new UserError("Only servers in an error state can be retried", 409);
     this.setStatus(id, "deploying");
-    const job = this.runDeploy(id, row.access);
+    const job = this.runDeploy(id, row.access, { hideIp: row.hideIp });
     if (this.d.background === false) await job;
     else void job;
   }
 
-  private async runDeploy(id: string, wantAccess: Access, opts: { pull?: boolean } = {}): Promise<void> {
+  private async runDeploy(id: string, wantAccess: Access, opts: { pull?: boolean; hideIp?: boolean } = {}): Promise<void> {
     const row = this.row(id);
     const t = this.template(row.templateId);
     const ports = this.ports(id);
@@ -461,6 +471,7 @@ export class ServerService {
       this.event(id, "info", "Server is online");
 
       if (wantAccess !== "private") await this.applyAccess(id, wantAccess);
+      if (opts.hideIp) await this.applyHideIp(id, true);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       this.setStatus(id, "error", message);
@@ -542,7 +553,7 @@ export class ServerService {
     }
     this.saveBackupMeta(row);
     await this.closeAccess(row, errors);
-    if (row.access === "relay") await this.leaveRelay(row, errors, id);
+    if (row.hideIp) await this.leaveRelay(row, errors, id);
     if (row.containerId) await this.d.docker.remove(row.containerId);
     if (opts.deleteData) rmSync(path.join(this.d.config.GAMESERVERS_DIR, row.slug), { recursive: true, force: true });
     this.d.db.delete(schema.servers).where(eq(schema.servers.id, id)).run();
@@ -555,10 +566,20 @@ export class ServerService {
 
   // ---------------------------------------------------------------- access
 
-  async setAccess(id: string, access: Access) {
+  /** Public or private. The relay is a separate switch (`setHideIp`), so changing this never touches it. "relay" is the old spelling of turning Hide my IP on. */
+  async setAccess(id: string, access: Access | "relay") {
+    if (access === "relay") return this.setHideIp(id, true);
     const row = this.row(id);
-    if (access !== "private" && row.status === "error") throw new UserError(`Fix the server error before making it ${access === "relay" ? "reachable through the relay" : "public"}`, 409);
+    if (access !== "private" && row.status === "error") throw new UserError("Fix the server error before making it public", 409);
     await this.applyAccess(id, access);
+    return row;
+  }
+
+  /** Turn the playit.gg relay on or off for a server, beside whatever its access is. */
+  async setHideIp(id: string, on: boolean) {
+    const row = this.row(id);
+    if (on && row.status === "error") throw new UserError("Fix the server error before hiding its IP", 409);
+    await this.applyHideIp(id, on);
     return row;
   }
 
@@ -571,21 +592,7 @@ export class ServerService {
   private async applyAccess(id: string, access: Access) {
     const row = this.row(id);
     const ports = this.ports(id);
-    if (access === "relay") {
-      const relay = this.d.relay;
-      if (!relay) throw new UserError("Hide my IP is not available here", 409);
-      // Ask the relay first: if it is not set up, a public server keeps working as it was.
-      try {
-        await relay.enable(this.relayServer(row));
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        this.event(id, "error", `Could not hide the IP: ${message}`);
-        throw new UserError(message, e instanceof RelayError ? e.status : 502);
-      }
-      const errors: string[] = [];
-      await this.closeAccess(row, errors); // the direct route (router rules, DNS record) is closed
-      if (errors.length > 0) this.event(id, "warn", `Closing the direct route had problems: ${errors.join("; ")}`);
-    } else if (access === "public") {
+    if (access === "public") {
       const lan = this.lanIp();
       try {
         for (const p of ports) await this.d.connectivity.ensureOpen(id, row.slug, p.port, p.protocol, lan);
@@ -609,13 +616,33 @@ export class ServerService {
       }
     }
     this.d.db.update(schema.servers).set({ access }).where(eq(schema.servers.id, id)).run();
-    if (row.access === "relay" && access !== "relay") {
+    this.resetReach(id);
+    this.event(id, "info", `Access set to ${access}`);
+  }
+
+  private async applyHideIp(id: string, on: boolean) {
+    const row = this.row(id);
+    if (on) {
+      const relay = this.d.relay;
+      if (!relay) throw new UserError("Hide my IP is not available here", 409);
+      try {
+        await relay.enable(this.relayServer(row));
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        this.event(id, "error", `Could not hide the IP: ${message}`);
+        throw new UserError(message, e instanceof RelayError ? e.status : 502);
+      }
+      this.d.db.update(schema.servers).set({ hideIp: true }).where(eq(schema.servers.id, id)).run();
+      this.event(id, "info", "Hide my IP turned on");
+      return;
+    }
+    this.d.db.update(schema.servers).set({ hideIp: false }).where(eq(schema.servers.id, id)).run();
+    if (row.hideIp) {
       const errors: string[] = [];
       await this.leaveRelay(row, errors);
       if (errors.length > 0) this.event(id, "warn", `Left the relay with problems: ${errors.join("; ")}`);
     }
-    this.resetReach(id);
-    this.event(id, "info", `Access set to ${access}`);
+    this.event(id, "info", "Hide my IP turned off");
   }
 
   /** Best-effort teardown of router mappings and DNS; collects problems instead of throwing. */
@@ -645,7 +672,7 @@ export class ServerService {
   private async leaveRelay(row: typeof schema.servers.$inferSelect, errors: string[], excluding?: string) {
     const relay = this.d.relay;
     if (!relay) return;
-    const others = this.d.db.select().from(schema.servers).where(eq(schema.servers.access, "relay")).all().filter((r) => r.id !== row.id && r.id !== excluding).length;
+    const others = this.d.db.select().from(schema.servers).where(eq(schema.servers.hideIp, true)).all().filter((r) => r.id !== row.id && r.id !== excluding).length;
     try {
       await relay.disable(this.relayServer(row), others);
     } catch (e) {
@@ -700,7 +727,7 @@ export class ServerService {
         actions.push(`recreated missing container for ${r.slug}`);
         this.event(r.id, "warn", "Container was missing; recreating");
         this.setStatus(r.id, "deploying");
-        await this.runDeploy(r.id, r.access);
+        await this.runDeploy(r.id, r.access, { hideIp: r.hideIp });
       }
     }
     await this.refreshStatuses();
@@ -836,7 +863,7 @@ export class ServerService {
     const rules = this.d.db.select().from(schema.manualRules).all();
     const checks = this.d.db.select().from(schema.portChecks).all();
     const t = (id: string) => this.d.templates.find((x) => x.id === id);
-    const relayInfos = new Map(rows.filter((r) => r.access === "relay" && this.d.relay).map((r) => [r.id, this.d.relay!.info({ id: r.id, slug: r.slug, ports: ports.filter((p) => p.serverId === r.id).map((p) => ({ port: p.port, protocol: p.protocol })) })]));
+    const relayInfos = new Map(rows.filter((r) => r.hideIp && this.d.relay).map((r) => [r.id, this.d.relay!.info({ id: r.id, slug: r.slug, ports: ports.filter((p) => p.serverId === r.id).map((p) => ({ port: p.port, protocol: p.protocol })) })]));
     // While a relay server is still waiting for its tunnels, look at playit.gg again every few seconds; once all is well, a minute is plenty.
     if (relayInfos.size > 0) this.d.relay!.refreshSoon([...relayInfos.values()].some((i) => i.state !== "ready") ? 4_000 : 60_000);
     return rows.map((r) => {
@@ -858,6 +885,7 @@ export class ServerService {
         starting: starting.has(r.id),
         limits: { cpus: r.cpus, memoryMb: r.memoryMb, warnings: tpl ? limitWarnings(tpl, { cpus: r.cpus, memoryMb: r.memoryMb }) : [] },
         access: r.access,
+        hideIp: r.hideIp,
         relay: relayInfo,
         lastError: r.lastError,
         ports: sp.map((p) => ({ name: p.name, port: p.port, protocol: p.protocol })),
@@ -865,8 +893,8 @@ export class ServerService {
         connect: {
           lan: this.d.config.HOST_LAN_IP && gamePort ? `${this.d.config.HOST_LAN_IP}:${gamePort.port}` : null,
           public: r.access === "public" && host && gamePort ? `${host}:${gamePort.port}` : null,
-          relay: r.access === "relay" ? (relayInfo?.address ?? null) : null,
-          instructions: r.access !== "private" && tpl?.join.method === "server-browser" ? (tpl.join.instructions ?? null) : null,
+          relay: r.hideIp ? (relayInfo?.address ?? null) : null,
+          instructions: (r.access !== "private" || r.hideIp) && tpl?.join.method === "server-browser" ? (tpl.join.instructions ?? null) : null,
         },
         reachability: r.access === "public" ? this.reachabilityOf(r.id, sp, checks) : null,
         update: check?.available ? { to: check.latest ?? "a newer build" } : null,
@@ -1014,7 +1042,7 @@ export class ServerService {
     } else {
       this.setStatus(id, "deploying");
     }
-    const job = this.runDeploy(id, row.access, { pull: false });
+    const job = this.runDeploy(id, row.access, { pull: false, hideIp: row.hideIp });
     if (this.d.background === false) await job;
     else void job;
     return { restarting: true };
@@ -1193,7 +1221,7 @@ export class ServerService {
       }
     }
     this.careStore().patchState(id, { image: check.via === "tag" ? image : this.careStore().state(id).image, check: null });
-    const job = this.runDeploy(id, row.access, { pull: true });
+    const job = this.runDeploy(id, row.access, { pull: true, hideIp: row.hideIp });
     if (this.d.background === false) await job;
     else void job;
     return { restarting: true };
@@ -1248,7 +1276,7 @@ export class ServerService {
         }
       }
     }
-    if (row.access === "relay" && this.d.relay) {
+    if (row.hideIp && this.d.relay) {
       // The tunnels are per port, so the old ones go; the redeploy below makes the new ones.
       try {
         await this.d.relay.disable(this.relayServer(row), 1);
@@ -1262,7 +1290,7 @@ export class ServerService {
     });
     this.resetReach(id);
     this.event(id, "info", `Ports changed to ${next.map((a) => `${a.port}/${a.protocol}`).join(", ")}; recreating the container (world data is kept)`);
-    const job = this.runDeploy(id, row.access, { pull: false });
+    const job = this.runDeploy(id, row.access, { pull: false, hideIp: row.hideIp });
     if (this.d.background === false) await job;
     else void job;
     return { restarting: true };
@@ -1365,7 +1393,7 @@ export class ServerService {
   private saveBackupMeta(row: typeof schema.servers.$inferSelect) {
     try {
       if (this.store().list(row.slug).length === 0) return;
-      this.store().setMeta(row.slug, { name: row.name, templateId: row.templateId, env: row.env, access: row.access });
+      this.store().setMeta(row.slug, { name: row.name, templateId: row.templateId, env: row.env, access: row.access, hideIp: row.hideIp });
     } catch (e) {
       this.event(row.id, "warn", `Could not save the server's settings next to its backups: ${(e as Error).message}`);
     }
@@ -1402,6 +1430,7 @@ export class ServerService {
               env: Object.fromEntries(Object.entries(meta.env).filter(([k]) => !secretKeys.has(k))),
               savedSecrets: Object.keys(meta.env).filter((k) => secretKeys.has(k) && meta.env[k]),
               access: meta.access,
+              hideIp: meta.hideIp,
             }
           : null,
       });
@@ -1422,7 +1451,7 @@ export class ServerService {
    * Set a deleted server up again from one of its backups: same game, the saved settings (passwords included unless
    * replaced), and its world put in place before the first start. Settings that were not saved come from the request or the template's defaults.
    */
-  async redeployFromBackup(slug: string, backupName: string, req: { name?: string; templateId?: string; env?: Record<string, string>; access?: Access } = {}): Promise<string> {
+  async redeployFromBackup(slug: string, backupName: string, req: { name?: string; templateId?: string; env?: Record<string, string>; access?: Access | "relay"; hideIp?: boolean } = {}): Promise<string> {
     if (this.d.db.select().from(schema.servers).where(eq(schema.servers.slug, slug)).get()) throw new UserError("That server still exists. Use Restore on it instead.", 409);
     if (!this.store().list(slug).some((b) => b.name === backupName)) throw new UserError("Backup not found", 404);
     const meta = this.store().meta(slug);
@@ -1435,7 +1464,7 @@ export class ServerService {
       const v = req.env?.[key]?.trim() || saved[key];
       if (v) env[key] = v;
     }
-    return this.deploy({ templateId: tpl.id, name: req.name?.trim() || meta?.name || slug, env, access: req.access ?? "private", restoreFrom: { slug, name: backupName } });
+    return this.deploy({ templateId: tpl.id, name: req.name?.trim() || meta?.name || slug, env, access: req.access, hideIp: req.hideIp, restoreFrom: { slug, name: backupName } });
   }
 
   listBackups(id: string): BackupInfo[] {
